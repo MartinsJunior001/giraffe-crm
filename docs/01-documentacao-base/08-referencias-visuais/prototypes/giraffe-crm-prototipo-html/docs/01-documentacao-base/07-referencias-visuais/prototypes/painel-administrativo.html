@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Giraffe CRM — Painel administrativo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+  /* ===== TYPE SCALE (tokens) ===== */
+  --fs-micro: 10px; --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14px; --fs-md: 15px; --fs-lg: 16px; --fs-xl: 18px; --fs-2xl: 20px; --fs-3xl: 22px; --fs-4xl: 24px; --fs-5xl: 26px; --fs-6xl: 30px; --fs-7xl: 32px;
+  --fw-normal: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; --fw-extrabold: 800;
+  --lh-tight: 1.25; --lh-snug: 1.4; --lh-normal: 1.5; --lh-relaxed: 1.6;
+    --canvas: #FFFFFF;
+    --surface-soft: #FAFAFA;
+    --soft-cloud: #F5F5F5;
+    --hairline: #E5E5E5;
+    --ink: #111111;
+    --charcoal: #39393B;
+    --mute: #707072;
+    --primary: #FF7200;
+    --orange-soft: #FFF3E8;
+    --primary-ink: #B04F00;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--canvas); color: var(--ink);
+    font-family: "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif; font-size: var(--fs-base); -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  button { font-family: inherit; cursor: pointer; }
+  a { color: var(--primary); text-decoration: none; font-weight: var(--fw-semibold); }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+
+  .topbar { height: 56px; min-height: 56px; display: flex; align-items: center; gap: 18px; padding: 0 22px; border-bottom: 1px solid var(--hairline); background: var(--canvas); }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: var(--fw-bold); font-size: var(--fs-xl); }
+  .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; }
+  .topbar .divider { width: 1px; height: 22px; background: var(--hairline); }
+  .topbar .title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--ink); }
+  .topbar .spacer { flex: 1; }
+  .icon-btn { position: relative; background: none; border: none; color: var(--charcoal); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--soft-cloud); }
+  .icon-btn .badge { position: absolute; top: -2px; right: -3px; background: #E02424; color: #fff; font-size: var(--fs-micro); font-weight: var(--fw-bold); padding: 1px 5px; border-radius: 9px; }
+  .user { display: flex; align-items: center; gap: 9px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--charcoal); }
+  .user .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg,#FF9A4D,#FF7200); display: grid; place-items: center; color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); box-shadow: 0 0 0 3px var(--orange-soft); }
+
+  .adm-wrap { flex: 1; display: flex; overflow: hidden; }
+  .adm-side { width: 250px; min-width: 250px; border-right: 1px solid var(--hairline); padding: 16px 12px; display: flex; flex-direction: column; overflow-y: auto; }
+  .adm-nav-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 12px; border-radius: 9px; margin-bottom: 3px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: none; border: none; text-align: left; }
+  .adm-nav-item:hover { background: var(--surface-soft); }
+  .adm-nav-item.active { background: var(--orange-soft); color: var(--primary-ink); font-weight: var(--fw-semibold); }
+  .adm-nav-item .ani { color: var(--mute); display: inline-flex; }
+  .adm-nav-item.active .ani { color: var(--primary); }
+  .adm-group-label { font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: .4px; text-transform: uppercase; color: var(--mute); padding: 14px 12px 6px; }
+
+  .adm-main { flex: 1; overflow: auto; padding: 26px 34px 60px; }
+  .adm-inner { max-width: 700px; }
+  .adm-h1 { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 22px; }
+  .adm-field { margin-bottom: 24px; }
+  .adm-label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 8px; display: flex; align-items: center; gap: 7px; }
+  .adm-label .q { color: var(--mute); display: inline-flex; }
+  .adm-hint { font-size: var(--fs-xs); color: var(--mute); margin: -4px 0 10px; }
+  .adm-input { width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 8px; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--canvas); }
+  .adm-input:focus { outline: none; border-color: var(--primary); }
+
+  .logo-row { display: flex; align-items: center; gap: 16px; }
+  .logo-box { width: 82px; height: 82px; border-radius: 10px; background: var(--surface-soft); border: 1px solid var(--hairline); display: grid; place-items: center; color: var(--mute); flex-shrink: 0; }
+  .logo-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .upload-btn { border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 8px 16px; border-radius: 8px; }
+  .upload-btn:hover { background: var(--surface-soft); }
+  .remove-link { font-size: var(--fs-xs); color: var(--mute); background: none; border: none; padding: 0; }
+  .remove-link:hover { color: var(--primary); }
+
+  .check-row { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; font-size: var(--fs-sm); color: var(--charcoal); }
+  .check-row input { width: 16px; height: 16px; accent-color: var(--primary); flex-shrink: 0; }
+
+  .promo { display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--orange-soft); border-radius: 8px; padding: 12px 16px; margin: 4px 0 24px; }
+  .promo p { margin: 0; font-size: var(--fs-xs); color: #8a4a00; }
+
+  .actions { display: flex; align-items: center; gap: 16px; }
+  .save-btn { height: 40px; padding: 0 22px; border-radius: 8px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  .save-btn:hover { filter: brightness(0.97); }
+  .cancel-btn { background: none; border: none; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--charcoal); }
+  .cancel-btn:hover { color: var(--ink); }
+
+  .sec-divider { height: 1px; background: var(--hairline); margin: 34px 0; }
+  .adm-h2 { font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 18px; }
+  .sub-label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 12px; }
+  .toggle-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: var(--fs-sm); color: var(--charcoal); }
+  .toggle { width: 40px; height: 22px; border-radius: 12px; border: none; background: #d5d5d7; position: relative; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform .15s; }
+  .toggle[aria-pressed="true"] { background: var(--primary); }
+  .toggle[aria-pressed="true"]::after { transform: translateX(18px); }
+  .toggle-row .q { color: var(--mute); display: inline-flex; }
+
+  .danger-box { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #FDECEC; border-radius: 8px; padding: 16px 18px; margin-top: 30px; }
+  .danger-box .db-left { display: flex; align-items: center; gap: 10px; }
+  .danger-box .db-ic { color: #c0201f; display: inline-flex; }
+  .danger-box p { margin: 0; font-size: var(--fs-sm); color: var(--charcoal); }
+  .danger-btn { height: 40px; padding: 0 18px; border-radius: 8px; background: #E02424; border: none; color: #fff; font-size: var(--fs-sm); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .danger-btn:hover { filter: brightness(0.96); }
+
+  /* ===== CONFIGURAÇÕES DE IA ===== */
+  .ai-inner { max-width: 1180px; }
+  .ai-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--hairline); margin-bottom: 22px; position: relative; }
+  .ai-tab { position: relative; padding: 10px 12px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--mute); background: none; border: none; }
+  .ai-tab.active { color: var(--ink); font-weight: var(--fw-semibold); }
+  .ai-tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--primary); }
+  .ai-tabs .ai-tabs-right { margin-left: auto; }
+  .ai-block-title { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 4px; display: flex; align-items: center; gap: 12px; }
+  .ai-block-title .spacer { flex: 1; }
+  .ai-block-sub { font-size: var(--fs-xs); color: var(--mute); margin: 0 0 14px; }
+  .ai-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 22px; margin-bottom: 30px; }
+  .ai-model-row { display: flex; align-items: center; gap: 14px; }
+  .ai-model-ic { width: 40px; height: 40px; border-radius: 9px; background: #F1EBFB; color: #7B4DD8; display: grid; place-items: center; flex-shrink: 0; }
+  .ai-model-name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); display: flex; align-items: center; gap: 6px; }
+  .ai-model-meta { font-size: var(--fs-xs); color: var(--mute); margin-top: 2px; }
+  .ai-active { display: inline-block; margin-top: 6px; font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: #3d6416; background: #E4F1D8; padding: 2px 9px; border-radius: 6px; }
+  .ai-change { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); background: var(--surface-soft); color: var(--mute); font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 8px 14px; border-radius: 8px; }
+  .ai-add { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-sm); font-weight: var(--fw-bold); padding: 9px 16px; border-radius: 8px; }
+  .ai-model-row { position: relative; }
+  .ai-change-menu { position: absolute; top: calc(100% - 8px); right: 0; width: 220px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,0.14); padding: 6px; z-index: 20; }
+  .ai-change-opt { display: flex; align-items: center; gap: 9px; width: 100%; border: none; background: none; font-family: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ink); text-align: left; padding: 9px 12px; border-radius: 7px; }
+  .ai-change-opt:hover { background: var(--surface-soft); }
+  .ai-change-opt .pv-ic { display: inline-flex; color: var(--charcoal); }
+  .ai-change-opt .ck { margin-left: auto; color: var(--primary); display: none; }
+  .ai-change-opt.sel .ck { display: inline-flex; }
+  .ai-add:hover { filter: brightness(0.97); }
+
+  /* Modal Conectar modelo de IA */
+  .aim-overlay { position: fixed; inset: 0; background: rgba(17,17,17,0.42); display: none; align-items: center; justify-content: center; z-index: 90; padding: 20px; }
+  .aim-overlay.show { display: flex; }
+  .aim-modal { width: 760px; max-width: 100%; max-height: calc(100vh - 40px); background: var(--canvas); border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.28); overflow: hidden; display: flex; flex-direction: column; }
+  .aim-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 28px 0; }
+  .aim-head h2 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--ink); }
+  .aim-sub { font-size: var(--fs-sm); color: var(--mute); margin: 6px 28px 0; }
+  .aim-body { display: grid; grid-template-columns: 200px 1fr; gap: 28px; padding: 22px 28px 10px; }
+  .aim-modal { overflow-y: auto; }
+  .aim-body.menu-open { padding-bottom: 220px; }
+  .aim-prov { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; font-family: inherit; font-size: var(--fs-base); font-weight: var(--fw-medium); color: var(--ink); padding: 10px 14px; border-radius: 10px; text-align: left; }
+  .aim-prov.sel { background: var(--surface-soft); font-weight: var(--fw-semibold); }
+  .aim-prov .pv-ic { display: inline-flex; color: var(--charcoal); }
+  .aim-fld { margin-bottom: 20px; }
+  .aim-select { position: relative; }
+  .aim-select .emm-input { display: flex; align-items: center; justify-content: space-between; cursor: pointer; background: var(--canvas); }
+  .aim-select .emm-input .ph { color: var(--mute); }
+  .aim-select .emm-input svg { color: var(--mute); flex-shrink: 0; }
+  .aim-select.open .emm-input { border-color: var(--primary); }
+  .aim-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,0.14); padding: 6px; max-height: 230px; overflow-y: auto; z-index: 5; display: none; }
+  .aim-select.open .aim-menu { display: block; }
+  .aim-opt { display: block; width: 100%; border: none; background: none; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); text-align: left; padding: 9px 12px; border-radius: 7px; }
+  .aim-opt:hover { background: var(--surface-soft); }
+  .aim-foot { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--hairline); }
+  .aim-cancel { height: 40px; padding: 0 22px; border-radius: 20px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+  .aim-cancel:hover { background: var(--surface-soft); }
+  .ai-avail { display: flex; align-items: center; gap: 14px; border: 1px solid var(--hairline); border-radius: 12px; padding: 16px 20px; margin-bottom: 30px; }
+  .ai-avail .av-cev { color: var(--mute); display: inline-flex; }
+  .ai-avail .av-ic { width: 30px; height: 30px; border-radius: 8px; background: #F1EBFB; color: #7B4DD8; display: grid; place-items: center; }
+  .ai-avail .av-name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); }
+  .ai-avail .av-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .av-act { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 7px 12px; border-radius: 8px; }
+  .av-act:hover { background: var(--surface-soft); }
+  .av-act.del { color: #c0201f; border-color: #f0cccc; }
+  .av-act.del:hover { background: #FDECEC; }
+  /* Confirmar exclusão de modelo */
+  .aid-overlay { position: fixed; inset: 0; background: rgba(17,17,17,0.42); display: none; align-items: center; justify-content: center; z-index: 95; padding: 20px; }
+  .aid-overlay.show { display: flex; }
+  .aid-modal { width: 420px; max-width: 100%; background: var(--canvas); border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.28); padding: 26px 28px 22px; }
+  .aid-ic { width: 42px; height: 42px; border-radius: 10px; background: #FDECEC; color: #c0201f; display: grid; place-items: center; margin-bottom: 14px; }
+  .aid-modal h3 { margin: 0 0 6px; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); }
+  .aid-modal p { margin: 0 0 20px; font-size: var(--fs-sm); color: var(--mute); line-height: var(--lh-normal); }
+  .aid-foot { display: flex; justify-content: flex-end; gap: 12px; }
+  .ai-providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .prov { display: flex; align-items: center; gap: 9px; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--ink); background: var(--canvas); }
+  .prov:hover { border-color: var(--primary); }
+  .prov .pv-ic { color: var(--charcoal); display: inline-flex; }
+  .ai-foot-note { font-size: var(--fs-xs); color: var(--mute); }
+  .ai-activ-row { display: flex; align-items: flex-start; gap: 20px; padding: 18px 0; border-bottom: 1px solid var(--hairline); }
+  .ai-activ-row:first-child { border-top: 1px solid var(--hairline); }
+  .ai-activ-txt { flex: 1; }
+  .ai-activ-title { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 4px; }
+  .ai-activ-sub { font-size: var(--fs-xs); color: var(--mute); margin: 0; line-height: var(--lh-normal); max-width: 900px; }
+
+  /* ===== FINANCEIRO ===== */
+  .fin-inner { max-width: 1240px; }
+  .fin-top { display: flex; gap: 30px; align-items: flex-start; margin-bottom: 34px; }
+  .fin-plan { flex: 1; }
+  .fin-cap { font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: .5px; text-transform: uppercase; color: var(--mute); margin-bottom: 6px; }
+  .fin-plan-name { font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 4px; }
+  .fin-plan-price { font-size: var(--fs-base); color: var(--charcoal); margin: 0 0 2px; }
+  .fin-plan-qty { font-size: var(--fs-sm); color: var(--mute); margin: 0 0 18px; }
+  .fin-addons { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); padding-bottom: 14px; border-bottom: 1px solid var(--hairline); margin-bottom: 16px; }
+  .fin-renews { font-size: var(--fs-sm); color: var(--charcoal); margin: 0 0 18px; }
+  .fin-actions { display: flex; gap: 10px; }
+  .fin-upgrade { background: var(--primary); color: #fff; border: none; font-size: var(--fs-base); font-weight: var(--fw-bold); padding: 10px 20px; border-radius: 8px; }
+  .fin-upgrade:hover { filter: brightness(0.97); }
+  .fin-cancel { background: var(--canvas); color: var(--charcoal); border: 1px solid var(--hairline); font-size: var(--fs-base); font-weight: var(--fw-semibold); padding: 10px 20px; border-radius: 8px; }
+  .fin-cancel:hover { background: var(--surface-soft); }
+  .fin-usage { width: 460px; background: var(--surface-soft); border-radius: 12px; padding: 18px 22px; }
+  .fin-usage-month { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 16px; }
+  .fin-usage-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--hairline); font-size: var(--fs-sm); color: var(--charcoal); }
+  .fin-usage-row .fu-num { font-weight: var(--fw-bold); color: var(--ink); }
+  .fin-sec-title { font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 14px; }
+  .fin-pay { display: flex; align-items: center; gap: 16px; background: var(--surface-soft); border-radius: 12px; padding: 16px 20px; margin-bottom: 34px; }
+  .fin-card-ic { width: 34px; height: 22px; border-radius: 4px; background: #fff; border: 1px solid var(--hairline); display: grid; place-items: center; flex-shrink: 0; }
+  .fin-pay-name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); }
+  .fin-pay-meta { font-size: var(--fs-xs); color: var(--mute); margin-top: 2px; }
+  .fin-edit { margin-left: auto; background: var(--canvas); border: 1px solid var(--hairline); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--charcoal); padding: 8px 16px; border-radius: 8px; }
+  .fin-edit:hover { background: var(--surface-soft); }
+  .fin-table { width: 100%; border-collapse: collapse; }
+  .fin-table th { text-align: left; font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: .4px; text-transform: uppercase; color: var(--mute); padding: 10px 14px; background: var(--surface-soft); }
+  .fin-table th.r, .fin-table td.r { text-align: right; }
+  .fin-table td { padding: 14px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-sm); color: var(--charcoal); }
+  .fin-status { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 3px 12px; border-radius: 20px; }
+  .fin-status.open { background: var(--soft-cloud); color: var(--charcoal); }
+  .fin-status.paid { background: #E4F1D8; color: #3d6416; }
+  .fin-mc { display: inline-flex; align-items: center; gap: 8px; }
+  .fin-mc-ic { width: 22px; height: 15px; border-radius: 3px; background: #fff; border: 1px solid var(--hairline); display: grid; place-items: center; }
+  .fin-dl { color: var(--primary); font-weight: var(--fw-semibold); }
+  .fin-total { color: var(--ink); font-weight: var(--fw-semibold); }
+  .fin-total .cur { color: var(--mute); font-weight: var(--fw-normal); }
+  .fin-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+  .fin-showing { font-size: var(--fs-sm); color: var(--mute); }
+  .fin-next { background: var(--canvas); border: 1px solid var(--hairline); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--charcoal); padding: 8px 18px; border-radius: 8px; }
+  .fin-next:hover { background: var(--surface-soft); }
+  .fin-empty { color: var(--mute); }
+
+  /* ===== PESSOAS & PERMISSÕES ===== */
+  .peo-inner { max-width: 1180px; }
+  .peo-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--hairline); margin: 22px 0 20px; }
+  .peo-tab { position: relative; padding: 10px 12px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--mute); background: none; border: none; white-space: nowrap; }
+  .peo-tab.active { color: var(--ink); font-weight: var(--fw-semibold); }
+  .peo-tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--primary); }
+  .peo-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .peo-toolbar .spacer { flex: 1; }
+  .peo-table-wrap { overflow-x: auto; }
+  .peo-search { display: flex; align-items: center; gap: 8px; width: 300px; height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 20px; color: var(--mute); }
+  .peo-search:focus-within { border-color: var(--primary); }
+  .peo-search input { border: none; outline: none; background: none; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); width: 100%; }
+  .peo-csv { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 20px; border: 1px solid var(--hairline); background: var(--surface-soft); color: var(--charcoal); font-size: var(--fs-sm); font-weight: var(--fw-semibold); white-space: nowrap; }
+  .peo-csv:hover { background: #ececec; }
+  .peo-invite { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 18px; border-radius: 20px; border: none; background: var(--primary); color: #fff; font-size: var(--fs-sm); font-weight: var(--fw-bold); white-space: nowrap; }
+  .peo-invite:hover { filter: brightness(0.97); }
+  .peo-table th:first-child, .peo-table td:first-child { padding-left: 4px; }
+  .peo-table th { white-space: nowrap; }
+  .peo-person { display: flex; align-items: center; gap: 12px; }
+  .peo-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .peo-name-wrap .peo-name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .peo-name-wrap .peo-email { font-size: var(--fs-xs); color: var(--mute); margin-top: 1px; }
+  .peo-you-tag { font-size: var(--fs-micro); font-weight: var(--fw-bold); color: var(--primary); background: var(--orange-soft); padding: 2px 7px; border-radius: 6px; }
+  .peo-role-btn { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--charcoal); padding: 4px 2px; white-space: nowrap; }
+  .peo-role-btn:hover { color: var(--ink); }
+  .peo-role-btn svg { color: var(--mute); }
+  .peo-check { color: #3d6416; display: inline-flex; }
+  .peo-more { background: none; border: none; color: var(--mute); width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+  .peo-more:hover { background: var(--soft-cloud); color: var(--charcoal); }
+  .peo-role-name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); white-space: nowrap; }
+  .peo-roles-table td.rep-cell { white-space: normal; }
+  .peo-roles-table td.r { white-space: nowrap; }
+
+  /* ===== ESTATÍSTICAS DE USO ===== */
+  .stat-inner { max-width: 1400px; }
+  .stat-h1-row { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  .stat-h1-row h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--ink); }
+  .stat-beta { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: #8a6a12; background: #FCEFC9; padding: 2px 8px; border-radius: 6px; }
+  .stat-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--hairline); margin-bottom: 20px; }
+  .stat-tab { position: relative; padding: 10px 12px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--mute); background: none; border: none; white-space: nowrap; }
+  .stat-tab.active { color: var(--ink); font-weight: var(--fw-semibold); }
+  .stat-tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--primary); }
+  .stat-toolbar { display: flex; align-items: center; gap: 12px; row-gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat-toolbar .spacer { flex: 1; }
+  .stat-search { display: flex; align-items: center; gap: 8px; width: 260px; min-width: 180px; flex-shrink: 0; height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 20px; color: var(--mute); }
+  .stat-search:focus-within { border-color: var(--primary); }
+  .stat-search input { border: none; outline: none; background: none; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); width: 100%; }
+  .stat-tagfilter { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: none; border: none; white-space: nowrap; }
+  .stat-updated { font-size: var(--fs-xs); color: var(--mute); white-space: nowrap; }
+  .stat-dl { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 20px; border: 1px solid var(--hairline); background: var(--surface-soft); color: var(--charcoal); font-size: var(--fs-sm); font-weight: var(--fw-semibold); white-space: nowrap; }
+  .stat-dl:hover { background: #ececec; }
+  .stat-table-wrap { overflow-x: auto; }
+  .stat-table th { white-space: nowrap; }
+  .stat-table th .th-sort { color: var(--mute); display: inline-flex; margin-left: 4px; vertical-align: -2px; }
+  .stat-pipe { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .stat-pipe-ic { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
+  .stat-pipe-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--ink); }
+  .stat-addtag { color: var(--primary); font-weight: var(--fw-semibold); font-size: var(--fs-sm); white-space: nowrap; }
+  .stat-addtag:hover { text-decoration: underline; }
+  .stat-creator { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .stat-creator-ic { width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; flex-shrink: 0; }
+  .stat-creator-ic.pending { background: var(--soft-cloud); color: var(--mute); }
+  .stat-creator.pending-name { color: var(--mute); }
+  .stat-stale { color: #c0201f; font-weight: var(--fw-semibold); white-space: nowrap; }
+  .stat-check { color: #3d6416; display: inline-flex; }
+  .stat-empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--mute); text-align: center; }
+  .stat-empty[hidden] { display: none; }
+  .stat-empty .pe-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--charcoal); }
+  .stat-empty .pe-sub { font-size: var(--fs-xs); color: var(--mute); }
+
+  /* Créditos de IA */
+  .ia-toolbar { display: flex; align-items: center; gap: 12px; row-gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .ia-toolbar .spacer { flex: 1; }
+  .ia-period { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: none; border: none; white-space: nowrap; }
+  .ia-period svg { color: var(--mute); }
+  .ia-range { font-size: var(--fs-xs); color: var(--mute); white-space: nowrap; }
+  .ia-bigcard { background: var(--surface-soft); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
+  .ia-bigcard .ia-card-label { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 10px; }
+  .ia-bigcard .ia-card-num { font-size: var(--fs-6xl); font-weight: var(--fw-bold); color: var(--mute); }
+  .ia-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 34px; }
+  .ia-card { background: var(--surface-soft); border: 1px solid var(--hairline); border-radius: 12px; padding: 18px 22px; }
+  .ia-card .ia-card-label { display: flex; align-items: center; gap: 7px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 8px; }
+  .ia-card .ia-card-label .q { color: var(--mute); display: inline-flex; }
+  .ia-card .ia-card-sub { font-size: var(--fs-sm); color: var(--mute); }
+  .ia-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .ia-detail-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); }
+  .ia-detail-head .spacer { flex: 1; }
+  .ia-search { display: flex; align-items: center; gap: 8px; width: 260px; min-width: 180px; flex-shrink: 0; height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 20px; color: var(--mute); }
+  .ia-search:focus-within { border-color: var(--primary); }
+  .ia-search input { border: none; outline: none; background: none; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); width: 100%; }
+  .ia-filters { display: flex; align-items: center; gap: 22px; row-gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .ia-filter { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: none; border: none; white-space: nowrap; }
+  .ia-filter svg { color: var(--mute); }
+  .ia-table th .th-sort { color: var(--mute); display: inline-flex; margin-left: 4px; vertical-align: -2px; }
+  .ia-new-tag { font-size: var(--fs-micro); font-weight: var(--fw-bold); color: var(--primary); background: var(--orange-soft); padding: 1px 6px; border-radius: 5px; margin-left: 6px; vertical-align: 1px; }
+  .ia-noresult { padding: 22px 14px; font-size: var(--fs-sm); color: #c0201f; border-bottom: 1px solid var(--hairline); }
+  .ia-foot { display: flex; align-items: center; background: var(--surface-soft); font-size: var(--fs-sm); color: var(--charcoal); padding: 12px 14px; }
+  .ia-foot .iaf-count { flex: 1; }
+
+  /* Automações */
+  .au-updated { font-size: var(--fs-xs); color: var(--mute); text-align: right; margin-bottom: 12px; }
+  .au-usage-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; }
+  .au-usage-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .au-usage-label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); }
+  .au-usage-num { font-size: var(--fs-5xl); font-weight: var(--fw-bold); color: var(--ink); }
+  .au-usage-quota { font-size: var(--fs-sm); color: var(--mute); }
+  .au-bar { height: 8px; border-radius: 4px; background: var(--soft-cloud); overflow: hidden; }
+  .au-bar span { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
+  .au-usage-pct { font-size: var(--fs-2xs); color: var(--mute); margin-top: 6px; }
+  .au-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 22px; margin-bottom: 24px; }
+  .au-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .au-card-title { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); }
+  .au-legend { display: flex; align-items: center; gap: 16px; margin-left: auto; font-size: var(--fs-2xs); color: var(--mute); }
+  .au-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .au-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .au-chart { display: flex; align-items: flex-end; gap: 8px; height: 240px; border-bottom: 1px solid var(--hairline); position: relative; padding-top: 10px; }
+  .au-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .au-col-val { font-size: var(--fs-2xs); color: var(--mute); margin-bottom: 4px; }
+  .au-col-bar { width: 78%; background: #FDBE8C; border-radius: 3px 3px 0 0; min-height: 2px; }
+  .au-xlabels { display: flex; gap: 8px; margin-top: 8px; }
+  .au-xlabel { flex: 1; text-align: center; font-size: var(--fs-2xs); color: var(--mute); }
+  .au-hbar-row { display: flex; align-items: center; gap: 14px; }
+  .au-hbar-name { width: 120px; text-align: right; font-size: var(--fs-xs); color: var(--charcoal); flex-shrink: 0; }
+  .au-hbar-track { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .au-hbar-fill { height: 26px; background: #FDBE8C; border-radius: 0 4px 4px 0; }
+  .au-hbar-val { font-size: var(--fs-xs); color: var(--charcoal); }
+  .au-hbar-axis { display: flex; justify-content: space-between; margin: 12px 0 0 134px; font-size: var(--fs-2xs); color: var(--mute); }
+  .au-filters { display: flex; align-items: center; gap: 20px; row-gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .au-filter { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: none; border: none; white-space: nowrap; }
+  .au-filter b { color: var(--primary); font-weight: var(--fw-semibold); }
+  .au-filter svg { color: var(--mute); }
+  .au-status { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: #3d6416; }
+  .api-empty-msg { text-align: center; padding: 60px 20px; font-size: var(--fs-sm); color: var(--mute); }
+
+  /* Logs de auditoria */
+  .aud-inner { max-width: 1400px; }
+  .aud-sub { font-size: var(--fs-sm); color: var(--mute); margin: 0 0 22px; }
+  .aud-table td { vertical-align: top; }
+  .aud-user-name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); }
+  .aud-user-email { font-size: var(--fs-xs); color: var(--mute); margin-top: 1px; }
+  .aud-action { color: var(--charcoal); }
+  .aud-date { color: var(--mute); white-space: nowrap; }
+
+  /* Configurações de email */
+  .em-inner { max-width: 900px; }
+  .em-h1 { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 26px; }
+  .em-h1 .q { color: var(--mute); display: inline-flex; }
+  .em-sub-title { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 6px; }
+  .em-sub-desc { font-size: var(--fs-sm); color: var(--mute); margin: 0 0 16px; }
+  .em-config-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 20px; border: none; background: var(--soft-cloud); color: var(--charcoal); font-size: var(--fs-sm); font-weight: var(--fw-semibold); white-space: nowrap; }
+  .em-config-btn:hover { background: #ececec; }
+  .em-config-btn svg { color: var(--mute); }
+  .em-divider { height: 1px; background: var(--hairline); margin: 30px 0 0; }
+
+  /* Modal configurar servidor SMTP */
+  .emm-overlay { position: fixed; inset: 0; background: rgba(17,17,17,0.42); display: none; align-items: center; justify-content: center; z-index: 90; padding: 20px; }
+  .emm-overlay.show { display: flex; }
+  .emm-modal { width: 560px; max-width: 100%; max-height: calc(100vh - 40px); background: var(--canvas); border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.28); overflow: hidden; display: flex; flex-direction: column; }
+  .emm-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 28px 8px; }
+  .emm-head h2 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--ink); }
+  .emm-close { color: var(--mute); background: none; border: none; width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; }
+  .emm-close:hover { background: var(--soft-cloud); }
+  .emm-body { padding: 10px 28px 8px; overflow-y: auto; }
+  .emm-fld { margin-bottom: 20px; }
+  .emm-label { display: flex; align-items: center; gap: 7px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 8px; }
+  .emm-label .q { color: var(--mute); display: inline-flex; }
+  .emm-hint { font-size: var(--fs-xs); color: var(--mute); margin: -4px 0 8px; }
+  .emm-input-wrap { position: relative; }
+  .emm-input { width: 100%; height: 46px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 8px; font-family: inherit; font-size: var(--fs-base); color: var(--ink); background: var(--canvas); }
+  .emm-input::placeholder { color: var(--mute); }
+  .emm-input:focus { outline: none; border-color: var(--primary); }
+  .emm-eye { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); background: none; border: none; color: var(--mute); display: grid; place-items: center; padding: 4px; }
+  .emm-eye:hover { color: var(--charcoal); }
+  .emm-relay { display: flex; align-items: center; gap: 12px; font-size: var(--fs-sm); color: var(--charcoal); margin-bottom: 6px; }
+  .emm-relay a { color: var(--primary); font-weight: var(--fw-semibold); }
+  .emm-foot { display: flex; justify-content: flex-end; padding: 16px 28px 22px; border-top: 1px solid var(--hairline); }
+  .emm-save { height: 40px; padding: 0 24px; border-radius: 20px; border: none; background: var(--primary); color: #fff; font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  .emm-save:hover { filter: brightness(0.97); }
+
+  /* API e Webhooks */
+  .soon-tag { font-size: var(--fs-micro); font-weight: var(--fw-bold); color: var(--primary); background: var(--orange-soft); padding: 2px 8px; border-radius: 6px; margin-left: 8px; white-space: nowrap; }
+  .api-soon-note { display: flex; align-items: center; gap: 9px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); background: var(--surface-soft); border: 1px solid var(--hairline); border-radius: 10px; padding: 12px 16px; margin: 10px 0 20px; }
+  .api-soon-note svg { color: var(--mute); flex-shrink: 0; }
+  .api-locked { opacity: 0.55; pointer-events: none; user-select: none; filter: grayscale(0.4); }
+  .api-inner { max-width: 1180px; }
+  .api-h1 { font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 4px; }
+  .api-sub { font-size: var(--fs-sm); color: var(--mute); margin: 0 0 22px; }
+  .api-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .api-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 18px 20px; }
+  .api-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .api-card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); }
+  .api-copy-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 6px 12px; border-radius: 8px; }
+  .api-copy-btn:hover { background: var(--surface-soft); }
+  .api-flabel { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--charcoal); margin: 12px 0 6px; }
+  .api-url { display: flex; align-items: center; gap: 8px; border: 1px solid var(--hairline); border-radius: 8px; padding: 0 12px; height: 40px; }
+  .api-url input { flex: 1; border: none; outline: none; background: none; font-family: inherit; font-size: var(--fs-sm); color: var(--ink); min-width: 0; }
+  .api-url .api-url-copy { background: none; border: none; color: var(--mute); display: grid; place-items: center; padding: 2px; }
+  .api-url .api-url-copy:hover { color: var(--primary); }
+  .api-vpill { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--charcoal); background: var(--surface-soft); border: 1px solid var(--hairline); padding: 4px 12px; border-radius: 8px; }
+  .api-note { font-size: var(--fs-xs); color: var(--mute); margin: 14px 0 8px; line-height: var(--lh-normal); }
+  .api-link { color: var(--primary); font-weight: var(--fw-semibold); font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 5px; }
+  .api-link:hover { text-decoration: underline; }
+  .api-badge-active { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: #3d6416; background: #E4F1D8; padding: 3px 10px; border-radius: 20px; }
+  .api-meta-label { font-size: var(--fs-xs); color: var(--mute); margin-top: 14px; }
+  .api-meta-val { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--ink); margin-top: 2px; }
+  .api-usage-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .api-usage-bar .au-bar { flex: 1; }
+  .api-usage-pct { font-size: var(--fs-xs); color: var(--mute); }
+  .api-help-text { font-size: var(--fs-sm); color: var(--charcoal); line-height: var(--lh-normal); margin: 0 0 14px; }
+  .api-help-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--primary); font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 9px 14px; border-radius: 8px; }
+  .api-help-btn:hover { background: var(--orange-soft); }
+  .api-info-box { display: flex; gap: 10px; background: var(--orange-soft); border-radius: 8px; padding: 12px 14px; margin-top: 16px; font-size: var(--fs-xs); color: #8a4a00; line-height: var(--lh-normal); }
+  .api-info-box .aib-ic { color: var(--primary); flex-shrink: 0; display: inline-flex; margin-top: 1px; }
+  .api-keys-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 22px; }
+  .api-keys-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+  .api-keys-head h2 { margin: 0 0 4px; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); }
+  .api-keys-head p { margin: 0; font-size: var(--fs-sm); color: var(--mute); }
+  .api-keys-head .spacer { flex: 1; }
+  .api-newkey { display: inline-flex; align-items: center; gap: 7px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-sm); font-weight: var(--fw-bold); padding: 10px 16px; border-radius: 8px; white-space: nowrap; }
+  .api-newkey:hover { filter: brightness(0.97); }
+  .api-key-name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); }
+  .api-key-desc { font-size: var(--fs-xs); color: var(--mute); margin-top: 1px; }
+  .api-perm { display: inline-block; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 4px 10px; border-radius: 6px; white-space: nowrap; }
+  .api-perm.read { background: var(--soft-cloud); color: var(--charcoal); }
+  .api-perm.write { background: var(--orange-soft); color: var(--primary); }
+  .api-actions { display: inline-flex; align-items: center; gap: 14px; }
+  .api-actions button { background: none; border: none; color: var(--mute); display: grid; place-items: center; padding: 2px; }
+  .api-actions button:hover { color: var(--primary); }
+  .api-tip { display: flex; align-items: center; gap: 10px; background: var(--surface-soft); border: 1px solid var(--hairline); border-radius: 8px; padding: 14px 16px; margin-top: 20px; font-size: var(--fs-xs); color: var(--charcoal); }
+  .api-tip .atip-ic { color: var(--primary); flex-shrink: 0; display: inline-flex; }
+  .api-tip b { font-weight: var(--fw-bold); }
+
+  /* Modal Nova chave de API */
+  .ak-modal { width: 620px; }
+  .ak-body label.ak-flabel { display: block; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 8px; }
+  .ak-fld { margin-bottom: 18px; }
+  .ak-input, .ak-textarea, .ak-select { width: 100%; padding: 11px 14px; border: 1px solid var(--hairline); border-radius: 8px; font-family: inherit; font-size: var(--fs-base); color: var(--ink); background: var(--canvas); }
+  .ak-input::placeholder, .ak-textarea::placeholder { color: var(--mute); }
+  .ak-input:focus, .ak-textarea:focus, .ak-select:focus { outline: none; border-color: var(--primary); }
+  .ak-textarea { resize: vertical; min-height: 74px; }
+  .ak-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23707072' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
+  .ak-hint { font-size: var(--fs-xs); color: var(--mute); margin: 6px 0 0; }
+  .ak-scope-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 20px; border: 1px solid var(--hairline); border-radius: 10px; padding: 16px 18px; }
+  .ak-scope-col h4 { margin: 0 0 10px; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); }
+  .ak-check { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; font-size: var(--fs-sm); color: var(--charcoal); }
+  .ak-check input { width: 15px; height: 15px; accent-color: var(--primary); flex-shrink: 0; }
+  .ak-check.danger { color: #c0201f; font-weight: var(--fw-semibold); }
+  .ak-check.danger input { accent-color: #c0201f; }
+  .ak-danger-note { font-size: var(--fs-2xs); color: var(--mute); margin: -4px 0 0 24px; }
+  .ak-warn { display: flex; align-items: center; gap: 10px; background: #FDF4E3; border: 1px solid #F4E0BC; border-radius: 8px; padding: 12px 14px; margin-top: 6px; font-size: var(--fs-xs); color: #8a6a12; }
+  .ak-warn .akw-ic { color: #C99A00; flex-shrink: 0; display: inline-flex; }
+  .ak-foot { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--hairline); }
+  .ak-cancel { height: 40px; padding: 0 20px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+  .ak-cancel:hover { background: var(--surface-soft); }
+  .ak-create { height: 40px; padding: 0 20px; border-radius: 8px; border: none; background: var(--primary); color: #fff; font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  .ak-create:hover { filter: brightness(0.97); }
+
+  .user-wrap { position: relative; }
+  .user-trigger { display: flex; align-items: center; gap: 9px; background: none; border: none; padding: 4px 6px; border-radius: 10px; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--charcoal); cursor: pointer; }
+  .user-trigger:hover { background: var(--soft-cloud); }
+  .user-trigger .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg,#f0a868,#c76b2e); display: grid; place-items: center; color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .user-menu { position: absolute; top: calc(100% + 8px); right: 0; width: 268px; z-index: 95; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: 0 16px 44px rgba(0,0,0,0.16); padding: 8px; display: none; }
+  .user-menu.show { display: block; }
+  .um-head { display: flex; align-items: flex-start; gap: 12px; padding: 12px 12px 14px; }
+  .um-head .um-info { flex: 1; min-width: 0; }
+  .um-name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); }
+  .um-mail { font-size: var(--fs-xs); color: var(--mute); margin: 2px 0 8px; word-break: break-all; }
+  .um-role { display: inline-block; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--primary); background: var(--orange-soft); padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+  .um-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg,#f0a868,#c76b2e); display: grid; place-items: center; color: #fff; font-size: var(--fs-base); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .um-divider { height: 1px; background: var(--hairline); margin: 6px 4px; }
+  .um-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 8px; background: none; border: none; text-align: left; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); cursor: pointer; text-decoration: none; }
+  .um-item:hover { background: var(--soft-cloud); color: var(--ink); }
+  .um-item .umi-ic { color: var(--mute); display: inline-flex; flex-shrink: 0; }
+  .um-item:hover .umi-ic { color: var(--primary); }
+
+  .notif-pop { position: fixed; top: 60px; right: 20px; width: 360px; max-width: calc(100vw - 40px); max-height: calc(100vh - 90px); background: var(--canvas); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.18); z-index: 200; display: none; flex-direction: column; overflow: hidden; }
+  .notif-pop.show { display: flex; }
+  .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
+  .notif-head h3 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); }
+  .notif-markall { background: none; border: none; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--primary); cursor: pointer; }
+  .notif-markall:hover { text-decoration: underline; }
+  .notif-list { overflow-y: scroll; overflow-x: hidden; }
+  .notif-list::-webkit-scrollbar { width: 10px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: #d8d2ca; border-radius: 6px; border: 2px solid var(--canvas); }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+  .notif-list { scrollbar-width: thin; scrollbar-color: #d8d2ca transparent; }
+  .notif-item { padding: 14px 18px; border-bottom: 1px solid var(--hairline); }
+  .notif-item:hover { background: var(--soft-cloud); }
+  .notif-item .ni-text { font-size: var(--fs-sm); color: var(--ink); line-height: var(--lh-snug); }
+  .notif-item .ni-date { font-size: var(--fs-xs); color: var(--mute); margin-top: 4px; }
+  .notif-foot { padding: 14px 18px; flex-shrink: 0; }
+  .notif-seeall { display: block; width: 100%; text-align: center; border: 1px solid var(--primary); color: var(--primary); background: var(--canvas); border-radius: 22px; padding: 11px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; }
+  .notif-seeall:hover { background: var(--orange-soft); }
+  h1, h2, h3, h4, h5, h6 { font-family: "Inter Tight", system-ui, sans-serif; letter-spacing: -0.01em; }
+</style>
+
+  <style id="responsive-safety">
+  /* ===== Responsive safety net — desktop-first, no redesign ===== */
+  html, body { overflow-x: auto; }
+  img, svg, video, canvas { max-width: 100%; }
+  /* below the floor: keep the desktop layout intact, scroll instead of crushing */
+  @media (max-width: 1023px){
+    body { min-width: 1024px; }
+  }
+  /* wide modal/overlay panels never exceed the viewport */
+  .emm-modal { max-width: calc(100vw - 24px) !important; max-height: calc(100vh - 24px) !important; overflow: auto; }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <a class="brand" href="dashboard-home.html" aria-label="Voltar para a tela inicial" style="text-decoration:none;color:inherit;">
+      <span class="logo" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M9 3c-.6 0-1 .4-1 1v5.5c0 1.4-.5 2.3-1.4 3.3C5.5 14 5 15.2 5 17v3a1 1 0 0 0 2 0v-3c0-1.2.3-1.8 1.1-2.6.5-.5.9-1 1.2-1.6V21a1 1 0 0 0 2 0v-7h1v7a1 1 0 0 0 2 0V9.5c.6.4 1.3.6 2 .6a1 1 0 0 0 0-2c-.7 0-1.3-.3-1.7-.8l-1.6-2.1C13.7 4 12.4 3 11 3H9Z" fill="#FF7200"/></svg></span>
+      Giraffe
+    </a>
+    <span class="divider"></span>
+    <span class="title">Painel administrativo</span>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="notifBtn" aria-label="Notificações">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 1 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="badge">9+</span>
+    </button>
+    <button class="icon-btn" aria-label="Ajuda">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg>
+    </button>
+    <div class="user-wrap">
+      <button class="user-trigger" id="userTrigger" aria-haspopup="true" aria-expanded="false">
+        <span>Giraffe Marketing</span>
+        <span class="avatar" aria-hidden="true">GM</span>
+      </button>
+      <div class="user-menu" id="userMenu" role="menu">
+        <div class="um-head">
+          <div class="um-info">
+            <div class="um-name">Giraffe Marketing</div>
+            <div class="um-mail">martinsjunior089@gmail.com</div>
+            <span class="um-role">Super Administrador</span>
+          </div>
+          <span class="um-avatar" aria-hidden="true">GM</span>
+        </div>
+        <a class="um-item" href="meu-perfil.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" stroke-linecap="round"/></svg></span>Meu perfil</a>
+        <a class="um-item" href="relatorios-empresa.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>Relatórios dos pipes</a>
+        <a class="um-item" href="painel-administrativo.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.5 1Z"/></svg></span>Painel administrativo</a>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3ZM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z" stroke-linejoin="round"/></svg></span>Assistentes de IA</button>
+        <div class="um-divider"></div>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M17 7H4M4 7l4-4M4 7l4 4M7 17h13M20 17l-4-4M20 17l-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Trocar de empresa</button>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="adm-wrap">
+    <aside class="adm-side">
+      <button class="adm-nav-item active" id="navGeral"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.5 1Z"/></svg></span>Geral</button>
+      <button class="adm-nav-item" id="navIA"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z" stroke-linejoin="round"/></svg></span>Configurações de IA</button>
+      <button class="adm-nav-item" id="navFin"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h4" stroke-linecap="round"/></svg></span>Financeiro</button>
+      <button class="adm-nav-item" id="navPeople"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5M16 11l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Pessoas &amp; Permissões</button>
+      <button class="adm-nav-item" id="navStats"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Estatísticas de uso</button>
+      <button class="adm-nav-item" id="navAudit"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2M3 12a9 9 0 0 1 3-6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Logs de auditoria</button>
+      <div class="adm-group-label">Apps e canais</div>
+      <button class="adm-nav-item" id="navEmail"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6" stroke-linejoin="round"/></svg></span>Configurações de email</button>
+      <button class="adm-nav-item" id="navApi"><span class="ani"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9l-3 3 3 3M16 9l3 3-3 3M13 6l-2 12" stroke-linecap="round" stroke-linejoin="round"/></svg></span>API<span class="soon-tag">Em breve</span></button>
+    </aside>
+
+    <div class="adm-main">
+      <div class="adm-inner" id="pageGeral">
+        <h1 class="adm-h1">Configurações gerais</h1>
+
+        <div class="adm-field">
+          <div class="adm-label">Nome da empresa</div>
+          <input class="adm-input" type="text" value="Giraffe Marketing" aria-label="Nome da empresa" />
+        </div>
+
+        <div class="adm-field">
+          <div class="adm-label">Logo da empresa</div>
+          <p class="adm-hint">Você pode usar arquivos JPG, GIF ou PNG. Tamanho máximo: 2MB</p>
+          <div class="logo-row">
+            <span class="logo-box" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4" stroke-linejoin="round"/></svg></span>
+            <div class="logo-actions">
+              <button class="upload-btn">Subir imagem</button>
+              <button class="remove-link">Remover</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="adm-field">
+          <div class="adm-label">Customização <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+          <label class="check-row"><input type="checkbox" checked />Mostrar logo do Giraffe.</label>
+          <label class="check-row"><input type="checkbox" checked />Mostrar selo "Powered by Giraffe" nos formulários.</label>
+        </div>
+
+        <div class="promo">
+          <p>🚀 Atualize seu plano para desbloquear recursos avançados e aumentar sua eficiência.</p>
+          <a href="#">Atualize agora</a>
+        </div>
+
+        <div class="actions">
+          <button class="save-btn">Salvar</button>
+          <button class="cancel-btn">Cancelar</button>
+        </div>
+
+        <div class="sec-divider"></div>
+
+        <h2 class="adm-h2">Funcionalidades</h2>
+        <div class="sub-label">Pipes</div>
+        <div class="toggle-row"><button class="toggle" aria-pressed="true" aria-label="Habilitar marcadores de tempo"></button>Habilitar marcadores de tempo nos cards. <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+        <div class="toggle-row"><button class="toggle" aria-pressed="false" aria-label="Novos pipes privados por padrão"></button>Novos pipes são privados por padrão. <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+
+        <div class="danger-box">
+          <div class="db-left">
+            <span class="db-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V5a2 2 0 0 1 2-2h9l3 3v3M3 21h11M8 21v-6h6v6M18 14v7M14.5 17.5h7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <p>Excluir Giraffe Marketing. Esta ação é permanente e não pode ser desfeita.</p>
+          </div>
+          <button class="danger-btn">Excluir empresa</button>
+        </div>
+      </div>
+
+      <!-- CONFIGURAÇÕES DE IA -->
+      <div class="ai-inner" id="pageIA" hidden>
+        <h1 class="adm-h1">Configurações de IA <span class="q" style="color:var(--mute);display:inline-flex;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></h1>
+        <div class="ai-tabs">
+          <button class="ai-tab active" id="aiTabModelo">Traga seu próprio modelo</button>
+          <button class="ai-tab" id="aiTabAtivacao">Ativação da IA</button>
+          <a href="#" class="ai-tabs-right" id="aiCreditsLink">Ver uso de créditos de IA</a>
+        </div>
+
+        <div id="aiPaneModelo">
+        <div class="ai-block-title">Modelo padrão</div>
+        <p class="ai-block-sub">Este modelo é usado para agentes de IA e automações de IA. <a href="#">Saiba mais.</a></p>
+        <div class="ai-card">
+          <div class="ai-model-row">
+            <span class="ai-model-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3ZM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z" stroke-linejoin="round"/></svg></span>
+            <div>
+              <div class="ai-model-name" id="aiDefaultName">Giraffe AI <span class="q" style="color:var(--mute);display:inline-flex;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+              <div class="ai-model-meta" id="aiDefaultMeta">Modelos dinâmicos</div>
+              <span class="ai-active">Ativo</span>
+            </div>
+            <span style="flex:1;"></span>
+            <button class="ai-change" id="aiChangeBtn">Alterar modelo <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="ai-change-menu" id="aiChangeMenu" hidden>
+              <button class="ai-change-opt sel" data-model="giraffe"><span class="pv-ic" style="color:#7B4DD8;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z" stroke-linejoin="round"/></svg></span>Giraffe AI<span class="ck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+              <button class="ai-change-opt" data-model="openai"><span class="pv-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8" stroke-linecap="round"/></svg></span>OpenAI<span class="ck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-block-title">Modelos disponíveis <span class="spacer"></span><button class="ai-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Adicionar novo</button></div>
+        <p class="ai-block-sub">Modelos disponíveis para serem selecionados nos comportamentos do agente ou definidos como padrão. <a href="#">Saiba mais.</a></p>
+        <div class="ai-avail">
+          <span class="av-cev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="av-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z" stroke-linejoin="round"/></svg></span>
+          <span class="av-name">Giraffe AI</span>
+        </div>
+
+        <p class="ai-foot-note">Dados da empresa nunca são usados para treinar modelos. Saiba como nossos <a href="#">Termos de Uso de IA</a> se aplicam.</p>
+        </div>
+
+        <div id="aiPaneAtivacao" hidden>
+          <div class="ai-activ-row">
+            <div class="ai-activ-txt">
+              <div class="ai-activ-title">Recursos de IA</div>
+              <p class="ai-activ-sub">Poderá ser ativado ou desativado a qualquer momento. Ao ativar, você concorda com os Termos de Uso da IA disponíveis no Anexo V. Para mais informações, acesse nossos <a href="#">Termos.</a></p>
+            </div>
+            <button class="toggle" aria-pressed="true" aria-label="Recursos de IA"></button>
+          </div>
+          <div class="ai-activ-row">
+            <div class="ai-activ-txt">
+              <div class="ai-activ-title">Agentes</div>
+              <p class="ai-activ-sub">Automatize a execução de tarefas avançadas diretamente em seus pipes.</p>
+            </div>
+            <button class="toggle" aria-pressed="true" aria-label="Agentes"></button>
+          </div>
+          <div class="ai-activ-row">
+            <div class="ai-activ-txt">
+              <div class="ai-activ-title">Assistentes</div>
+              <p class="ai-activ-sub">Responda perguntas usando o contexto do seu negócio. <a href="#">Gerencie seus Assistentes de IA.</a></p>
+            </div>
+            <button class="toggle" aria-pressed="true" aria-label="Assistentes"></button>
+          </div>
+          <div class="ai-activ-row">
+            <div class="ai-activ-txt">
+              <div class="ai-activ-title">Copilot</div>
+              <p class="ai-activ-sub">Acelere a construção de processos e realize análises dos seus dados.</p>
+            </div>
+            <button class="toggle" aria-pressed="true" aria-label="Copilot"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINANCEIRO -->
+      <div class="fin-inner" id="pageFin" hidden>
+        <div class="fin-top">
+          <div class="fin-plan">
+            <div class="fin-cap">Plano atual</div>
+            <h2 class="fin-plan-name">Plano Empresarial Mensal</h2>
+            <p class="fin-plan-price">$156.00 por mês</p>
+            <p class="fin-plan-qty">Quantidade: <strong>6 usuários</strong> a $26.00 cada</p>
+            <div class="fin-addons">Complementos incluídos:</div>
+            <p class="fin-renews">Seu plano renova em 24 de julho de 2026 com um total de <strong>$156.00</strong>.</p>
+            <div class="fin-actions">
+              <button class="fin-upgrade">Atualizar plano</button>
+              <button class="fin-cancel">Cancelar</button>
+            </div>
+          </div>
+          <div class="fin-usage">
+            <div class="fin-cap">Uso do plano</div>
+            <div class="fin-usage-month">julho/2026</div>
+            <div class="fin-usage-row"><span>Execuções de automação</span><span class="fu-num">5</span></div>
+            <div class="fin-usage-row"><span>Chamadas de API</span><span class="fu-num">0</span></div>
+          </div>
+        </div>
+
+        <h3 class="fin-sec-title">Forma de pagamento</h3>
+        <div class="fin-pay">
+          <span class="fin-card-ic"><svg width="22" height="14" viewBox="0 0 24 16" fill="none"><circle cx="9" cy="8" r="6" fill="#EB001B"/><circle cx="15" cy="8" r="6" fill="#F79E1B" fill-opacity="0.85"/></svg></span>
+          <div>
+            <div class="fin-pay-name">Terminado em 5334</div>
+            <div class="fin-pay-meta">Expira em 11/2032 · Daiane Martins</div>
+          </div>
+          <button class="fin-edit">Editar</button>
+        </div>
+
+        <h3 class="fin-sec-title">Faturas</h3>
+        <table class="fin-table">
+          <thead>
+            <tr><th>Número</th><th>Faturado em</th><th>Vencimento</th><th>Forma de pagamento</th><th>Status</th><th class="r">Total</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>587803</td><td class="fin-empty" title="Não informado">—</td><td>29/06/2026</td><td class="fin-empty" title="Não informado">—</td>
+              <td><span class="fin-status open">Em aberto</span></td>
+              <td class="r fin-total">$-22.12 <span class="cur">USD</span></td>
+              <td class="r"><a href="#" class="fin-dl">Baixar</a></td>
+            </tr>
+            <tr>
+              <td>587802</td><td class="fin-empty" title="Não informado">—</td><td>29/06/2026</td><td class="fin-empty" title="Não informado">—</td>
+              <td><span class="fin-status open">Em aberto</span></td>
+              <td class="r fin-total">$-22.12 <span class="cur">USD</span></td>
+              <td class="r"><a href="#" class="fin-dl">Baixar</a></td>
+            </tr>
+            <tr>
+              <td>586581</td><td>24/06/2026</td><td>24/06/2026</td>
+              <td><span class="fin-mc"><span class="fin-mc-ic"><svg width="14" height="9" viewBox="0 0 24 16" fill="none"><circle cx="9" cy="8" r="6" fill="#EB001B"/><circle cx="15" cy="8" r="6" fill="#F79E1B" fill-opacity="0.85"/></svg></span>XXXX-5334</span></td>
+              <td><span class="fin-status paid">Pago</span></td>
+              <td class="r fin-total">$208.00 <span class="cur">USD</span></td>
+              <td class="r"><a href="#" class="fin-dl">Baixar</a></td>
+            </tr>
+            <tr>
+              <td>578798</td><td>24/05/2026</td><td>24/05/2026</td>
+              <td><span class="fin-mc"><span class="fin-mc-ic"><svg width="14" height="9" viewBox="0 0 24 16" fill="none"><circle cx="9" cy="8" r="6" fill="#EB001B"/><circle cx="15" cy="8" r="6" fill="#F79E1B" fill-opacity="0.85"/></svg></span>XXXX-5334</span></td>
+              <td><span class="fin-status paid">Pago</span></td>
+              <td class="r fin-total">$208.00 <span class="cur">USD</span></td>
+              <td class="r"><a href="#" class="fin-dl">Baixar</a></td>
+            </tr>
+            <tr>
+              <td>576943</td><td>15/05/2026</td><td>15/05/2026</td>
+              <td><span class="fin-mc"><span class="fin-mc-ic"><svg width="14" height="9" viewBox="0 0 24 16" fill="none"><circle cx="9" cy="8" r="6" fill="#EB001B"/><circle cx="15" cy="8" r="6" fill="#F79E1B" fill-opacity="0.85"/></svg></span>XXXX-5334</span></td>
+              <td><span class="fin-status paid">Pago</span></td>
+              <td class="r fin-total">$7.93 <span class="cur">USD</span></td>
+              <td class="r"><a href="#" class="fin-dl">Baixar</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="fin-foot">
+          <span class="fin-showing">Mostrando 1 a 5 de 66 resultados</span>
+          <button class="fin-next">Próxima</button>
+        </div>
+      </div>
+
+      <!-- PESSOAS & PERMISSÕES -->
+      <div class="peo-inner" id="pagePeople" hidden>
+        <h1 class="adm-h1" style="margin-bottom:0;">Pessoas &amp; permissões</h1>
+        <div class="peo-tabs">
+          <button class="peo-tab active" id="peoTabPessoas">Pessoas (6)</button>
+          <button class="peo-tab" id="peoTabFuncoes">Funções (5)</button>
+        </div>
+
+        <div id="peoPanePessoas">
+          <div class="peo-toolbar">
+            <div class="peo-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+              <input type="search" placeholder="Pesquisar" aria-label="Pesquisar pessoas" />
+            </div>
+            <span class="spacer"></span>
+            <button class="peo-csv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>Baixar CSV</button>
+            <button class="peo-invite"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.2 2.7-5.4 6-5.4s6 2.2 6 5.4M16 8h5M18.5 5.5v5" stroke-linecap="round"/></svg>Convidar pessoas</button>
+          </div>
+
+          <div class="peo-table-wrap">
+          <table class="fin-table peo-table">
+            <thead>
+              <tr><th>Pessoa</th><th>Função</th><th>Pagante</th><th>2FA</th><th>Último login</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:linear-gradient(135deg,#FF9A4D,#FF7200);">GM</span><div class="peo-name-wrap"><div class="peo-name">Giraffe Marketing <span class="peo-you-tag">Você</span></div><div class="peo-email">daiane.c.silva@hotmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Super Admin <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">06/07/2026 22:37</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:#7B4DD8;">JM</span><div class="peo-name-wrap"><div class="peo-name">Jhenipher martins</div><div class="peo-email">jhenipher.giraffe@gmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Membro da empresa <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">02/07/2026 17:13</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:#2F6FE0;">JP</span><div class="peo-name-wrap"><div class="peo-name">João Pedro Silva Freire</div><div class="peo-email">freiredesign004@gmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Membro da empresa <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">06/07/2026 09:46</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:#C1440E;">NC</span><div class="peo-name-wrap"><div class="peo-name">Naiara Camila da Silva</div><div class="peo-email">na.naiara_@hotmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Membro da empresa <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">06/07/2026 13:43</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:#5B7A2E;">RM</span><div class="peo-name-wrap"><div class="peo-name">Richard Gabriel Martins</div><div class="peo-email">gabriel.martins007w@gmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Membro da empresa <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">06/07/2026 09:14</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="peo-person"><span class="peo-avatar" style="background:#E5326F;">RB</span><div class="peo-name-wrap"><div class="peo-name">Ryan Barbosa Gomes Bantim</div><div class="peo-email">ryanbarbosa459@gmail.com</div></div></div></td>
+                <td><button class="peo-role-btn">Membro da empresa <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
+                <td><span class="peo-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="fin-empty" title="Não habilitado">—</td>
+                <td class="rep-cell">06/03/2026 11:11</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div id="peoPaneFuncoes" hidden>
+          <div class="peo-toolbar">
+            <div class="peo-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+              <input type="search" placeholder="Pesquisar" aria-label="Pesquisar funções" />
+            </div>
+            <span class="spacer"></span>
+            <button class="peo-invite">Criar função</button>
+          </div>
+
+          <div class="peo-table-wrap">
+          <table class="fin-table peo-table peo-roles-table">
+            <thead>
+              <tr><th>Função</th><th>Descrição</th><th class="r">Pessoas</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="peo-role-name">Super Admin</td>
+                <td class="rep-cell">Pode ver/acessar todos os pipes/databases e acessar/gerenciar as configurações da empresa.</td>
+                <td class="r rep-cell">1 Pessoa</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td class="peo-role-name">Admin</td>
+                <td class="rep-cell">Acesso total a todos os pipes. Pode editar as configurações da empresa. Pode adicionar ou remover outras pessoas.</td>
+                <td class="r rep-cell">0 Pessoas</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td class="peo-role-name">Membro</td>
+                <td class="rep-cell">Pode ver e acessar apenas pipes públicos. Pode criar novos pipes.</td>
+                <td class="r rep-cell">5 Pessoas</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td class="peo-role-name">Convidado da Empresa</td>
+                <td class="rep-cell">Só pode ver e criar cards em formulários autorizados. Não pode ver ou editar nenhum card. Pode se tornar um membro criando um pipe ou sendo adicionado a um.</td>
+                <td class="r rep-cell">0 Pessoas</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+              <tr>
+                <td class="peo-role-name">Convidado Externo</td>
+                <td class="rep-cell">Só pode ver e criar cards em formulários autorizados. Não pode ver ou editar nenhum card.</td>
+                <td class="r rep-cell">0 Pessoas</td>
+                <td class="r"><button class="peo-more" aria-label="Mais opções"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIGURAÇÕES DE EMAIL -->
+      <div class="api-inner" id="pageApi" hidden>
+        <h1 class="api-h1">API <span class="soon-tag" style="vertical-align:4px;">Em breve</span></h1>
+        <div class="api-soon-note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke-linecap="round"/></svg>Esta funcionalidade estará disponível em breve. As opções abaixo estão bloqueadas.</div>
+        <div class="api-locked">
+        <p class="api-sub">Conecte o Giraffe CRM a outros sistemas de forma segura.</p>
+
+        <div class="api-cards">
+          <div class="api-card">
+            <div class="api-card-head"><span class="api-card-title">Informações da API</span><button class="api-copy-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copiar</button></div>
+            <div class="api-flabel" style="margin-top:0;">URL base</div>
+            <div class="api-url"><input type="text" value="https://api.giraffecrm.com.br" readonly aria-label="URL base" /><button class="api-url-copy" aria-label="Copiar URL"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div>
+            <div class="api-flabel">Versão atual</div>
+            <span class="api-vpill">v1</span>
+            <p class="api-note">Utilize a URL acima como base para todas as suas requisições à API.</p>
+            <a href="javascript:void(0)" class="api-link">Ver documentação <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </div>
+
+          <div class="api-card">
+            <div class="api-card-head"><span class="api-card-title">Status da API</span><span class="api-badge-active">Ativa</span></div>
+            <div class="api-meta-label" style="margin-top:0;">Última verificação</div>
+            <div class="api-meta-val">Hoje, 14:32</div>
+            <div class="api-meta-label">Taxa de uso (hoje)</div>
+            <div class="api-meta-val">120 / 10.000 requisições</div>
+            <div class="api-usage-bar"><div class="au-bar"><span style="width:1%;"></span></div><span class="api-usage-pct">1%</span></div>
+            <div class="api-meta-label">Limite diário</div>
+            <div class="api-meta-val">10.000 requisições</div>
+          </div>
+        </div>
+
+        <div class="api-keys-card">
+          <div class="api-keys-head">
+            <div><h2>Chaves de API</h2><p>Crie e gerencie chaves para permitir que sistemas externos acessem o Giraffe CRM.</p></div>
+            <span class="spacer"></span>
+            <button class="api-newkey" id="apiNewKeyBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Nova chave</button>
+          </div>
+          <div class="stat-table-wrap">
+          <table class="fin-table stat-table">
+            <thead>
+              <tr><th>Nome da chave</th><th>Permissões</th><th>Criada em</th><th>Último uso</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="api-key-name">Site Institucional</div><div class="api-key-desc">Integração com formulários</div></td>
+                <td><span class="api-perm read">Leitura de dados</span></td>
+                <td class="rep-cell">05/07/2026</td>
+                <td class="rep-cell">Hoje, 14:32</td>
+                <td><span class="api-badge-active">Ativa</span></td>
+                <td><span class="api-actions"><button aria-label="Ver chave"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button><button aria-label="Excluir chave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span></td>
+              </tr>
+              <tr>
+                <td><div class="api-key-name">ERP Financeiro</div><div class="api-key-desc">Sincronização de contratos e faturas</div></td>
+                <td><span class="api-perm write">Leitura e escrita</span></td>
+                <td class="rep-cell">01/07/2026</td>
+                <td class="rep-cell">Ontem, 09:15</td>
+                <td><span class="api-badge-active">Ativa</span></td>
+                <td><span class="api-actions"><button aria-label="Ver chave"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button><button aria-label="Excluir chave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span></td>
+              </tr>
+              <tr>
+                <td><div class="api-key-name">Relatórios Externos</div><div class="api-key-desc">Extração de dados</div></td>
+                <td><span class="api-perm read">Leitura de dados</span></td>
+                <td class="rep-cell">28/06/2026</td>
+                <td class="rep-cell">3 dias atrás</td>
+                <td><span class="api-badge-active">Ativa</span></td>
+                <td><span class="api-actions"><button aria-label="Ver chave"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button><button aria-label="Excluir chave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="api-tip"><span class="atip-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z" stroke-linejoin="round"/></svg></span><span><b>Dica de segurança:</b> Nunca compartilhe suas chaves de API. Revogue imediatamente qualquer chave que não esteja mais em uso.</span></div>
+        </div>
+      </div>
+
+      <!-- CONFIGURAÇÕES DE EMAIL -->
+      <div class="em-inner" id="pageEmail" hidden>
+        <h1 class="em-h1">Configurações de email <span class="q"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></h1>
+        <div class="em-sub-title">Configurar servidor SMTP padrão</div>
+        <p class="em-sub-desc">Envie emails a partir de um domínio personalizado. Este será o servidor padrão.</p>
+        <button class="em-config-btn" id="emConfigBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.5 1Z"/></svg>Configurar servidor</button>
+        <div class="em-divider"></div>
+      </div>
+
+      <!-- LOGS DE AUDITORIA -->
+      <div class="aud-inner" id="pageAudit" hidden>
+        <h1 class="adm-h1" style="margin-bottom:4px;">Logs de auditoria</h1>
+        <p class="aud-sub">Monitore atividades em tempo real dos últimos 30 dias.</p>
+        <div class="peo-search" style="margin-bottom:22px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+          <input type="search" placeholder="Buscar usuário" aria-label="Buscar usuário" />
+        </div>
+        <div class="stat-table-wrap">
+        <table class="fin-table stat-table aud-table">
+          <thead>
+            <tr><th>Usuário</th><th>Ação</th><th>Data <span class="th-sort"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 4v16M8 20l-3-3M8 20l3-3M16 20V4M16 4l-3 3M16 4l3 3" stroke-linecap="round" stroke-linejoin="round"/></svg></span></th></tr>
+          </thead>
+          <tbody>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Removeu a conta de serviço "eeew"</td>
+                <td class="aud-date">7 de julho de 2026 12:06</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Criou a conta de serviço "eeew"</td>
+                <td class="aud-date">7 de julho de 2026 12:06</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Criou o agente de IA "Agente sem título" no pipe "[TP] Tráfego - Matheus"</td>
+                <td class="aud-date">6 de julho de 2026 15:42</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Martins Junior</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Criou o agente de IA "Agente sem título" no pipe "Contratos e Jurídicos"</td>
+                <td class="aud-date">5 de julho de 2026 17:32</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Martins Junior</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Criou o pipe "Teste Empresas"</td>
+                <td class="aud-date">5 de julho de 2026 09:22</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Apagou o pipe "Teste Empresas03"</td>
+                <td class="aud-date">29 de junho de 2026 11:27</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Criou o pipe "Teste Empresas03"</td>
+                <td class="aud-date">29 de junho de 2026 11:18</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Removeu "luknhaday@gmail.com" com a permissão "Membro"</td>
+                <td class="aud-date">29 de junho de 2026 09:59</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Giraffe Marketing</div><div class="aud-user-email">daiane.c.silva@hotmail.com</div></td>
+                <td class="aud-action">Removeu "alexignaciomkt@gmail.com" com a permissão "Super administrador"</td>
+                <td class="aud-date">29 de junho de 2026 09:59</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Alexsandro Ignacio</div><div class="aud-user-email">alexignaciomkt@gmail.com</div></td>
+                <td class="aud-action">Atualizou a automação "Comercial → Criar Card [Onboarding]" no pipe "Contratos e Jurídicos"</td>
+                <td class="aud-date">28 de junho de 2026 14:37</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Alexsandro Ignacio</div><div class="aud-user-email">alexignaciomkt@gmail.com</div></td>
+                <td class="aud-action">Atualizou a automação "Comercial → Criar Card [Onboarding]" no pipe "Contratos e Jurídicos"</td>
+                <td class="aud-date">28 de junho de 2026 14:22</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Alexsandro Ignacio</div><div class="aud-user-email">alexignaciomkt@gmail.com</div></td>
+                <td class="aud-action">Atualizou a automação "Comercial → Criar Card [Onboarding]" no pipe "Contratos e Jurídicos"</td>
+                <td class="aud-date">28 de junho de 2026 14:10</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Alexsandro Ignacio</div><div class="aud-user-email">alexignaciomkt@gmail.com</div></td>
+                <td class="aud-action">Desativou a automação "👋 Onboarding → Distribuir Responsável [3. Materiais]" no pipe "02. Onboarding &amp; Estrutura"</td>
+                <td class="aud-date">28 de junho de 2026 12:51</td>
+              </tr>
+              <tr>
+                <td><div class="aud-user-name">Alexsandro Ignacio</div><div class="aud-user-email">alexignaciomkt@gmail.com</div></td>
+                <td class="aud-action">Criou a automação "Comercial → Criar Card [Onboarding]" no pipe "Contratos e Jurídicos"</td>
+                <td class="aud-date">26 de junho de 2026 19:15</td>
+              </tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- ESTATÍSTICAS DE USO -->
+      <div class="stat-inner" id="pageStats" hidden>
+        <div class="stat-h1-row"><h1>Estatísticas de uso</h1></div>
+
+        <div class="stat-tabs">
+          <button class="stat-tab active" id="statTabPipes">Pipes</button>
+          <button class="stat-tab" id="statTabIA">Créditos de IA</button>
+          <button class="stat-tab" id="statTabAuto">Automações</button>
+        </div>
+
+        <div id="statPanePipes">
+          <div class="stat-toolbar">
+            <div class="stat-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+              <input type="search" placeholder="Buscar pipes" aria-label="Buscar pipes" />
+            </div>
+            <span class="spacer"></span>
+            <span class="stat-updated">Atualizado em poucos segundos</span>
+            <button class="stat-dl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>Baixar relatório</button>
+          </div>
+
+          <div class="stat-table-wrap">
+          <table class="fin-table stat-table">
+            <thead>
+              <tr><th>Nome do pipe</th><th>ID</th><th>Data de criação</th><th>Criado por</th><th>Última atualização de card <span class="th-sort"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m18 15-6-6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></th><th>Público</th><th>Membros</th><th>Cards em andamento</th><th>Cards finalizados</th><th>Automações</th><th>Condicionais</th><th>Relatórios</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#FF7200;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L18 10l-4-4L4 16v4Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Criação de Artes Giraffe</span></div></td>
+                <td class="rep-cell">303148299</td>
+                <td class="rep-cell">6 de abr de 2023 às 17:51</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">7 de jul de 2026 às 14:15</td>
+                <td></td>
+                <td class="rep-cell">7</td>
+                <td class="rep-cell">34</td>
+                <td class="rep-cell">3892</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">1</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#2F6FE0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">[TP] Tráfego - Matheus</span></div></td>
+                <td class="rep-cell">306834504</td>
+                <td class="rep-cell">5 de dez de 2025 às 23:45</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">7 de jul de 2026 às 03:00</td>
+                <td><span class="stat-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#2B2B2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Contratos e Juridicos</span></div></td>
+                <td class="rep-cell">303148330</td>
+                <td class="rep-cell">6 de abr de 2023 às 17:56</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">5 de jul de 2026 às 16:07</td>
+                <td></td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">9</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E5326F;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">[TP] Tráfego - Lucas</span></div></td>
+                <td class="rep-cell">303148228</td>
+                <td class="rep-cell">6 de abr de 2023 às 17:42</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">3 de jul de 2026 às 11:30</td>
+                <td></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">5</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">1</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E0A800;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11"/></svg></span><span class="stat-pipe-name">02. Onboarding &amp; Estrutura</span></div></td>
+                <td class="rep-cell">307181013</td>
+                <td class="rep-cell">31 de mai de 2026 às 21:37</td>
+                <td><span class="stat-creator pending-name"><span class="stat-creator-ic pending">A</span>Alexsandro Ignacio</span></td>
+                <td class="rep-cell">28 de jun de 2026 às 22:14</td>
+                <td><span class="stat-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#5B7A2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 9v11"/></svg></span><span class="stat-pipe-name">Criação de Site e Manutenção</span></div></td>
+                <td class="rep-cell">307062090</td>
+                <td class="rep-cell">19 de mar de 2026 às 14:04</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">28 de jun de 2026 às 21:40</td>
+                <td><span class="stat-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E5326F;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Estrutura de Implementação</span></div></td>
+                <td class="rep-cell">303279392</td>
+                <td class="rep-cell">19 de mai de 2023 às 18:12</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="rep-cell">28 de jun de 2026 às 18:11</td>
+                <td></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">7</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">10</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E5326F;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Estrutura do Tráfego</span></div></td>
+                <td class="rep-cell">307158990</td>
+                <td class="rep-cell">15 de mai de 2026 às 23:52</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="stat-stale">18 de mai de 2026 às 03:28</td>
+                <td></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">10</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E5326F;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">ESTRUTURA TRÁFEGO 6666</span></div></td>
+                <td class="rep-cell">307120258</td>
+                <td class="rep-cell">22 de abr de 2026 às 20:50</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="stat-stale">18 de mai de 2026 às 03:02</td>
+                <td></td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">7</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#E5326F;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c3 2 5 5 5 9l-2 2-3-1-3 1-2-2c0-4 2-7 5-9Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">[TP] Tráfego - Hiago</span></div></td>
+                <td class="rep-cell">306798814</td>
+                <td class="rep-cell">16 de nov de 2025 às 21:05</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="stat-stale">1 de mai de 2026 às 20:15</td>
+                <td><span class="stat-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">2</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#C1440E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5h18l-7 8v6l-4-2v-4L3 5Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">[SO] Solicitação de Orçamento</span></div></td>
+                <td class="rep-cell">303033937</td>
+                <td class="rep-cell">2 de mar de 2023 às 00:45</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="stat-stale">5 de dez de 2025 às 21:47</td>
+                <td></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">10</td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">3</td>
+                <td class="rep-cell">7</td>
+                <td class="rep-cell">3</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#2F6FE0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15M4 21h16M15 21V11h4a1 1 0 0 1 1 1v9M8 9h3M8 13h3" stroke-linecap="round"/></svg></span><span class="stat-pipe-name">Teste Empresas</span></div></td>
+                <td class="rep-cell">307237188</td>
+                <td class="rep-cell">5 de jul de 2026 às 12:22</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="fin-empty" title="Sem atualização">—</td>
+                <td><span class="stat-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 13 4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+              <tr>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#2B2B2E;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Contratos e Juridicos (cópia 1)</span></div></td>
+                <td class="rep-cell">307237190</td>
+                <td class="rep-cell">5 de jul de 2026 às 12:34</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+                <td class="fin-empty" title="Sem atualização">—</td>
+                <td></td>
+                <td class="rep-cell">1</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+                <td class="rep-cell">0</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="stat-empty" id="statPaneOutros" hidden>
+          <div class="pe-title">Indisponível neste protótipo</div>
+          <div class="pe-sub">Esta aba não foi implementada.</div>
+        </div>
+
+        <div id="statPaneIA" hidden>
+          <div class="ia-toolbar">
+            <button class="ia-period">Mês atual <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <span class="ia-range">30 de junho de 2026 - 7 de julho de 2026</span>
+            <span class="spacer"></span>
+            <button class="stat-dl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>Baixar relatório</button>
+          </div>
+
+          <div class="ia-bigcard">
+            <div class="ia-card-label">Créditos de IA consumidos</div>
+            <div class="ia-card-num">0</div>
+          </div>
+
+          <div class="ia-two">
+            <div class="ia-card">
+              <div class="ia-card-label">Agentes <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+              <div class="ia-card-sub">0 créditos consumidos</div>
+            </div>
+            <div class="ia-card">
+              <div class="ia-card-label">Assistants <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+              <div class="ia-card-sub">0 créditos consumidos</div>
+            </div>
+          </div>
+
+          <div class="ia-detail-head">
+            <h2>Detalhes dos agentes</h2>
+            <span class="spacer"></span>
+            <div class="ia-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+              <input type="search" placeholder="Pesquisar" aria-label="Pesquisar agentes" />
+            </div>
+          </div>
+
+          <div class="ia-filters">
+            <button class="ia-filter">Tags: Todas <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="ia-filter">Pipes: Todos <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="ia-filter">Status: Todos <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="ia-filter">Eventos: Todos <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+
+          <div class="stat-table-wrap">
+          <table class="fin-table stat-table ia-table">
+            <thead>
+              <tr><th>Agente</th><th>Créditos processados <span class="th-sort"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m18 15-6-6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></th><th>Pipe de origem</th><th>Status</th><th>Evento</th><th>Criado por</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" class="ia-noresult">Não foi possível encontrar nenhum resultado. Tente usar palavras-chave ou filtros diferentes.</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="ia-foot"><span class="iaf-count">0 agente</span><span>0</span></div>
+        </div>
+
+        <div id="statPaneAuto" hidden>
+          <div class="au-updated">Atualizado há 13 horas</div>
+
+          <div class="au-usage-card">
+            <div class="au-usage-top">
+              <span class="au-usage-label">Tarefas processadas este mês</span>
+              <span class="au-usage-quota">/ 300</span>
+            </div>
+            <div class="au-usage-num" style="margin-bottom:8px;">5</div>
+            <div class="au-bar"><span style="width:2%;"></span></div>
+            <div class="au-usage-pct">2% de uso</div>
+          </div>
+
+          <div class="au-card">
+            <div class="au-card-head">
+              <span class="au-card-title">Progressão mensal</span>
+              <span class="au-legend">
+                <span><i style="background:#FDBE8C;"></i>Tarefas processadas</span>
+                <span><i style="background:#FF7200;"></i>Acima da cota</span>
+                <span><i style="background:#9aa0a6;"></i>Cota mensal</span>
+              </span>
+            </div>
+            <div class="au-chart">
+              <div class="au-col"><span class="au-col-val">59</span><div class="au-col-bar" style="height:19.7%;"></div></div>
+              <div class="au-col"><span class="au-col-val">11</span><div class="au-col-bar" style="height:3.7%;"></div></div>
+              <div class="au-col"><span class="au-col-val">3</span><div class="au-col-bar" style="height:1%;"></div></div>
+              <div class="au-col"><span class="au-col-val">6</span><div class="au-col-bar" style="height:2%;"></div></div>
+              <div class="au-col"><span class="au-col-val">18</span><div class="au-col-bar" style="height:6%;"></div></div>
+              <div class="au-col"><span class="au-col-val">2</span><div class="au-col-bar" style="height:0.7%;"></div></div>
+              <div class="au-col"><span class="au-col-val">39</span><div class="au-col-bar" style="height:13%;"></div></div>
+              <div class="au-col"><span class="au-col-val">13</span><div class="au-col-bar" style="height:4.3%;"></div></div>
+              <div class="au-col"><span class="au-col-val">5</span><div class="au-col-bar" style="height:1.7%;"></div></div>
+            </div>
+            <div class="au-xlabels">
+              <span class="au-xlabel">Agosto, 2025</span>
+              <span class="au-xlabel">Setembro, 2025</span>
+              <span class="au-xlabel">Outubro, 2025</span>
+              <span class="au-xlabel">Dezembro, 2025</span>
+              <span class="au-xlabel">Março, 2026</span>
+              <span class="au-xlabel">Abril, 2026</span>
+              <span class="au-xlabel">Maio, 2026</span>
+              <span class="au-xlabel">Junho, 2026</span>
+              <span class="au-xlabel">Julho, 2026</span>
+            </div>
+          </div>
+
+          <h2 class="adm-h2" style="margin-bottom:14px;">Visão geral</h2>
+          <div class="ia-toolbar">
+            <button class="ia-period">Mês atual <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <span class="ia-range">30 de junho de 2026 - 7 de julho de 2026</span>
+            <span class="spacer"></span>
+            <button class="stat-dl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" stroke-linecap="round" stroke-linejoin="round"/></svg>Baixar relatório</button>
+          </div>
+
+          <div class="au-card">
+            <div class="au-card-head"><span class="au-card-title">Tarefas de automação por pipe</span></div>
+            <div class="au-hbar-row">
+              <span class="au-hbar-name">Criação de Artes Giraffe</span>
+              <div class="au-hbar-track"><div class="au-hbar-fill" style="width:62.5%;"></div><span class="au-hbar-val">5</span></div>
+            </div>
+            <div class="au-hbar-axis"><span>0</span><span>2</span><span>4</span><span>6</span><span>8</span></div>
+          </div>
+
+          <div class="ia-detail-head">
+            <h2>Detalhes das automações</h2>
+            <span class="spacer"></span>
+            <div class="ia-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3" stroke-linecap="round"/></svg>
+              <input type="search" placeholder="Buscar automações" aria-label="Buscar automações" />
+            </div>
+          </div>
+
+          <div class="au-filters">
+            <button class="au-filter">Tags: <b>Todas</b> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="au-filter">Pipe: <b>[Criação de Artes Giraffe]</b> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="au-filter">Status: <b>Ativo</b> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="au-filter">Eventos: <b>Um campo for atualizado</b> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="au-filter">Ações: <b>Crie um card ou registro conectado</b> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+
+          <div class="stat-table-wrap">
+          <table class="fin-table stat-table">
+            <thead>
+              <tr><th>Automação</th><th>Tarefas processadas <span class="th-sort"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m18 15-6-6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></th><th>Pipe de origem</th><th>Status</th><th>Evento</th><th>Ação</th><th>Criado por</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="rep-cell">Se enviado ao cliente mover para fase arquivada</td>
+                <td class="rep-cell">5</td>
+                <td><div class="stat-pipe"><span class="stat-pipe-ic" style="background:#FF7200;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L18 10l-4-4L4 16v4Z" stroke-linejoin="round"/></svg></span><span class="stat-pipe-name">Criação de Artes Giraffe</span></div></td>
+                <td><span class="au-status">Ativo</span></td>
+                <td class="rep-cell">Um campo for atualizado</td>
+                <td class="rep-cell">Crie um card ou registro conectado</td>
+                <td><span class="stat-creator"><span class="stat-creator-ic">G</span>Giraffe Marketing</span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="ia-foot"><span class="iaf-count">1 automação</span><span>5</span></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIGURAR SERVIDOR SMTP -->
+  <div class="emm-overlay" id="emmOverlay">
+    <div class="emm-modal" role="dialog" aria-modal="true" aria-labelledby="emmTitle">
+      <div class="emm-head">
+        <h2 id="emmTitle">Configurar servidor padrão</h2>
+        <button class="emm-close" id="emmClose" aria-label="Fechar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="emm-body">
+        <div class="emm-fld">
+          <div class="emm-label">Adicione seu host SMTP</div>
+          <input class="emm-input" type="text" placeholder="Ex: smtp.host.com" aria-label="Host SMTP" />
+        </div>
+        <div class="emm-fld">
+          <div class="emm-label">Número da porta <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+          <input class="emm-input" type="text" placeholder="Ex: 587" aria-label="Número da porta" />
+        </div>
+        <div class="emm-fld">
+          <div class="emm-label">Nome de usuário</div>
+          <p class="emm-hint">Geralmente é um endereço de e-mail</p>
+          <input class="emm-input" type="text" placeholder="Nome de usuário do login SMTP" aria-label="Nome de usuário" />
+        </div>
+        <div class="emm-fld">
+          <div class="emm-label">Senha</div>
+          <div class="emm-input-wrap">
+            <input class="emm-input" id="emmPass" type="password" placeholder="Senha do login SMTP" aria-label="Senha" style="padding-right:42px;" />
+            <button class="emm-eye" id="emmEye" type="button" aria-label="Mostrar senha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/><path d="m4 4 16 16" stroke-linecap="round"/></svg></button>
+          </div>
+        </div>
+        <div class="emm-fld">
+          <div class="emm-label">SMTP IP Relay <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+          <div class="emm-relay"><button class="toggle" id="emmRelay" aria-pressed="false" aria-label="SMTP IP Relay"></button><span>Envie emails apenas por meio de <a href="javascript:void(0)">endereços IP confiáveis</a></span></div>
+        </div>
+      </div>
+      <div class="emm-foot">
+        <button class="emm-save" id="emmSave">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NOVA CHAVE DE API -->
+  <div class="emm-overlay" id="akOverlay">
+    <div class="emm-modal ak-modal" role="dialog" aria-modal="true" aria-labelledby="akTitle">
+      <div class="emm-head">
+        <h2 id="akTitle">Nova chave de API</h2>
+        <button class="emm-close" id="akClose" aria-label="Fechar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="emm-body ak-body">
+        <p class="em-sub-desc" style="margin:-2px 0 18px;">Crie uma chave de API para permitir que sistemas externos acessem o Giraffe CRM.</p>
+        <div class="ak-fld">
+          <label class="ak-flabel">Nome da chave</label>
+          <input class="ak-input" type="text" placeholder="Ex.: Site Institucional, ERP, Integração com WhatsApp" aria-label="Nome da chave" />
+          <p class="ak-hint">Escolha um nome para identificar esta chave.</p>
+        </div>
+        <div class="ak-fld">
+          <label class="ak-flabel">Descrição (opcional)</label>
+          <textarea class="ak-textarea" placeholder="Descreva para que esta chave será utilizada..." aria-label="Descrição"></textarea>
+          <p class="ak-hint">Campo opcional para mais detalhes.</p>
+        </div>
+        <div class="ak-fld">
+          <label class="ak-flabel">Expiração (opcional)</label>
+          <select class="ak-select" aria-label="Expiração"><option>Selecione uma data ou período</option><option>7 dias</option><option>30 dias</option><option>90 dias</option><option>1 ano</option></select>
+          <p class="ak-hint">Deixe em branco para não expirar.</p>
+        </div>
+        <div class="ak-fld">
+          <label class="ak-flabel">Permissões (escopo)</label>
+          <p class="ak-hint" style="margin:0 0 10px;">Selecione as permissões que esta chave terá. Menos privilégios = mais segurança.</p>
+          <div class="ak-scope-cols">
+            <div class="ak-scope-col">
+              <h4>Leitura</h4>
+              <label class="ak-check"><input type="checkbox" />Contatos</label>
+              <label class="ak-check"><input type="checkbox" />Registros</label>
+              <label class="ak-check"><input type="checkbox" />Cards (Pipes)</label>
+              <label class="ak-check"><input type="checkbox" />Tarefas</label>
+              <label class="ak-check"><input type="checkbox" />Arquivos</label>
+              <label class="ak-check"><input type="checkbox" />Relatórios</label>
+            </div>
+            <div class="ak-scope-col">
+              <h4>Escrita</h4>
+              <label class="ak-check"><input type="checkbox" />Contatos</label>
+              <label class="ak-check"><input type="checkbox" />Registros</label>
+              <label class="ak-check"><input type="checkbox" />Cards (Pipes)</label>
+              <label class="ak-check"><input type="checkbox" />Tarefas</label>
+              <label class="ak-check"><input type="checkbox" />Arquivos</label>
+              <label class="ak-check"><input type="checkbox" />Conversas</label>
+            </div>
+            <div class="ak-scope-col">
+              <h4>Administração</h4>
+              <label class="ak-check"><input type="checkbox" />Automação</label>
+              <label class="ak-check"><input type="checkbox" />Webhooks</label>
+              <label class="ak-check"><input type="checkbox" />Configurações</label>
+              <label class="ak-check danger"><input type="checkbox" />Acesso total</label>
+              <p class="ak-danger-note">Não recomendado <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="vertical-align:-1px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v.01M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg></p>
+            </div>
+          </div>
+        </div>
+        <div class="ak-warn"><span class="akw-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3Z" stroke-linejoin="round"/><path d="M12 10v4M12 17v.01" stroke-linecap="round"/></svg></span><span><b>A chave será exibida apenas uma vez.</b> Guarde-a com segurança. Você não poderá visualizá-la novamente.</span></div>
+      </div>
+      <div class="ak-foot">
+        <button class="ak-cancel" id="akCancel">Cancelar</button>
+        <button class="ak-create" id="akCreate">Criar chave</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  (function () {
+    var navGeral = document.getElementById('navGeral');
+    var navIA = document.getElementById('navIA');
+    var navFin = document.getElementById('navFin');
+    var pageGeral = document.getElementById('pageGeral');
+    var pageIA = document.getElementById('pageIA');
+    var pageFin = document.getElementById('pageFin');
+    var navPeople = document.getElementById('navPeople');
+    var pagePeople = document.getElementById('pagePeople');
+    var navStats = document.getElementById('navStats');
+    var pageStats = document.getElementById('pageStats');
+    var navAudit = document.getElementById('navAudit');
+    var pageAudit = document.getElementById('pageAudit');
+    var navEmail = document.getElementById('navEmail');
+    var pageEmail = document.getElementById('pageEmail');
+    var navApi = document.getElementById('navApi');
+    var pageApi = document.getElementById('pageApi');
+    document.querySelectorAll('.adm-nav-item').forEach(function (n) {
+      n.addEventListener('click', function () {
+        document.querySelectorAll('.adm-nav-item').forEach(function (o) { o.classList.remove('active'); });
+        n.classList.add('active');
+        pageGeral.hidden = true; pageIA.hidden = true; pageFin.hidden = true; pagePeople.hidden = true; pageStats.hidden = true; pageAudit.hidden = true; pageEmail.hidden = true; pageApi.hidden = true;
+        if (n === navIA) pageIA.hidden = false;
+        else if (n === navFin) pageFin.hidden = false;
+        else if (n === navPeople) pagePeople.hidden = false;
+        else if (n === navStats) pageStats.hidden = false;
+        else if (n === navAudit) pageAudit.hidden = false;
+        else if (n === navEmail) pageEmail.hidden = false;
+        else if (n === navApi) pageApi.hidden = false;
+        else pageGeral.hidden = false;
+      });
+    });
+
+    // Abre a aba de Estatísticas de uso via hash (#stats)
+    if (location.hash === '#stats' && navStats) { navStats.click(); }
+    // Abre os Logs de auditoria via hash (#audit)
+    if (location.hash === '#audit' && navAudit) { navAudit.click(); }
+
+    // Estatísticas de uso — sub-abas (só "Pipes" tem conteúdo neste protótipo)
+    var statTabs = document.querySelectorAll('.stat-tab');
+    var statPanePipes = document.getElementById('statPanePipes');
+    var statPaneIA = document.getElementById('statPaneIA');
+    var statPaneAuto = document.getElementById('statPaneAuto');
+    var statPaneOutros = document.getElementById('statPaneOutros');
+    var statTabPipes = document.getElementById('statTabPipes');
+    var statTabIA = document.getElementById('statTabIA');
+    var statTabAuto = document.getElementById('statTabAuto');
+    statTabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        statTabs.forEach(function (o) { o.classList.remove('active'); });
+        t.classList.add('active');
+        statPanePipes.hidden = true; statPaneIA.hidden = true; statPaneAuto.hidden = true; statPaneOutros.hidden = true;
+        if (t === statTabPipes) statPanePipes.hidden = false;
+        else if (t === statTabIA) statPaneIA.hidden = false;
+        else if (t === statTabAuto) statPaneAuto.hidden = false;
+        else statPaneOutros.hidden = false;
+      });
+    });
+
+    // "Ver uso de créditos de IA" → Estatísticas de uso > Créditos de IA
+    var aiCreditsLink = document.getElementById('aiCreditsLink');
+    if (aiCreditsLink) aiCreditsLink.addEventListener('click', function (e) {
+      e.preventDefault();
+      navStats.click();
+      statTabIA.click();
+    });
+
+    // Alterar modelo padrão (Giraffe AI / OpenAI)
+    var aiChangeBtn = document.getElementById('aiChangeBtn');
+    var aiChangeMenu = document.getElementById('aiChangeMenu');
+    if (aiChangeBtn && aiChangeMenu) {
+      aiChangeBtn.addEventListener('click', function (e) { e.stopPropagation(); aiChangeMenu.hidden = !aiChangeMenu.hidden; });
+      document.addEventListener('click', function (e) { if (!aiChangeMenu.contains(e.target)) aiChangeMenu.hidden = true; });
+      aiChangeMenu.querySelectorAll('.ai-change-opt').forEach(function (o) {
+        o.addEventListener('click', function () {
+          aiChangeMenu.querySelectorAll('.ai-change-opt').forEach(function (x) { x.classList.remove('sel'); });
+          o.classList.add('sel');
+          var isOpenAI = o.dataset.model === 'openai';
+          var nameEl = document.getElementById('aiDefaultName');
+          nameEl.childNodes[0].textContent = (isOpenAI ? 'OpenAI ' : 'Giraffe AI ');
+          document.getElementById('aiDefaultMeta').textContent = isOpenAI ? 'Modelos GPT' : 'Modelos dinâmicos';
+          aiChangeMenu.hidden = true;
+        });
+      });
+    }
+
+    // Pessoas & permissões — sub-abas
+    var peoTabs = document.querySelectorAll('.peo-tab');
+    var peoPanePessoas = document.getElementById('peoPanePessoas');
+    var peoPaneFuncoes = document.getElementById('peoPaneFuncoes');
+    var peoTabFuncoes = document.getElementById('peoTabFuncoes');
+    peoTabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        peoTabs.forEach(function (o) { o.classList.remove('active'); });
+        t.classList.add('active');
+        peoPanePessoas.hidden = true; peoPaneFuncoes.hidden = true;
+        if (t.id === 'peoTabPessoas') peoPanePessoas.hidden = false;
+        else if (t === peoTabFuncoes) peoPaneFuncoes.hidden = false;
+      });
+    });
+    document.querySelectorAll('.ai-tab').forEach(function (t) {
+      if (t.tagName === 'BUTTON') t.addEventListener('click', function () {
+        document.querySelectorAll('.ai-tab').forEach(function (o) { if (o.tagName === 'BUTTON') o.classList.remove('active'); });
+        t.classList.add('active');
+        var ativ = (t.id === 'aiTabAtivacao');
+        document.getElementById('aiPaneAtivacao').hidden = !ativ;
+        document.getElementById('aiPaneModelo').hidden = ativ;
+      });
+    });
+    document.querySelectorAll('.toggle').forEach(function (t) {
+      t.addEventListener('click', function () {
+        t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      });
+    });
+
+    // Modal configurar servidor SMTP
+    var emmOverlay = document.getElementById('emmOverlay');
+    var emConfigBtn = document.getElementById('emConfigBtn');
+    function openEmm() { emmOverlay.classList.add('show'); }
+    function closeEmm() { emmOverlay.classList.remove('show'); }
+    if (emConfigBtn) emConfigBtn.addEventListener('click', openEmm);
+    document.getElementById('emmClose').addEventListener('click', closeEmm);
+    document.getElementById('emmSave').addEventListener('click', closeEmm);
+    emmOverlay.addEventListener('click', function (e) { if (e.target === emmOverlay) closeEmm(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeEmm(); });
+    var emmEye = document.getElementById('emmEye');
+    var emmPass = document.getElementById('emmPass');
+    if (emmEye && emmPass) emmEye.addEventListener('click', function () {
+      emmPass.type = emmPass.type === 'password' ? 'text' : 'password';
+    });
+
+    // Modal Nova chave de API
+    var akOverlay = document.getElementById('akOverlay');
+    var apiNewKeyBtn = document.getElementById('apiNewKeyBtn');
+    function openAk() { akOverlay.classList.add('show'); }
+    function closeAk() { akOverlay.classList.remove('show'); }
+    if (apiNewKeyBtn) apiNewKeyBtn.addEventListener('click', openAk);
+    document.getElementById('akClose').addEventListener('click', closeAk);
+    document.getElementById('akCancel').addEventListener('click', closeAk);
+    document.getElementById('akCreate').addEventListener('click', closeAk);
+    akOverlay.addEventListener('click', function (e) { if (e.target === akOverlay) closeAk(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAk(); });
+  })();
+</script>
+
+<script>
+(function(){
+  var t=document.getElementById('userTrigger'), m=document.getElementById('userMenu');
+  if(t&&m){
+    t.addEventListener('click',function(e){e.stopPropagation();var o=m.classList.toggle('show');t.setAttribute('aria-expanded',o?'true':'false');});
+    document.addEventListener('click',function(e){if(!m.contains(e.target)&&!t.contains(e.target)){m.classList.remove('show');t.setAttribute('aria-expanded','false');}});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape'){m.classList.remove('show');t.setAttribute('aria-expanded','false');}});
+  }
+})();
+</script>
+
+  <!-- Modal Conectar modelo de IA -->
+  <div class="aim-overlay" id="aimOverlay">
+    <div class="aim-modal" role="dialog" aria-modal="true" aria-label="Conectar modelo de IA">
+      <div class="aim-head">
+        <h2>Conectar modelo de IA</h2>
+        <button class="emm-close" id="aimClose" aria-label="Fechar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button>
+      </div>
+      <p class="aim-sub">Configure as credenciais da OpenAI para integrar um modelo específico.</p>
+      <div class="aim-body">
+        <div>
+          <button class="aim-prov sel" type="button"><span class="pv-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8" stroke-linecap="round"/></svg></span>OpenAI</button>
+        </div>
+        <div>
+          <div class="aim-fld">
+            <div class="emm-label">* Nome <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+            <input class="emm-input" type="text" id="aimName" placeholder="Insira um nome único para este modelo" />
+          </div>
+          <div class="aim-fld">
+            <div class="emm-label">* Chave de API</div>
+            <input class="emm-input" type="password" placeholder="Começa com sk-proj-" />
+          </div>
+          <div class="aim-fld">
+            <div class="emm-label">* Modelo <span class="q"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg></span></div>
+            <div class="aim-select" id="aimSelect">
+              <button class="emm-input" type="button" id="aimSelBtn"><span class="ph" id="aimSelVal">Selecione o modelo</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <div class="aim-menu" id="aimMenu">
+                <button class="aim-opt" type="button">gpt-4o</button>
+                <button class="aim-opt" type="button">gpt-4o-mini</button>
+                <button class="aim-opt" type="button">gpt-4o-2024-08-06</button>
+                <button class="aim-opt" type="button">gpt-4o-2024-11-20</button>
+                <button class="aim-opt" type="button">gpt-4.1-2025-04-14</button>
+                <button class="aim-opt" type="button">gpt-5</button>
+                <button class="aim-opt" type="button">gpt-5-2025-08-07</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="aim-foot">
+        <button class="aim-cancel" id="aimCancel">Cancelar</button>
+        <button class="emm-save" id="aimConnect">Conectar</button>
+      </div>
+    </div>
+  </div>
+  <!-- Confirmar exclusão de modelo -->
+  <div class="aid-overlay" id="aidOverlay">
+    <div class="aid-modal" role="alertdialog" aria-modal="true" aria-label="Apagar modelo">
+      <div class="aid-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h3>Apagar modelo?</h3>
+      <p>O modelo conectado da OpenAI será removido dos modelos disponíveis. Esta ação não pode ser desfeita.</p>
+      <div class="aid-foot">
+        <button class="aim-cancel" id="aidCancel">Cancelar</button>
+        <button class="danger-btn" id="aidConfirm" style="border-radius:20px;">Apagar</button>
+      </div>
+    </div>
+  </div>
+<script>
+(function(){
+  var ov = document.getElementById('aimOverlay');
+  var addBtn = document.querySelector('.ai-add');
+  var editingBlock = null;
+  function close(){ ov.classList.remove('show'); editingBlock = null; document.getElementById('aimConnect').textContent = 'Conectar'; }
+  function openModal(){ ov.classList.add('show'); }
+  if (addBtn) addBtn.addEventListener('click', function(){
+    editingBlock = null;
+    document.getElementById('aimConnect').textContent = 'Conectar';
+    openModal();
+  });
+  document.getElementById('aimClose').addEventListener('click', close);
+  document.getElementById('aimCancel').addEventListener('click', close);
+
+  function blockLabelHtml(label){
+    return (label !== 'OpenAI' ? '<span class="av-label" style="font-size:var(--fs-sm);color:var(--mute);">' + label.replace(/</g,'&lt;') + '</span>' : '<span class="av-label"></span>');
+  }
+
+  document.getElementById('aimConnect').addEventListener('click', function(){
+    var name = document.getElementById('aimName').value.trim();
+    var model = selVal.classList.contains('ph') ? '' : selVal.textContent;
+    var label = name || (model ? 'OpenAI · ' + model : 'OpenAI');
+    if (editingBlock) {
+      editingBlock.dataset.name = name; editingBlock.dataset.model = model;
+      editingBlock.querySelector('.av-label').outerHTML = blockLabelHtml(label);
+      resetForm(); close(); return;
+    }
+    var avail = document.querySelector('.ai-avail');
+    var block = document.createElement('div');
+    block.className = 'ai-avail custom';
+    block.dataset.name = name; block.dataset.model = model;
+    block.innerHTML = '<span class="av-cev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>'
+      + '<span class="av-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8" stroke-linecap="round"/></svg></span>'
+      + '<span class="av-name">OpenAI</span>'
+      + blockLabelHtml(label)
+      + '<span class="av-actions">'
+      +   '<button class="av-act edit" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" stroke-linejoin="round"/></svg>Editar</button>'
+      +   '<button class="av-act del" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>Apagar</button>'
+      + '</span>';
+    avail.parentNode.insertBefore(block, avail.nextSibling);
+    block.querySelector('.av-act.edit').addEventListener('click', function(){
+      editingBlock = block;
+      document.getElementById('aimName').value = block.dataset.name || '';
+      if (block.dataset.model) { selVal.textContent = block.dataset.model; selVal.classList.remove('ph'); }
+      else { selVal.textContent = 'Selecione o modelo'; selVal.classList.add('ph'); }
+      document.getElementById('aimConnect').textContent = 'Salvar alterações';
+      openModal();
+    });
+    block.querySelector('.av-act.del').addEventListener('click', function(){
+      delTarget = block;
+      document.getElementById('aidOverlay').classList.add('show');
+    });
+    resetForm(); close();
+  });
+  function resetForm(){
+    document.getElementById('aimName').value = '';
+    document.querySelector('#aimOverlay input[type="password"]').value = '';
+    selVal.textContent = 'Selecione o modelo'; selVal.classList.add('ph');
+  }
+  // confirmação de exclusão
+  var delTarget = null;
+  var aidOv = document.getElementById('aidOverlay');
+  function closeAid(){ aidOv.classList.remove('show'); delTarget = null; }
+  document.getElementById('aidCancel').addEventListener('click', closeAid);
+  document.getElementById('aidConfirm').addEventListener('click', function(){
+    if (delTarget) delTarget.remove();
+    closeAid();
+  });
+  aidOv.addEventListener('click', function(e){ if (e.target === aidOv) closeAid(); });
+  ov.addEventListener('click', function(e){ if (e.target === ov) close(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { close(); closeAid(); } });
+  var sel = document.getElementById('aimSelect');
+  var selBtn = document.getElementById('aimSelBtn');
+  var selVal = document.getElementById('aimSelVal');
+  selBtn.addEventListener('click', function(e){ e.stopPropagation(); var open = sel.classList.toggle('open'); document.querySelector('.aim-body').classList.toggle('menu-open', open); });
+  function closeMenu(){ sel.classList.remove('open'); document.querySelector('.aim-body').classList.remove('menu-open'); }
+  document.querySelectorAll('.aim-opt').forEach(function(o){
+    o.addEventListener('click', function(){ selVal.textContent = o.textContent; selVal.classList.remove('ph'); closeMenu(); });
+  });
+  document.addEventListener('click', function(e){ if (!sel.contains(e.target)) closeMenu(); });
+})();
+</script>
+
+  <div class="notif-pop" id="notifPop" role="dialog" aria-label="Notificações">
+    <div class="notif-head"><h3>Notificações</h3><button class="notif-markall">Marcar todas como lidas</button></div>
+    <div class="notif-list">
+        <div class="notif-item"><div class="ni-text">O card "MSILVA" está expirado</div><div class="ni-date">07/07/2026 13:48</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ PIÇARRAS" está atrasado</div><div class="ni-date">07/07/2026 13:12</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ ITAPEMA" está atrasado</div><div class="ni-date">07/07/2026 13:04</div></div>
+        <div class="notif-item"><div class="ni-text">O card "INOVA GUAXUPE " está atrasado</div><div class="ni-date">07/07/2026 12:56</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MSILVA" está atrasado</div><div class="ni-date">07/07/2026 12:48</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ JUNDIAI" foi finalizado no pipe "Criação de Artes Giraffe"</div><div class="ni-date">07/07/2026 11:15</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ JUNDIAI" foi movido para a fase "Arquivado"</div><div class="ni-date">07/07/2026 10:52</div></div>
+    </div>
+    <div class="notif-foot"><a class="notif-seeall" href="minhas-notificacoes.html" style="text-decoration:none;">Ver todas as notificações</a></div>
+  </div>
+<script>
+(function(){
+  var b=document.getElementById('notifBtn'), p=document.getElementById('notifPop');
+  if(b&&p){
+    b.addEventListener('click',function(e){e.stopPropagation();p.classList.toggle('show');});
+    document.addEventListener('click',function(e){if(!p.contains(e.target)&&!b.contains(e.target))p.classList.remove('show');});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')p.classList.remove('show');});
+  }
+})();
+</script>
+<script src="giraffe-state.js"></script>
+<script src="giraffe-shell.js"></script>
+</body>
+</html>

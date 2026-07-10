@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Giraffe CRM — Minhas configurações</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+  /* ===== TYPE SCALE (tokens) ===== */
+  --fs-micro: 10px; --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14px; --fs-md: 15px; --fs-lg: 16px; --fs-xl: 18px; --fs-2xl: 20px; --fs-3xl: 22px; --fs-4xl: 24px; --fs-5xl: 26px; --fs-6xl: 30px; --fs-7xl: 32px;
+  --fw-normal: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; --fw-extrabold: 800;
+  --lh-tight: 1.25; --lh-snug: 1.4; --lh-normal: 1.5; --lh-relaxed: 1.6;
+    --canvas: #FFFFFF;
+    --surface-soft: #FAFAFA;
+    --soft-cloud: #F5F5F5;
+    --hairline: #E5E5E5;
+    --ink: #111111;
+    --charcoal: #39393B;
+    --mute: #707072;
+    --primary: #FF7200;
+    --orange-soft: #FFF3E8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background: var(--canvas); color: var(--ink);
+    font-family: "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: var(--fs-base); -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  a { color: var(--primary); text-decoration: none; font-weight: var(--fw-semibold); }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+
+  .topbar {
+    height: 56px; display: flex; align-items: center; gap: 18px;
+    padding: 0 22px; border-bottom: 1px solid var(--hairline); background: var(--canvas);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: var(--fw-bold); font-size: var(--fs-xl); }
+  .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; }
+  .topbar .title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--ink); }
+  .topbar .divider { width: 1px; height: 22px; background: var(--hairline); }
+  .topbar .spacer { flex: 1; }
+  .icon-btn { position: relative; background: none; border: none; color: var(--charcoal); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--soft-cloud); }
+  .icon-btn .badge { position: absolute; top: -2px; right: -3px; background: #E02424; color: #fff; font-size: var(--fs-micro); font-weight: var(--fw-bold); padding: 1px 5px; border-radius: 9px; }
+  .user { display: flex; align-items: center; gap: 9px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--charcoal); }
+  .user .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg,#FF9A4D,#FF7200); display: grid; place-items: center; color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); box-shadow: 0 0 0 3px var(--orange-soft); }
+
+  .tabs { display: flex; align-items: center; gap: 6px; padding: 0 22px; border-bottom: 1px solid var(--hairline); }
+  .tab { position: relative; padding: 12px 12px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--mute); background: none; border: none; }
+  .tab:hover { color: var(--charcoal); }
+  .tab.active { color: var(--ink); font-weight: var(--fw-semibold); background: var(--soft-cloud); border-radius: 8px 8px 0 0; }
+  .tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--primary); }
+
+  .page { max-width: 640px; margin: 0 auto; padding: 34px 24px 80px; }
+  .sec-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--ink); margin: 0 0 4px; }
+  .sec-sub { font-size: var(--fs-sm); color: var(--mute); margin: 0 0 26px; }
+
+  .avatar-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+  .avatar-big { width: 52px; height: 52px; border-radius: 12px; background: linear-gradient(135deg,#FF9A4D,#FF7200); display: grid; place-items: center; color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .avatar-meta .am-label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--ink); margin-bottom: 8px; }
+  .avatar-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .file-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--charcoal); font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 8px 14px; border-radius: 8px; }
+  .file-btn:hover { background: var(--surface-soft); }
+  .file-name { font-size: var(--fs-sm); color: var(--mute); }
+  .avatar-hint { font-size: var(--fs-xs); color: var(--mute); }
+  .remove-link { font-size: var(--fs-xs); margin-top: 8px; display: inline-block; }
+
+  .field { margin-bottom: 20px; }
+  .field label { display: block; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 8px; }
+  .field input, .field select {
+    width: 100%; height: 44px; padding: 0 14px;
+    border: 1px solid var(--hairline); border-radius: 8px;
+    font-family: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-soft);
+    appearance: none;
+  }
+  .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23707072' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--primary); background: var(--canvas); }
+
+  .row-between { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 8px; }
+  .save-btn { height: 42px; padding: 0 24px; border-radius: 10px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  .save-btn:hover { filter: brightness(0.97); }
+
+  .divider { height: 1px; background: var(--hairline); margin: 30px 0; }
+
+  .mfa-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+  .mfa-head h3 { margin: 0 0 4px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); }
+  .mfa-head p { margin: 0; font-size: var(--fs-xs); color: var(--mute); line-height: var(--lh-normal); }
+  .toggle { width: 44px; height: 24px; border-radius: 13px; border: none; background: #d5d5d7; position: relative; cursor: pointer; flex-shrink: 0; margin-top: 2px; transition: background .15s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform .15s; }
+  .toggle[aria-pressed="true"] { background: var(--primary); }
+  .toggle[aria-pressed="true"]::after { transform: translateX(20px); }
+  .info-box { background: var(--surface-soft); border-left: 3px solid var(--primary); border-radius: 0 8px 8px 0; padding: 14px 16px; font-size: var(--fs-sm); color: var(--charcoal); line-height: var(--lh-normal); }
+
+  .danger-box { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface-soft); border-radius: 10px; padding: 16px 18px; }
+  .danger-box p { margin: 0; font-size: var(--fs-sm); color: var(--charcoal); }
+  .danger-btn { height: 40px; padding: 0 18px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--primary); color: var(--primary); font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex-shrink: 0; }
+  .danger-btn:hover { background: var(--orange-soft); }
+
+  /* ===== NOTIFICAÇÕES ===== */
+  .page-wide { max-width: 720px; }
+  .notif-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 26px; }
+  .notif-head .nh-info { flex: 1; }
+  .notif-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .notif-title-row h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--ink); }
+  .notif-enabled { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: #3d6416; background: #E4F1D8; padding: 3px 9px; border-radius: 6px; }
+  .off-btn { height: 36px; padding: 0 16px; border-radius: 8px; background: #E02424; color: #fff; border: none; font-size: var(--fs-sm); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .off-btn:hover { filter: brightness(0.96); }
+  .notif-when { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--ink); margin-bottom: 12px; }
+  .check-row { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; font-size: var(--fs-sm); color: var(--charcoal); }
+  .check-row input { width: 16px; height: 16px; accent-color: var(--primary); flex-shrink: 0; }
+  .save-sm { height: 38px; padding: 0 20px; border-radius: 8px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-sm); font-weight: var(--fw-bold); }
+  .save-sm:hover { filter: brightness(0.97); }
+
+  .custom-title { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); margin: 34px 0 2px; }
+  .custom-owner { font-size: var(--fs-xs); color: var(--charcoal); font-weight: var(--fw-semibold); margin-bottom: 14px; }
+  .pipe-notif { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; }
+  .pipe-notif-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .pipe-notif-name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--ink); }
+  .mode-seg { display: flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .mode-seg button { padding: 7px 16px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--charcoal); background: var(--soft-cloud); border: none; }
+  .mode-seg button.active { background: var(--ink); color: #fff; }
+  .pipe-notif-body { margin-top: 16px; }
+  .pipe-notif-foot { display: flex; justify-content: flex-end; margin-top: 8px; }
+
+  /* ===== TOKEN ===== */
+  .tok-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 24px; }
+  .tok-cancel { background: none; border: none; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--charcoal); padding: 8px 6px; }
+  .tok-cancel:hover { color: var(--ink); }
+  .tok-save { height: 40px; padding: 0 22px; border-radius: 20px; background: var(--primary); color: #fff; border: none; font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  .tok-save:hover { filter: brightness(0.97); }
+
+  .user-wrap { position: relative; }
+  .user-trigger { display: flex; align-items: center; gap: 9px; background: none; border: none; padding: 4px 6px; border-radius: 10px; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--charcoal); cursor: pointer; }
+  .user-trigger:hover { background: var(--soft-cloud); }
+  .user-trigger .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg,#f0a868,#c76b2e); display: grid; place-items: center; color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .user-menu { position: absolute; top: calc(100% + 8px); right: 0; width: 268px; z-index: 95; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: 0 16px 44px rgba(0,0,0,0.16); padding: 8px; display: none; }
+  .user-menu.show { display: block; }
+  .um-head { display: flex; align-items: flex-start; gap: 12px; padding: 12px 12px 14px; }
+  .um-head .um-info { flex: 1; min-width: 0; }
+  .um-name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--ink); }
+  .um-mail { font-size: var(--fs-xs); color: var(--mute); margin: 2px 0 8px; word-break: break-all; }
+  .um-role { display: inline-block; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--primary); background: var(--orange-soft); padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+  .um-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg,#f0a868,#c76b2e); display: grid; place-items: center; color: #fff; font-size: var(--fs-base); font-weight: var(--fw-bold); flex-shrink: 0; }
+  .um-divider { height: 1px; background: var(--hairline); margin: 6px 4px; }
+  .um-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 8px; background: none; border: none; text-align: left; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--charcoal); cursor: pointer; text-decoration: none; }
+  .um-item:hover { background: var(--soft-cloud); color: var(--ink); }
+  .um-item .umi-ic { color: var(--mute); display: inline-flex; flex-shrink: 0; }
+  .um-item:hover .umi-ic { color: var(--primary); }
+
+  .notif-pop { position: fixed; top: 60px; right: 20px; width: 360px; max-width: calc(100vw - 40px); max-height: calc(100vh - 90px); background: var(--canvas); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.18); z-index: 200; display: none; flex-direction: column; overflow: hidden; }
+  .notif-pop.show { display: flex; }
+  .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--hairline); flex-shrink: 0; }
+  .notif-head h3 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--ink); }
+  .notif-markall { background: none; border: none; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--primary); cursor: pointer; }
+  .notif-markall:hover { text-decoration: underline; }
+  .notif-list { overflow-y: scroll; overflow-x: hidden; }
+  .notif-list::-webkit-scrollbar { width: 10px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: #d8d2ca; border-radius: 6px; border: 2px solid var(--canvas); }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+  .notif-list { scrollbar-width: thin; scrollbar-color: #d8d2ca transparent; }
+  .notif-item { padding: 14px 18px; border-bottom: 1px solid var(--hairline); }
+  .notif-item:hover { background: var(--soft-cloud); }
+  .notif-item .ni-text { font-size: var(--fs-sm); color: var(--ink); line-height: var(--lh-snug); }
+  .notif-item .ni-date { font-size: var(--fs-xs); color: var(--mute); margin-top: 4px; }
+  .notif-foot { padding: 14px 18px; flex-shrink: 0; }
+  .notif-seeall { display: block; width: 100%; text-align: center; border: 1px solid var(--primary); color: var(--primary); background: var(--canvas); border-radius: 22px; padding: 11px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; }
+  .notif-seeall:hover { background: var(--orange-soft); }
+  h1, h2, h3, h4, h5, h6 { font-family: "Inter Tight", system-ui, sans-serif; letter-spacing: -0.01em; }
+</style>
+
+  <style id="responsive-safety">
+  /* ===== Responsive safety net — desktop-first, no redesign ===== */
+  html, body { overflow-x: auto; }
+  img, svg, video, canvas { max-width: 100%; }
+  /* below the floor: keep the desktop layout intact, scroll instead of crushing */
+  @media (max-width: 679px){
+    body { min-width: 680px; }
+  }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <a class="brand" href="dashboard-home.html" aria-label="Voltar para a tela inicial" style="text-decoration:none;color:inherit;">
+      <span class="logo" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M9 3c-.6 0-1 .4-1 1v5.5c0 1.4-.5 2.3-1.4 3.3C5.5 14 5 15.2 5 17v3a1 1 0 0 0 2 0v-3c0-1.2.3-1.8 1.1-2.6.5-.5.9-1 1.2-1.6V21a1 1 0 0 0 2 0v-7h1v7a1 1 0 0 0 2 0V9.5c.6.4 1.3.6 2 .6a1 1 0 0 0 0-2c-.7 0-1.3-.3-1.7-.8l-1.6-2.1C13.7 4 12.4 3 11 3H9Z" fill="#FF7200"/></svg></span>
+      Giraffe
+    </a>
+    <span class="divider"></span>
+    <span class="title">Minhas configurações</span>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="notifBtn" aria-label="Notificações">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 1 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="badge">9+</span>
+    </button>
+    <button class="icon-btn" aria-label="Ajuda">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1 1-1.1 1.8M12 16.5v.01" stroke-linecap="round"/></svg>
+    </button>
+    <div class="user-wrap">
+      <button class="user-trigger" id="userTrigger" aria-haspopup="true" aria-expanded="false">
+        <span>Giraffe Marketing</span>
+        <span class="avatar" aria-hidden="true">GM</span>
+      </button>
+      <div class="user-menu" id="userMenu" role="menu">
+        <div class="um-head">
+          <div class="um-info">
+            <div class="um-name">Giraffe Marketing</div>
+            <div class="um-mail">martinsjunior089@gmail.com</div>
+            <span class="um-role">Super Administrador</span>
+          </div>
+          <span class="um-avatar" aria-hidden="true">GM</span>
+        </div>
+        <a class="um-item" href="meu-perfil.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" stroke-linecap="round"/></svg></span>Meu perfil</a>
+        <a class="um-item" href="relatorios-empresa.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>Relatórios dos pipes</a>
+        <a class="um-item" href="painel-administrativo.html" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.5 1Z"/></svg></span>Painel administrativo</a>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3ZM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z" stroke-linejoin="round"/></svg></span>Assistentes de IA</button>
+        <div class="um-divider"></div>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M17 7H4M4 7l4-4M4 7l4 4M7 17h13M20 17l-4-4M20 17l-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Trocar de empresa</button>
+        <button class="um-item" role="menuitem"><span class="umi-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tabGeral">Geral</button>
+    <button class="tab" id="tabNotif">Notificações</button>
+    <button class="tab" id="tabToken">Token de acesso pessoal</button>
+  </div>
+
+  <div class="page" id="pageGeral">
+    <h1 class="sec-title">Geral</h1>
+    <p class="sec-sub">Edite as informações do seu perfil e suas preferências. <a href="#">Saiba mais.</a></p>
+
+    <div class="avatar-row">
+      <span class="avatar-big" aria-hidden="true">GM</span>
+      <div class="avatar-meta">
+        <div class="am-label">Imagem de perfil</div>
+        <div class="avatar-actions">
+          <button class="file-btn">Escolher arquivo</button>
+          <span class="file-name">Nenhum arquivo escolhido</span>
+        </div>
+        <div class="avatar-hint">Caso não selecione nenhum, usaremos seu <a href="#">Gravatar</a>.</div>
+        <a href="#" class="remove-link">Remover</a>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="p-nome">Nome</label>
+      <input id="p-nome" type="text" value="Giraffe Marketing" />
+    </div>
+    <div class="field">
+      <label for="p-user">Usuário</label>
+      <input id="p-user" type="text" value="giraffe_marketing" />
+    </div>
+    <div class="field">
+      <label for="p-email">Email</label>
+      <input id="p-email" type="email" value="martinsjunior089@gmail.com" />
+    </div>
+    <div class="field">
+      <label for="p-idioma">Idioma</label>
+      <select id="p-idioma">
+        <option>Português (BR) - Português (BR)</option>
+        <option>English (US)</option>
+        <option>Español</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="p-fuso">Fuso horário</label>
+      <select id="p-fuso">
+        <option>(GMT-03:00) America/Sao_Paulo</option>
+        <option>(GMT-04:00) America/Manaus</option>
+        <option>(GMT+00:00) UTC</option>
+      </select>
+    </div>
+
+    <div class="row-between">
+      <a href="#">Alterar senha</a>
+      <button class="save-btn">Salvar</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="mfa-head">
+      <div>
+        <h3>Autenticação multifator</h3>
+        <p>Aumente a segurança da sua conta habilitando a autenticação multifator (MFA).</p>
+      </div>
+      <button class="toggle" aria-pressed="false" aria-label="Ativar autenticação multifator"></button>
+    </div>
+    <div class="info-box">Cada vez que você entrar terá que fornecer seu usuário e senha, como de costume, além de um código gerado aleatoriamente a partir de seu telefone.</div>
+
+    <div class="divider"></div>
+
+    <div class="danger-box">
+      <p>Uma vez que você excluir esta conta, não há mais volta. Por favor, tenha certeza.</p>
+      <button class="danger-btn">Excluir conta</button>
+    </div>
+  </div>
+
+  <!-- NOTIFICAÇÕES -->
+  <div class="page page-wide" id="pageNotif" hidden>
+    <div class="notif-head">
+      <div class="nh-info">
+        <div class="notif-title-row"><h1>Notificações</h1><span class="notif-enabled">habilitado</span></div>
+        <p class="sec-sub" style="margin:0;">Personalize as notificações de email que você recebe do Giraffe. <a href="#">Saiba mais.</a></p>
+      </div>
+      <button class="off-btn">Desligar</button>
+    </div>
+
+    <div class="notif-when">Notificar-me por email quando:</div>
+    <label class="check-row"><input type="checkbox" checked />Quando eu for adicionado a um pipe ou time ou mencionado/responsável por um card</label>
+    <label class="check-row"><input type="checkbox" checked />Quando um card for movido, expirar, estiver atrasado ou vencido</label>
+    <label class="check-row"><input type="checkbox" checked />Quando um comentário ou checklist for criado</label>
+    <button class="save-sm" style="margin-top:8px;">Salvar</button>
+
+    <div class="custom-title">Notificações personalizadas</div>
+    <div class="custom-owner">Giraffe Marketing</div>
+
+    <div class="pipe-notif">
+      <div class="pipe-notif-head">
+        <span class="pipe-notif-name">Contratos e Juridicos (cópia 1)</span>
+        <div class="mode-seg"><button class="active">Padrão</button><button>Específica</button></div>
+      </div>
+    </div>
+
+    <div class="pipe-notif">
+      <div class="pipe-notif-head">
+        <span class="pipe-notif-name">Contratos e Juridicos</span>
+        <div class="mode-seg"><button>Padrão</button><button class="active">Específica</button></div>
+      </div>
+      <div class="pipe-notif-body">
+        <div class="notif-when">Notificar-me por email quando:</div>
+        <label class="check-row"><input type="checkbox" checked />Quando eu for adicionado a um pipe ou time ou mencionado/responsável por um card</label>
+        <label class="check-row"><input type="checkbox" checked />Quando um card for movido, expirar, estiver atrasado ou vencido</label>
+        <label class="check-row"><input type="checkbox" checked />Quando um comentário ou checklist for criado</label>
+        <div class="pipe-notif-foot"><button class="save-sm">Salvar</button></div>
+      </div>
+    </div>
+
+    <div class="pipe-notif">
+      <div class="pipe-notif-head">
+        <span class="pipe-notif-name">[SO] Solicitação de Orçamento</span>
+        <div class="mode-seg"><button class="active">Padrão</button><button>Específica</button></div>
+      </div>
+    </div>
+
+    <div class="pipe-notif">
+      <div class="pipe-notif-head">
+        <span class="pipe-notif-name">[TP] Tráfego - Lucas</span>
+        <div class="mode-seg"><button>Padrão</button><button class="active">Específica</button></div>
+      </div>
+      <div class="pipe-notif-body">
+        <div class="notif-when">Notificar-me por email quando:</div>
+        <label class="check-row"><input type="checkbox" checked />Quando eu for adicionado a um pipe ou time ou mencionado/responsável por um card</label>
+        <label class="check-row"><input type="checkbox" checked />Quando um card for movido, expirar, estiver atrasado ou vencido</label>
+        <label class="check-row"><input type="checkbox" checked />Quando um comentário ou checklist for criado</label>
+        <div class="pipe-notif-foot"><button class="save-sm">Salvar</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOKEN DE ACESSO PESSOAL -->
+  <div class="page" id="pageToken" hidden>
+    <h1 class="sec-title">Novo token de acesso pessoal <span style="font-size:11px;font-weight:700;color:#FF7200;background:#FFF3E8;padding:3px 10px;border-radius:6px;vertical-align:4px;">Em breve · Fase 2</span></h1>
+    <p class="sec-sub">Tokens gerados que podem ser usados para acessar a GraphQL API. Este recurso faz parte das integrações externas da Fase 2 e ainda não está disponível.</p>
+
+    <div class="field">
+      <label for="tok-desc">Descrição do token</label>
+      <p class="sec-sub" style="margin:-2px 0 8px;">Para que servirá este token?</p>
+      <input id="tok-desc" type="text" placeholder="" />
+    </div>
+    <div class="field">
+      <label for="tok-org">Organização de cobrança</label>
+      <p class="sec-sub" style="margin:-2px 0 8px;">Selecione a organização que será cobrada pelo uso do token.</p>
+      <select id="tok-org">
+        <option>Giraffe Marketing</option>
+        <option>Giraffe Contratos</option>
+      </select>
+    </div>
+    <div class="tok-actions">
+      <button class="tok-cancel">Cancelar</button>
+      <button class="tok-save" data-giraffe-soon="Token de acesso / GraphQL API">Salvar</button>
+    </div>
+  </div>
+
+<script>
+  (function () {
+    var tabGeral = document.getElementById('tabGeral');
+    var tabNotif = document.getElementById('tabNotif');
+    var tabToken = document.getElementById('tabToken');
+    var pageGeral = document.getElementById('pageGeral');
+    var pageNotif = document.getElementById('pageNotif');
+    var pageToken = document.getElementById('pageToken');
+    var tabs = [tabGeral, tabNotif, tabToken];
+    function activate(tab) { tabs.forEach(function (t) { t.classList.remove('active'); }); tab.classList.add('active'); }
+    tabGeral.addEventListener('click', function () { activate(tabGeral); pageGeral.hidden = false; pageNotif.hidden = true; pageToken.hidden = true; });
+    tabNotif.addEventListener('click', function () { activate(tabNotif); pageNotif.hidden = false; pageGeral.hidden = true; pageToken.hidden = true; });
+    tabToken.addEventListener('click', function () { activate(tabToken); pageToken.hidden = false; pageGeral.hidden = true; pageNotif.hidden = true; });
+
+    // Toggle Padrão/Específica por pipe
+    document.querySelectorAll('.mode-seg').forEach(function (seg) {
+      seg.querySelectorAll('button').forEach(function (b) {
+        b.addEventListener('click', function () {
+          seg.querySelectorAll('button').forEach(function (o) { o.classList.remove('active'); });
+          b.classList.add('active');
+        });
+      });
+    });
+
+    var tg = document.querySelector('.toggle');
+    if (tg) tg.addEventListener('click', function () {
+      tg.setAttribute('aria-pressed', tg.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  })();
+</script>
+
+<script>
+(function(){
+  var t=document.getElementById('userTrigger'), m=document.getElementById('userMenu');
+  if(t&&m){
+    t.addEventListener('click',function(e){e.stopPropagation();var o=m.classList.toggle('show');t.setAttribute('aria-expanded',o?'true':'false');});
+    document.addEventListener('click',function(e){if(!m.contains(e.target)&&!t.contains(e.target)){m.classList.remove('show');t.setAttribute('aria-expanded','false');}});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape'){m.classList.remove('show');t.setAttribute('aria-expanded','false');}});
+  }
+})();
+</script>
+
+  <div class="notif-pop" id="notifPop" role="dialog" aria-label="Notificações">
+    <div class="notif-head"><h3>Notificações</h3><button class="notif-markall">Marcar todas como lidas</button></div>
+    <div class="notif-list">
+        <div class="notif-item"><div class="ni-text">O card "MSILVA" está expirado</div><div class="ni-date">07/07/2026 13:48</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ PIÇARRAS" está atrasado</div><div class="ni-date">07/07/2026 13:12</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ ITAPEMA" está atrasado</div><div class="ni-date">07/07/2026 13:04</div></div>
+        <div class="notif-item"><div class="ni-text">O card "INOVA GUAXUPE " está atrasado</div><div class="ni-date">07/07/2026 12:56</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MSILVA" está atrasado</div><div class="ni-date">07/07/2026 12:48</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ JUNDIAI" foi finalizado no pipe "Criação de Artes Giraffe"</div><div class="ni-date">07/07/2026 11:15</div></div>
+        <div class="notif-item"><div class="ni-text">O card "MUNIZ JUNDIAI" foi movido para a fase "Arquivado"</div><div class="ni-date">07/07/2026 10:52</div></div>
+    </div>
+    <div class="notif-foot"><a class="notif-seeall" href="minhas-notificacoes.html" style="text-decoration:none;">Ver todas as notificações</a></div>
+  </div>
+<script>
+(function(){
+  var b=document.getElementById('notifBtn'), p=document.getElementById('notifPop');
+  if(b&&p){
+    b.addEventListener('click',function(e){e.stopPropagation();p.classList.toggle('show');});
+    document.addEventListener('click',function(e){if(!p.contains(e.target)&&!b.contains(e.target))p.classList.remove('show');});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')p.classList.remove('show');});
+  }
+})();
+</script>
+<script src="js/giraffe-state.js"></script>
+<script src="js/giraffe-shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auditoria do Sistema — Giraffe CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  :root {
+    --ink: #14110E;
+    --charcoal: #3A3632;
+    --mute: #746E66;
+    --faint: #A29B91;
+    --hairline: #E6E1D8;
+    --paper: #FCFBF8;
+    --primary: #FF7200;
+    --orange-soft: #FFF3E8;
+    --green: #2E7D46;
+    --green-soft: #E8F3EA;
+    --amber: #B7791F;
+    --amber-soft: #FBF1DC;
+    --red: #C0392B;
+    --red-soft: #FBE9E7;
+  }
+  * { box-sizing: border-box; }
+  doc-page {
+    font-family: "Inter Tight", system-ui, -apple-system, sans-serif;
+    color: var(--ink); font-size: 10.5pt; line-height: 1.55;
+    background: var(--paper);
+  }
+  h1, h2, h3, h4 { font-family: "Inter Tight", sans-serif; letter-spacing: -0.02em; color: var(--ink); }
+
+  /* ===== Cover ===== */
+  .cover { border-bottom: 2px solid var(--ink); padding-bottom: 22px; margin-bottom: 30px; }
+  .cover .kicker { font-size: 8.5pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--primary); margin-bottom: 14px; }
+  .cover h1 { font-size: 30pt; line-height: 1.02; margin: 0 0 12px; font-weight: 800; }
+  .cover .lede { font-family: "Newsreader", serif; font-size: 13pt; color: var(--charcoal); max-width: 46em; margin: 0; font-style: italic; }
+  .cover .meta { display: flex; gap: 28px; margin-top: 20px; font-size: 9pt; color: var(--mute); flex-wrap: wrap; }
+  .cover .meta b { color: var(--ink); font-weight: 700; display: block; font-size: 10pt; margin-bottom: 1px; }
+
+  h2.sec { font-size: 15pt; font-weight: 800; margin: 34px 0 3px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+  h2.sec .n { color: var(--primary); font-variant-numeric: tabular-nums; margin-right: 8px; }
+  .sec-note { color: var(--mute); font-size: 9.5pt; margin: 0 0 14px; }
+
+  h3 { font-size: 11.5pt; font-weight: 700; margin: 20px 0 6px; }
+  p { margin: 0 0 9px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  li::marker { color: var(--faint); }
+  code, .ref { font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace; font-size: 8.8pt; background: #F1ECE2; padding: 1px 5px; border-radius: 4px; color: #6b3410; }
+  b, strong { font-weight: 700; }
+
+  /* Status pills */
+  .pill { display: inline-block; font-size: 8pt; font-weight: 700; padding: 2px 9px; border-radius: 20px; letter-spacing: 0.02em; white-space: nowrap; vertical-align: 1px; }
+  .pill.ok { background: var(--green-soft); color: var(--green); }
+  .pill.warn { background: var(--amber-soft); color: var(--amber); }
+  .pill.block { background: var(--red-soft); color: var(--red); }
+
+  /* Status board */
+  .board { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; margin: 6px 0 4px; }
+  .board .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--hairline); }
+  .board .row:last-child { border-bottom: none; }
+  .board .row:nth-child(even) { background: #FAF7F1; }
+  .board .area { font-weight: 600; font-size: 10pt; }
+  .board .area small { display: block; font-weight: 400; color: var(--mute); font-size: 8.5pt; margin-top: 1px; }
+
+  .callout { border-left: 3px solid var(--primary); background: var(--orange-soft); padding: 11px 15px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 9.7pt; }
+  .callout.block { border-color: var(--red); background: var(--red-soft); }
+  .callout.warn { border-color: var(--amber); background: var(--amber-soft); }
+  .callout b.tag { display: inline-block; font-size: 8pt; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 3px; }
+
+  .ev { font-size: 8.8pt; color: var(--mute); margin-top: 2px; }
+  .ev b { color: var(--charcoal); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 26px; }
+  .finding { padding: 9px 0; border-bottom: 1px solid var(--hairline); }
+  .finding:last-child { border-bottom: none; }
+  .finding .ft { font-weight: 700; font-size: 10pt; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 8.7pt; color: var(--mute); margin: 4px 0 0; }
+
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 8px 0; }
+  table.matrix th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--mute); border-bottom: 1.5px solid var(--hairline); padding: 6px 8px; }
+  table.matrix td { border-bottom: 1px solid var(--hairline); padding: 6px 8px; vertical-align: top; }
+  table.matrix tr:nth-child(even) td { background: #FAF7F1; }
+
+  .foot-note { font-size: 8.5pt; color: var(--faint); }
+  .runhead { display: flex; justify-content: space-between; align-items: center; font-size: 8pt; color: var(--faint); padding: 0 2px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .runhead .dot { color: var(--primary); }
+</style>
+</head>
+<body>
+<doc-page size="a4" margin="0.7in">
+
+  <div slot="header" class="runhead">
+    <span><span class="dot">●</span> Giraffe CRM — Auditoria de Produto</span>
+    <span>Fase 1 · Confidencial</span>
+  </div>
+
+  <!-- ===================== COVER ===================== -->
+  <div class="cover">
+    <div class="kicker">Auditoria de coerência de produto</div>
+    <h1>Giraffe CRM<br />Estado atual do sistema</h1>
+    <p class="lede">Análise baseada em evidências dos 14 protótipos HTML navegáveis — sem alterações, sem redesenho. O objetivo é medir a coerência do produto contra o escopo oficial da Fase 1.</p>
+    <div class="meta">
+      <div><b>Escopo avaliado</b>14 telas + 2 motores compartilhados</div>
+      <div><b>Base</b>Fase 1 (CRM, Kanban, Database, Automação, E-mails, IA)</div>
+      <div><b>Método</b>Leitura de código + mapa de navegação</div>
+    </div>
+  </div>
+
+  <!-- ===================== 1. RESUMO EXECUTIVO ===================== -->
+  <h2 class="sec"><span class="n">01</span>Resumo executivo</h2>
+  <p>O Giraffe CRM está <b>maduro como referência visual e de interação</b>. O núcleo — o pipe Kanban — é a peça mais completa do sistema: entrega 7 visualizações (Fluxo, Kanban, Lista, Relatórios, Formulário, E-mails, Painéis), modal de card com comentários, e-mail, checklist, automações e mover fases, além de configurações completas (formulário, fases, pessoas, e-mail, config do pipe), conexões, formulário público e convites. Database, Automações e Agentes de IA seguem o mesmo vocabulário visual e reaproveitam motores compartilhados (<span class="ref">field-config.js</span>, <span class="ref">email-templates.js</span>).</p>
+  <p>O que impede tratar o conjunto como "produto coerente" hoje não é o visual — é a <b>ausência de um modelo de dados documentado</b> e uma série de <b>inconsistências de dados/identidade entre telas</b>. Os protótipos foram construídos isoladamente: cada tela inventa seu próprio catálogo de pipes, sua própria identidade de usuário e sua própria fonte de notificações. Não há documentação de regras de negócio, glossário ou matriz de permissões — apenas HTML. Para a Fase 1 avançar para implementação, a prioridade é <b>consolidar o modelo conceitual</b>, não construir mais telas.</p>
+  <div class="callout">
+    <b class="tag">Veredito</b><br />
+    <b>Pronto como referência de UI · Não pronto como especificação de produto.</b> Nenhum bloqueador visual. Os bloqueadores são conceituais: modelo de dados, identidade/multi-tenant e regras de negócio ainda vivem só na cabeça de quem fez os protótipos.
+  </div>
+
+  <!-- ===================== 2. STATUS POR ÁREA ===================== -->
+  <h2 class="sec"><span class="n">02</span>Status por área</h2>
+  <p class="sec-note">Classificação por evidência direta dos protótipos.</p>
+  <div class="board">
+    <div class="row"><div class="area">Pipe / Kanban <small>Fluxo, Kanban, Lista, Relatórios, Formulário, E-mails, Painéis + modal de card + configurações</small></div><span class="pill ok">✅ Referência</span></div>
+    <div class="row"><div class="area">Database <small>Tabela, criar registro, formulário, config, ícone, exclusão com confirmação</small></div><span class="pill ok">✅ Referência</span></div>
+    <div class="row"><div class="area">Automações <small>Lista, criação (evento→condição→ação), logs, base de conhecimento</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Agentes de IA <small>Onboarding, templates, construtor (Geral/Conhecimento/Comportamentos), drawer de teste, logs</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">E-mails <small>Caixa de entrada do pipe, composer, templates (motor compartilhado)</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Início / Dashboard <small>Grade de pipes e databases, AI Builder, criar pipe/database</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Painel administrativo <small>Geral, IA, Financeiro, Pessoas, Estatísticas, Auditoria, E-mail, API</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Perfil / Configurações do usuário <small>Geral, Notificações, Token de acesso</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Notificações <small>Popover global + página completa</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Tarefas e Solicitações <small>Duas listas com estado vazio</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Relatórios da empresa <small>Filtros por pipe, colunas, exportar, paginação</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Login / Recuperar senha <small>Autenticação (visual próprio)</small></div><span class="pill warn">🟡 Ajustes</span></div>
+    <div class="row"><div class="area">Modelo de dados / Regras de negócio <small>Nenhum documento existe — só HTML</small></div><span class="pill block">🔴 Bloqueador</span></div>
+    <div class="row"><div class="area">Identidade & Multi-tenant <small>"Trocar de empresa" sem fluxo; usuário vs. empresa confusos</small></div><span class="pill block">🔴 Bloqueador</span></div>
+  </div>
+  <div class="legend">
+    <span><span class="pill ok">✅</span> Pronto como referência</span>
+    <span><span class="pill warn">🟡</span> Precisa de ajustes</span>
+    <span><span class="pill block">🔴</span> Bloqueador</span>
+  </div>
+
+  <!-- ===================== 3. BLOQUEADORES ===================== -->
+  <h2 class="sec"><span class="n">03</span>Bloqueadores <span class="pill block">🔴</span></h2>
+  <p class="sec-note">Impedem a passagem de "protótipo" para "especificação implementável". Não são bugs de tela.</p>
+
+  <h3>B1 · Não existe modelo de dados documentado</h3>
+  <p>Toda a estrutura conceitual (o que é um Pipe, uma Fase, um Card, um Campo, um Registro, uma Automação, um Agente) só existe implícita no HTML. Não há um documento que defina entidades, atributos, relacionamentos e cardinalidade.</p>
+  <p class="ev"><b>Evidência:</b> a pasta <span class="ref">docs/01-documentacao-base/</span> contém apenas <span class="ref">07-referencias-visuais/prototypes/</span>. Não há seções 01–06, glossário, nem arquivo de regras. As seções 01–06 estão numeradas mas ausentes.</p>
+
+  <h3>B2 · Identidade de usuário vs. empresa é contraditória</h3>
+  <p>O sistema não deixa claro se "Giraffe Marketing" é o usuário, a empresa/organização, ou ambos — e o nome exibido muda entre telas.</p>
+  <p class="ev"><b>Evidência:</b> em <span class="ref">dashboard-home.html</span> o canto superior direito e a saudação mostram <b>"Martins junior / MJ"</b>; em todas as outras telas o mesmo canto mostra <b>"Giraffe Marketing / GM"</b>. O menu de usuário lista "Giraffe Marketing" como nome + "Super Administrador" como se fosse pessoa, mas o mesmo texto aparece como organização de cobrança no token. O campo "Nome" do perfil = "Giraffe Marketing", e-mail = <span class="ref">martinsjunior089@gmail.com</span>.</p>
+
+  <h3>B3 · Multi-tenant é prometido mas não existe</h3>
+  <p>"Trocar de empresa" aparece no menu de usuário de toda tela, e o token tem "Organização de cobrança" com múltiplas empresas — mas não há fluxo de troca de empresa nem definição de como pipes/databases se isolam por organização.</p>
+  <p class="ev"><b>Evidência:</b> botão "Trocar de empresa" é inerte em <span class="ref">dashboard-home</span>, <span class="ref">tarefas-solicitacoes</span>, <span class="ref">meu-perfil</span>, <span class="ref">relatorios-empresa</span>, <span class="ref">minhas-notificacoes</span>. Nenhum seletor de empresa em lugar algum.</p>
+
+  <!-- ===================== 4. PROBLEMAS IMPORTANTES ===================== -->
+  <h2 class="sec"><span class="n">04</span>Problemas importantes <span class="pill warn">🟡</span></h2>
+
+  <h3>P1 · Catálogo de pipes diferente em cada tela</h3>
+  <p>Não há uma lista canônica de pipes. Cada tela inventa a sua.</p>
+  <ul>
+    <li><b>Início:</b> só "Contratos e Juridicos" é real; os outros 4 (Criação de Artes, Site e Manutenção, Estrutura de Implementação, Estrutura Tráfego 6666) estão marcados "Indisponível neste protótipo".</li>
+    <li><b>Relatórios da empresa:</b> botão diz <b>"13 pipes"</b>, mas a lista tem só <b>10</b> — e com nomes que não aparecem no Início: "[SO] Solicitação de Orçamento", "[TP] Tráfego - Lucas/Hiago/Matheus", "Estrutura do Tráfego".</li>
+    <li><b>Perfil → Notificações:</b> aparece "Contratos e Juridicos <b>(cópia 1)</b>", que não existe em nenhuma outra tela.</li>
+    <li><b>Automações:</b> o seletor "No pipe" repete a lista de 10 pipes dos relatórios.</li>
+  </ul>
+  <p class="ev"><b>Impacto:</b> impossível saber quantos pipes o sistema tem, ou quais nomes são canônicos.</p>
+
+  <h3>P2 · Notificações têm duas fontes de dados divergentes</h3>
+  <p>O <b>popover</b> global (em toda tela) tem 7 itens fixos com datas absolutas (<span class="ref">07/07/2026 13:48</span>). A <b>página</b> completa tem 15 itens com tempo relativo ("há 7 minutos"). O badge diz sempre "9+". Os três números não conversam.</p>
+
+  <h3>P3 · "Tudo em dia" contradiz o resto do sistema</h3>
+  <p><span class="ref">tarefas-solicitacoes.html</span> mostra "Sem tarefas / Tudo em dia!" e "Nenhuma solicitação" — enquanto as notificações listam vários cards "atrasado", "expirado" e "vencido". Um usuário com 5 cards atrasados não deveria ver "Tudo em dia".</p>
+
+  <h3>P4 · Relatórios exibe dados obviamente sintéticos</h3>
+  <p>Em <span class="ref">relatorios-empresa.html</span>, todas as ~27 linhas têm Fase = "Arquivado" e criador = "Jhenipher martins". O cabeçalho anuncia "3769 resultados / 1–50", mas só 27 linhas são renderizadas e o rodapé diz "1 – 50 de 3769". Números internamente inconsistentes.</p>
+
+  <h3>P5 · Vazamentos de escopo da Fase 2 sem gate</h3>
+  <p>Alguns recursos de Fase 2 (API externa, webhooks) aparecem <b>ativos</b>, sem a marca "Em breve" que o resto do sistema usa corretamente:</p>
+  <ul>
+    <li><b>Token de acesso pessoal</b> (Perfil) referencia a <span class="ref">GraphQL API</span> — API externa é Fase 2.</li>
+    <li><b>Automações → "Faça uma requisição HTTP"</b> entrega um editor de corpo HTTP completo — webhook/HTTP é Fase 2.</li>
+    <li><b>Painel → API</b> está corretamente marcado <b>"Em breve"</b> e bloqueado — <i>este é o padrão certo</i>. E as "Chaves de API" com permissão "Webhooks" no painel também são Fase 2.</li>
+  </ul>
+  <p class="ev"><b>Nota:</b> a criação de "card/registro conectado" em Automações está corretamente marcada "Ação em desenvolvimento". O gating é inconsistente: alguns recursos de Fase 2 são gateados, outros não.</p>
+
+  <!-- ===================== 5. AJUSTES MENORES ===================== -->
+  <h2 class="sec"><span class="n">05</span>Ajustes menores</h2>
+  <div class="grid2">
+    <div class="finding"><div class="ft">Busca não funciona</div><div class="ev">Todas as barras de busca (topo, cards, tarefas, relatórios) são decorativas.</div></div>
+    <div class="finding"><div class="ft">Botões de menu inertes</div><div class="ev">"Assistentes de IA", "Trocar de empresa", "Sair" no menu de usuário não fazem nada em nenhuma tela.</div></div>
+    <div class="finding"><div class="ft">Ícone morto na nav do pipe</div><div class="ev">O 4º ícone da barra lateral em <span class="ref">agentes-ia</span> e <span class="ref">automacoes-pipe</span> é botão sem destino.</div></div>
+    <div class="finding"><div class="ft"><span class="ref">zoom: 0.78</span> só no Início</div><div class="ev">O dashboard escala o conteúdo com zoom; as demais telas não. Renderização inconsistente entre telas.</div></div>
+    <div class="finding"><div class="ft">Datas do card sem seletor</div><div class="ev">Campos de data no modal de card são <span class="ref">readonly</span> "Selecione uma data" sem datepicker.</div></div>
+    <div class="finding"><div class="ft">Login isolado do sistema</div><div class="ev">Login/recuperar senha usam fontes e layout próprios (sem os tokens Inter Tight do app). Aceitável, mas desconectado.</div></div>
+    <div class="finding"><div class="ft">"Ver todas" no popover de IA</div><div class="ev">Em <span class="ref">agentes-ia</span> o link "Ver todas as notificações" é <span class="ref">href="#"</span>, não aponta para a página.</div></div>
+    <div class="finding"><div class="ft">Badge fixo "9+"</div><div class="ev">Contador de notificação é estático em todas as telas.</div></div>
+  </div>
+
+  <!-- ===================== 6. FUNCIONALIDADES FALTANTES ===================== -->
+  <h2 class="sec"><span class="n">06</span>Funcionalidades faltantes (dentro da Fase 1)</h2>
+  <p class="sec-note">Recursos que a Fase 1 pressupõe mas que nenhum protótipo cobre.</p>
+  <ul>
+    <li><b>Busca global funcional</b> — prometida pela UI em toda tela, sem nenhuma implementação de resultados.</li>
+    <li><b>Estado preenchido de Tarefas e Solicitações</b> — só existe o estado vazio; não há exemplo de tarefa/solicitação real, nem o fluxo de abrir/concluir.</li>
+    <li><b>Fluxo de criação real de pipe/database</b> — o modal "Criar pipe/database" só fecha; não leva a um pipe novo nem ao "Criar com IA".</li>
+    <li><b>Múltiplos pipes e databases navegáveis</b> — apenas 1 pipe e 1 database abrem; todo o resto é placeholder. A troca entre pipes não é demonstrável.</li>
+    <li><b>Envio real de e-mail / convite</b> — os fluxos chegam ao estado de sucesso, mas não há caixa "enviados" nem histórico consolidado.</li>
+    <li><b>Datepicker</b> para vencimento de card e campos de data de formulário.</li>
+    <li><b>Estado logado ↔ deslogado</b> — "Sair" não retorna ao login; não há guarda de sessão.</li>
+  </ul>
+
+  <!-- ===================== 7. DECISÕES PENDENTES ===================== -->
+  <h2 class="sec"><span class="n">07</span>Decisões pendentes</h2>
+  <p class="sec-note">Questões de produto que precisam de resposta antes de implementar.</p>
+  <table class="matrix">
+    <thead><tr><th style="width:32%">Decisão</th><th>Por que precisa ser resolvida</th></tr></thead>
+    <tbody>
+      <tr><td>O que é a unidade de conta?</td><td>Usuário, Empresa/Organização e "Marca" (Giraffe Marketing) estão misturados. Definir a hierarquia: Organização → Membros → Papéis.</td></tr>
+      <tr><td>Multi-empresa está no MVP?</td><td>"Trocar de empresa" e "Organização de cobrança" sugerem multi-tenant. Se for Fase 1, precisa de fluxo; se não, remover as pistas.</td></tr>
+      <tr><td>Quão "básica" é a IA da Fase 1?</td><td>O construtor de Agentes (comportamentos, base de conhecimento, drawer de teste, templates) é robusto — pode exceder "IA básica". Definir o corte.</td></tr>
+      <tr><td>Requisição HTTP é Fase 1 ou 2?</td><td>Está construída em Automações mas conceitualmente é integração externa (Fase 2). Decidir e gatear.</td></tr>
+      <tr><td>Token pessoal / GraphQL API</td><td>É API externa (Fase 2). Manter na tela de perfil agora gera expectativa incorreta.</td></tr>
+      <tr><td>Modelo de notificações</td><td>Absolutas vs. relativas; popover vs. página; o que gera notificação e quando marcar como lida.</td></tr>
+      <tr><td>Tarefa vs. Solicitação vs. Card</td><td>São três conceitos hoje sem relação documentada. Precisam de definição e de como se originam.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ===================== 8. INCONSISTÊNCIAS CONCEITUAIS ===================== -->
+  <h2 class="sec"><span class="n">08</span>Inconsistências conceituais</h2>
+  <ul>
+    <li><b>Usuário ≠ Empresa ≠ Marca.</b> "Martins junior" (pessoa), "Giraffe Marketing" (marca/empresa) e o papel "Super Administrador" são usados de forma intercambiável. Ver B2.</li>
+    <li><b>Tarefa vs. Solicitação vs. Card.</b> Três entidades coexistem sem relação definida. As notificações falam de "cards"; a tela de trabalho fala de "tarefas" e "solicitações"; os relatórios listam "cards" como linhas.</li>
+    <li><b>Pipe vs. Database.</b> Ambos têm "Formulário inicial", "Pessoas", "Configurações", ícone e exclusão — vocabulário quase idêntico. Falta documentar em que diferem conceitualmente (fluxo/fases vs. tabela de registros).</li>
+    <li><b>"Assistentes de IA" em dois lugares.</b> Existe um item global no menu de usuário e uma tela de Agentes por-pipe. Não está claro se IA é global, por-pipe, ou os dois.</li>
+    <li><b>Notificação vs. Log vs. Auditoria.</b> Há "Notificações", "Logs" (em Automações e Agentes) e "Auditoria" (no Painel). Três históricos com fronteiras não definidas.</li>
+  </ul>
+
+  <!-- ===================== 9. INCONSISTÊNCIAS VISUAIS ===================== -->
+  <h2 class="sec"><span class="n">09</span>Inconsistências visuais</h2>
+  <p>O sistema de design é forte e consistente na maioria (tokens de tipografia, cor primária <span class="ref">#FF7200</span>, Inter Tight, hairlines, cards). Os desvios:</p>
+  <ul>
+    <li><b>Escala do Início.</b> <span class="ref">zoom: 0.78</span> + centralização vertical fazem o dashboard renderizar em escala diferente do resto.</li>
+    <li><b>Autenticação fora do sistema.</b> Login/recuperar senha não usam os tokens do app (peso de fonte "medium" custom, painel laranja dividido).</li>
+    <li><b>Raio de borda dos campos.</b> Convergiu para 6–8px após ajustes, mas convém fixar um único valor no futuro guia.</li>
+    <li><b>Título "Giraffe" vs "Giraffe CRM".</b> Os <span class="ref">&lt;title&gt;</span> alternam entre "Giraffe" e "Giraffe CRM" entre telas (ex.: Agentes e Automações usam só "Giraffe").</li>
+  </ul>
+
+  <!-- ===================== 10. FLUXOS QUEBRADOS ===================== -->
+  <h2 class="sec"><span class="n">10</span>Fluxos quebrados ou incompletos</h2>
+  <table class="matrix">
+    <thead><tr><th style="width:34%">Fluxo</th><th>Estado</th></tr></thead>
+    <tbody>
+      <tr><td>Login → Home</td><td>Funciona (botão Entrar → dashboard). Mas "Sair" não volta ao login.</td></tr>
+      <tr><td>Criar pipe / database</td><td>Modal abre e fecha; não cria nada nem aciona "Criar com IA".</td></tr>
+      <tr><td>Abrir 2º pipe / 2º database</td><td>Quebrado por design: só 1 de cada é navegável; demais são "Indisponível".</td></tr>
+      <tr><td>Busca (qualquer)</td><td>Sem resultados — decorativa.</td></tr>
+      <tr><td>Trocar de empresa</td><td>Inexistente (botão inerte).</td></tr>
+      <tr><td>Notificação → item</td><td>Itens não clicáveis para o card de origem; "Ver todas" às vezes é <span class="ref">#</span>.</td></tr>
+      <tr><td>Menu → Assistentes de IA</td><td>Sem destino a partir do menu global.</td></tr>
+      <tr><td>Tarefas/Solicitações</td><td>Só estado vazio; não há fluxo de trabalho real.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ===================== 11. TELAS IMATURAS ===================== -->
+  <h2 class="sec"><span class="n">11</span>Telas que existem mas ainda não estão maduras</h2>
+  <ul>
+    <li><b>Relatórios da empresa</b> — dados sintéticos, contadores conflitantes ("13 pipes"/10; "3769"/27 linhas). Estrutura ok, conteúdo não.</li>
+    <li><b>Tarefas e Solicitações</b> — só o estado vazio existe; falta o caso preenchido, que é o que dá sentido à tela.</li>
+    <li><b>Início</b> — depende de <span class="ref">zoom</span>, catálogo de pipes divergente, AI Builder não conectado.</li>
+    <li><b>Painel → Estatísticas / Auditoria / Financeiro</b> — presentes na navegação; conteúdo é ilustrativo e precisa de definição de métricas reais.</li>
+    <li><b>Notificações (página)</b> — feed estático desalinhado com o popover.</li>
+  </ul>
+
+  <!-- ===================== 12. DADOS/ESTADOS DUPLICADOS ===================== -->
+  <h2 class="sec"><span class="n">12</span>Dados ou estados duplicados</h2>
+  <ul>
+    <li><b>Feed de notificações</b> — duplicado e divergente entre popover (7 itens, datas absolutas) e página (15 itens, tempo relativo). Deveria ser uma fonte única.</li>
+    <li><b>Cabeçalho/topbar + menu de usuário</b> — copiado literalmente em ~8 telas. Não é erro num protótipo, mas na implementação deve virar um componente único (hoje divergem: ex. nome "Martins junior" vs "Giraffe Marketing").</li>
+    <li><b>Lista de pipes</b> — repetida em Relatórios, Automações e Perfil, com contagens diferentes.</li>
+    <li><b>Popover de notificações</b> — o mesmo bloco HTML fixo está embutido em cada página em vez de derivar de dados.</li>
+  </ul>
+
+  <!-- ===================== 13. REGRAS QUE PRECISAM VIRAR DOC ===================== -->
+  <h2 class="sec"><span class="n">13</span>Regras de negócio que precisam virar documentação</h2>
+  <p class="sec-note">Regras hoje implícitas no comportamento dos protótipos.</p>
+  <ul>
+    <li><b>Movimentação de card entre fases</b> — regras de "mover" (fase inicial/final, cards conectados obrigatórios, preenchimento automático de campos) existem no modal "Configurar mover cards" mas não estão escritas.</li>
+    <li><b>Estados de card</b> — "atrasado", "expirado", "vencido", "finalizado", "arquivado": definir o que dispara cada um e como se relacionam com vencimento.</li>
+    <li><b>Automação = Evento → Condição → Ação</b> — catálogo de eventos, condições e ações precisa ser documentado (hoje só existe nos menus).</li>
+    <li><b>Permissões por papel</b> — "Super Administrador" e o painel de permissões (Automação, Webhooks, Configurações, Acesso total) precisam de matriz papel×capacidade.</li>
+    <li><b>Formulário inicial e visibilidade</b> — "Público para todos com o link" vs. acessos restritos: regras de publicação e captura.</li>
+    <li><b>Notificações</b> — quais eventos notificam, por e-mail vs. in-app, padrão vs. específico por pipe (a UI de preferências já pressupõe essas regras).</li>
+    <li><b>Agentes de IA</b> — o que é "Comportamento", "Conhecimento", quando um agente age, e limites (o "básico" da Fase 1).</li>
+  </ul>
+
+  <!-- ===================== 14. O QUE FALTA PARA A IA ENTENDER ===================== -->
+  <h2 class="sec"><span class="n">14</span>O que falta para a IA interpretar o projeto corretamente</h2>
+  <p>Para que uma IA (ou um novo dev) interprete o Giraffe sem adivinhar, falta a camada de especificação por baixo dos protótipos:</p>
+  <ul>
+    <li><b>Glossário de entidades</b> — Organização, Membro, Papel, Pipe, Fase, Card, Campo, Formulário, Database, Registro, Automação (Evento/Condição/Ação), Agente de IA (Comportamento/Conhecimento), E-mail/Template, Notificação, Tarefa, Solicitação, Conexão, Log/Auditoria.</li>
+    <li><b>Diagrama de relacionamentos</b> — cardinalidade (um Pipe tem N Fases; uma Fase tem N Cards; um Card pertence a 1 Pipe; Conexões ligam Cards entre Pipes/Databases).</li>
+    <li><b>Dicionário de dados por entidade</b> — atributos, tipos, obrigatoriedade, valores possíveis (ex.: estados de card).</li>
+    <li><b>Fonte de dados única e realista</b> — um seed coerente (mesma lista de pipes, usuários, notificações) que todas as telas consumam, em vez de dados inventados por tela.</li>
+    <li><b>Máquina de estados</b> — de card (fases + atrasado/vencido/arquivado) e de automação (ativo/inativo, execução, log).</li>
+    <li><b>Matriz de permissões</b> — papel × capacidade, para a IA saber o que cada usuário pode fazer.</li>
+  </ul>
+  <div class="callout warn">
+    <b class="tag">Em resumo</b><br />
+    Os protótipos respondem <b>"como se parece"</b>. Falta o documento que responde <b>"o que é e como se comporta"</b>. Esse é o insumo que uma IA precisa para não alucinar regras.
+  </div>
+
+  <!-- ===================== 15. PRÓXIMOS PASSOS ===================== -->
+  <h2 class="sec"><span class="n">15</span>Próximos passos recomendados</h2>
+  <p class="sec-note">Em ordem de prioridade. Nada aqui exige Fase 2.</p>
+
+  <h3>Agora (destrava tudo)</h3>
+  <ul>
+    <li><b>Escrever o modelo conceitual</b> — glossário + diagrama de entidades + dicionário de dados. Preencher <span class="ref">docs/01-documentacao-base/</span> (as seções 01–06 ausentes).</li>
+    <li><b>Definir a hierarquia de identidade</b> — Organização → Membro → Papel; decidir se multi-empresa é Fase 1. Corrigir "Martins junior" vs "Giraffe Marketing".</li>
+    <li><b>Criar um seed de dados único</b> — uma lista canônica de pipes, usuários e notificações consumida por todas as telas.</li>
+  </ul>
+
+  <h3>Em seguida (coerência entre telas)</h3>
+  <ul>
+    <li>Unificar o catálogo de pipes ("13 pipes" = 13, mesmos nomes em toda parte).</li>
+    <li>Unificar a fonte de notificações (popover e página iguais; badge dinâmico).</li>
+    <li>Resolver a contradição "Tudo em dia" vs. cards atrasados.</li>
+    <li>Gatear os vazamentos de Fase 2 (Token/GraphQL, requisição HTTP) com "Em breve", como já se faz no Painel → API.</li>
+    <li>Documentar as regras de negócio da seção 13.</li>
+  </ul>
+
+  <h3>Depois (polimento)</h3>
+  <ul>
+    <li>Tornar a busca funcional (ou marcá-la claramente como Fase futura).</li>
+    <li>Datepicker; remover <span class="ref">zoom</span> do Início; unificar topbar/menu como componente.</li>
+    <li>Estado preenchido de Tarefas e Solicitações; fluxo de "Sair" → login.</li>
+    <li>Alinhar Login ao sistema de design do app.</li>
+  </ul>
+
+  <p class="foot-note" style="margin-top:26px;border-top:1px solid var(--hairline);padding-top:12px;">Documento de auditoria — somente leitura. Nenhum protótipo foi alterado na produção deste relatório. Evidências referem-se aos arquivos em <span class="ref">docs/01-documentacao-base/07-referencias-visuais/prototypes/</span>.</p>
+
+</doc-page>
+<script src="doc-page.js"></script>
+</body>
+</html>
