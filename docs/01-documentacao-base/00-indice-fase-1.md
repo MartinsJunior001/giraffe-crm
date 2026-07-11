@@ -1,12 +1,12 @@
 # Documentação Base — Giraffe CRM · Fase 1
 
 > Documento oficial de referência da **Fase 1** do Giraffe CRM.
-> Fonte da verdade desta documentação: o **protótipo unificado** em
-> `08-referencias-visuais/prototypes/` (em especial `giraffe-state.js`) e a
-> **auditoria pós-unificação** (`AUDITORIA-POS-UNIFICACAO.html`).
+> Fonte da verdade desta documentação: `docs/01-documentacao-base/`.
+> O **protótipo unificado** em `08-referencias-visuais/prototypes/` é referência
+> visual e de fluxo, não implementação final.
 >
-> Regra editorial: **nada aqui foi inventado.** Toda afirmação vem do protótipo
-> ou da auditoria. O que não pôde ser confirmado está marcado como
+> Regra editorial: não misturar documentação oficial com legado. O que não pôde
+> ser confirmado está marcado como
 > `NÃO CONFIRMADO` ou `PENDENTE DE DECISÃO`.
 
 ---
@@ -29,7 +29,7 @@ protótipo apenas como **"Em breve"** (ver `06-integracoes-externas/`).
 
 | # | Módulo | Tela(s) no protótipo | Navegável no protótipo |
 |---|--------|----------------------|------------------------|
-| 1 | Login | `login.html`, `forgot-password.html` | ✅ |
+| 1 | Login | `login.html` | ✅ |
 | 2 | Dashboard operacional | `dashboard-home.html` | ✅ |
 | 3 | Pipes / Kanban | `pipe-kanban.html` | ✅ (1 pipe navegável) |
 | 4 | Cards | modal em `pipe-kanban.html` | ✅ |
@@ -43,12 +43,17 @@ protótipo apenas como **"Em breve"** (ver `06-integracoes-externas/`).
 | 12 | Relatórios | `relatorios-empresa.html` | ✅ |
 | 13 | Perfil | `meu-perfil.html` | ✅ |
 | 14 | Painel Administrativo da Organização | `painel-administrativo.html` | ✅ |
-| 15 | Super Admin | `NÃO CONFIRMADO` como tela dedicada | ver nota abaixo |
+| 15 | Super Admin | `08-referencias-visuais/prototypes/super-admin-giraffe-crm.html` | referência separada |
 
-> **Nota sobre Super Admin:** no protótipo, "Super Admin" existe hoje como
-> **papel** do usuário (`currentUser.role = "Super Admin"`), não como uma área
-> de plataforma separada e navegável. Se a Fase 1 exige uma área de Super Admin
-> distinta do Painel Administrativo da Organização, isso é `PENDENTE DE DECISÃO`.
+> **Nota sobre Super Admin:** existe uma referência visual separada para o
+> **Platform Super Admin** em
+> `08-referencias-visuais/prototypes/super-admin-giraffe-crm.html`. Ela não faz
+> parte do fluxo operacional principal da Organização e sua integração futura
+> ao produto principal ainda será definida.
+>
+> **Nota sobre links do protótipo:** `forgot-password.html` e
+> `meu-trabalho.html` existem no pacote principal atual em
+> `08-referencias-visuais/prototypes/giraffe-crm-prototipo-html/`.
 
 ---
 
@@ -58,32 +63,32 @@ protótipo apenas como **"Em breve"** (ver `06-integracoes-externas/`).
 docs/01-documentacao-base/
 ├── 00-indice-fase-1.md ............................. [CRIADO]
 ├── 01-visao-do-produto/
-│   ├── visao-produto-fase-1.md ..................... [PENDENTE]
+│   ├── visao-produto-fase-1.md ..................... [CRIADO]
 │   └── glossario-e-modelo-conceitual/
 │       ├── glossario-fase-1.md ..................... [CRIADO]
 │       └── modelo-conceitual-fase-1.md ............. [CRIADO]
 ├── 02-mvp/
-│   └── mvp-fase-1.md ............................... [PENDENTE]
+│   └── mvp-fase-1.md ............................... [CRIADO]
 ├── 03-regras-de-negocio/
-│   └── regras-negocio-fase-1.md .................... [PENDENTE]
+│   └── regras-negocio-fase-1.md .................... [CRIADO]
 ├── 04-permissoes/
-│   └── permissoes-fase-1.md ........................ [PENDENTE]
+│   └── permissoes-fase-1.md ........................ [CRIADO]
 ├── 05-modelagem-de-dados/
-│   ├── entidades-fase-1.md ......................... [PENDENTE]
-│   └── relacionamentos-fase-1.md ................... [PENDENTE]
+│   ├── entidades-fase-1.md ......................... [CRIADO]
+│   └── relacionamentos-fase-1.md ................... [CRIADO]
 ├── 06-integracoes-externas/
-│   └── fase-1-vs-fase-2.md ......................... [PENDENTE]
+│   └── fase-1-vs-fase-2.md ......................... [CRIADO]
 ├── 07-fluxos-principais/
-│   ├── fluxo-login-dashboard.md .................... [PENDENTE]
-│   ├── fluxo-pipe-card-fase.md ..................... [PENDENTE]
+│   ├── fluxo-login-dashboard.md .................... [CRIADO]
+│   ├── fluxo-pipe-card-fase.md ..................... [CRIADO]
 │   ├── fluxo-database.md ........................... [PENDENTE]
 │   ├── fluxo-automacoes.md ......................... [PENDENTE]
 │   ├── fluxo-emails.md ............................. [PENDENTE]
 │   └── fluxo-ia-basica.md .......................... [PENDENTE]
 ├── 08-referencias-visuais/
-│   └── prototipo-unificado-fase-1.md ............... [PENDENTE]
+│   └── prototipo-unificado-fase-1.md ............... [CRIADO]
 └── 09-stack-escolhida/
-    └── stack-fase-1.md ............................. [PENDENTE]
+    └── stack-fase-1.md ............................. [CRIADO]
 ```
 
 > A pasta de protótipos vive em `08-referencias-visuais/prototypes/`. A seção
@@ -104,7 +109,7 @@ docs/01-documentacao-base/
 - **06-integracoes-externas** — fronteira Fase 1 × Fase 2 e itens "Em breve".
 - **07-fluxos-principais** — passo a passo dos fluxos navegáveis.
 - **08-referencias-visuais** — inventário das telas do protótipo unificado.
-- **09-stack-escolhida** — stack de implementação (a definir). `PENDENTE DE DECISÃO`.
+- **09-stack-escolhida** — stack oficial escolhida para a Fase 1.
 
 ---
 

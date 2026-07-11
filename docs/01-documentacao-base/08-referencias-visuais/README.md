@@ -510,67 +510,85 @@ Usar para referências de:
 
 ---
 
-## 10. Protótipos prioritários da Fase 1
+## 10. Protótipo unificado da Fase 1
 
-Os protótipos prioritários são:
+O protótipo prioritário atual da Fase 1 é o pacote unificado:
 
 ```text
 prototypes/
-├── form-builder.html
-├── card-view.html
-├── automations.html
-└── mobile.html
+├── giraffe-crm-prototipo-html/
+└── super-admin-giraffe-crm.html
 ```
 
-### `form-builder.html`
+### `giraffe-crm-prototipo-html/`
 
-Deve demonstrar:
+Representa a Fase 1 operacional do Giraffe CRM:
 
-- biblioteca de campos;
-- Canvas;
-- painel de configuração;
-- Destino dos Dados;
-- Preview;
-- Publicar.
+- Login;
+- Dashboard operacional;
+- Pipes / Kanban;
+- Cards;
+- Formulários;
+- Database;
+- Automações básicas;
+- E-mails;
+- IA básica;
+- Tarefas e Solicitações;
+- Notificações;
+- Relatórios;
+- Perfil;
+- Painel Administrativo da Organização.
 
----
+Arquivos principais:
 
-### `card-view.html`
+```text
+giraffe-crm-prototipo-html/
+├── index.html
+├── login.html
+├── forgot-password.html
+├── dashboard-home.html
+├── meu-trabalho.html
+├── pipe-kanban.html
+├── database-empresas-parceiras.html
+├── automacoes-pipe.html
+├── agentes-ia.html
+├── tarefas-solicitacoes.html
+├── minhas-notificacoes.html
+├── relatorios-empresa.html
+├── meu-perfil.html
+├── painel-administrativo.html
+└── js/
+    ├── giraffe-state.js
+    ├── giraffe-shell.js
+    ├── field-config.js
+    └── email-templates.js
+```
 
-Deve demonstrar:
+### `super-admin-giraffe-crm.html`
 
-- contexto;
-- Fase atual;
-- tarefas;
-- responsáveis;
-- Histórico;
-- ações.
+É referência visual separada do Platform Super Admin.
 
----
+Arquivo oficial:
 
-### `automations.html`
+```text
+docs/01-documentacao-base/08-referencias-visuais/prototypes/super-admin-giraffe-crm.html
+```
 
-Deve demonstrar:
+Não deve ser confundido com:
 
-- lista de Automações;
-- estado;
-- última execução;
-- resultado;
-- Logs;
-- Quando → Condições → Então.
+- Painel Administrativo da Organização;
+- papel comum dentro da organização;
+- tela operacional da Fase 1.
 
----
+Ele não faz parte do fluxo operacional principal. Sua integração futura ao
+produto principal ainda será definida.
 
-### `mobile.html`
+### Regra
 
-Deve demonstrar pelo menos:
+O HTML é referência visual e funcional de navegação.
 
-- Card no celular;
-- tarefas da Fase;
-- responsável;
-- Histórico essencial;
-- Sugestão de IA;
-- Formulário público.
+Ele não é código final, não define arquitetura, não define banco, não define API
+e não substitui BMAD/Spec Kit.
 
 ---
 
