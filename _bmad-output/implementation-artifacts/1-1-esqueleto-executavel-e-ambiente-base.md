@@ -1,6 +1,6 @@
 # Story 1.1: Esqueleto executável e ambiente base
 
-Status: in-progress
+Status: done
 
 <!-- Nota: validação é opcional. Rode /bmad-create-story:validate antes de dev-story para checagem de qualidade. -->
 
@@ -283,6 +283,7 @@ claude-opus-4-8 (Dev Agent, BMAD `bmad-dev-story`), 2026-07-12.
 | 2026-07-12 | Implementação T1–T8 (código escrito); Spec Kit retroativo; instalação + suíte de qualidade verdes; API e Web validadas em runtime; Docker pendente (daemon down). Status → in-progress. |
 | 2026-07-12 | Validação de containers concluída (daemon iniciado): build/up/health/smoke verdes. 3 correções (api Dockerfile pnpm deploy→prod-deps; web Dockerfile HOSTNAME=0.0.0.0; smoke.mjs exit limpo). Todos os 7 ACs comprovados. Implementação COMPLETA; pronta para Spec Kit Converge. |
 | 2026-07-12 | Spec Kit Converge = CONVERGED. Code Review (high effort, 8 angles→22 candidatos→20 CONFIRMED/2 PLAUSIBLE): 10 findings principais para correção (abaixo). |
+| 2026-07-12 | **Story encerrada — `done`.** Code Review final focal: **APPROVED** (nenhum finding CRITICAL/HIGH causado pelas correções; provas de fase vermelha reexecutadas de forma independente; Web comprovadamente `healthy` com a API derrubada). Gates finais reexecutados e verdes: `install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, API 13/13, Web 8/8, `build` sem testes em `dist`, ciclo Docker completo (`config`/`build`/`up` → api+web healthy, `smoke` 4/4, `down` limpo). Commits: `1862902` (feat — esqueleto executável do monorepo), `22cf2cc` (docs — artefatos BMAD e Spec Kit), `a98ec9f` (chore — guia do repositório e agentes), `ac1a4a2` (chore — gate de verificação de commits). Nenhum push, merge ou deploy. Backlog técnico transferido: CR2-07 (dedup de timeout / `AbortSignal.timeout`) e CR2-09 (**gate** da Story que introduzir o primeiro `packages/`). |
 | 2026-07-12 | **Rodada CR2** (Code Review focal = CHANGES REQUESTED): 8 findings `CORRIGIR AGORA` corrigidos (CR2-01/02 bloqueadores de credibilidade dos gates; CR2-03/04/05/06/08/10), 2 registrados como backlog (CR2-07, CR2-09). Typecheck da API passa a cobrir `test/` (evidência: erro TS plantado quebra o gate); testes tautológicos de health substituídos por **integração HTTP real** (evidência: renomear a rota quebra o teste); Web ganha `/healthz` desacoplado da API. Suíte: api 13/13, web 8/8. Ciclo Docker verde: `compose config`/`build`/`up` → api+web **healthy**, `smoke` **4/4** exit 0, `down` limpo. Gates locais verdes (`install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `test`, `build`). Nada comitado; artefatos autoritativos intactos. |
 | 2026-07-12 | Correções F1–F10 aplicadas dentro do allowlist (+ ajuste do teste `apps/web/test/env.test.ts` p/ nova mensagem `API_BASE_URL`). Validação local verde: `install --frozen-lockfile`, `format:check`, `lint`, `typecheck` OK; testes api 7/7 + web 6/6; build api+web OK. Validação em containers verde: `compose config` (F4 `API_BASE_URL`), `compose build`, `up -d` → api+web **healthy** (F2/F8), `smoke` 3/3 exit 0 (F5/F7), `compose down` limpo. Nada comitado; artefatos autoritativos intactos. Pronta para code-review de verificação. |
 
