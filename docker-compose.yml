@@ -1,0 +1,28 @@
+# Execução local integrada (dev/local) — Story 1.1.
+# Não usar como configuração de produção sem revisão (segredos via cofre/Coolify).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_PORT: '3001'
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      LOG_LEVEL: info
+    ports:
+      - '3001:3001'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      # Server-side (container) alcança a API pela rede do Compose. Variável de
+      # servidor (não NEXT_PUBLIC): não é exposta ao browser.
+      API_BASE_URL: http://api:3001
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
