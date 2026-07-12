@@ -51,7 +51,7 @@ development_status:
   # ===== Wave 1 — Épico 1: Fundação e Conta =====
   epic-1: in-progress
   1-1-esqueleto-executavel-e-ambiente-base: done
-  1-2-modelo-multi-tenant-e-isolamento-por-rls: ready-for-dev
+  1-2-modelo-multi-tenant-e-isolamento-por-rls: review
   1-3-propagacao-segura-do-contexto-de-organizacao: backlog
   1-4-login-e-resolucao-inicial-da-organizacao: backlog
   1-5-continuidade-de-sessao-logout-e-protecao-de-rotas: backlog

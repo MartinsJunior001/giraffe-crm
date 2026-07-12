@@ -1,6 +1,6 @@
 # Story 1.2: Modelo multi-tenant e isolamento por RLS
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -40,74 +40,74 @@ Status: ready-for-dev
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Baseline técnica e gates pré-código (AC: 1,2,3,4)**
-  - [ ] `context7-check`: fixar versões de PostgreSQL, Prisma e driver, e confirmar a API atual de Client Extensions (a documentação do Prisma muda entre majors — **não** decidir de memória).
-  - [ ] `pre-implementation-check`: produzir relatório com status GO / GO WITH CONDITIONS / NO-GO.
-  - [ ] Registrar decisão sobre `packages/` (ver **Risco CR2-09** abaixo).
+- [x] **T1 — Baseline técnica e gates pré-código (AC: 1,2,3,4)**
+  - [x] `context7-check`: fixar versões de PostgreSQL, Prisma e driver, e confirmar a API atual de Client Extensions (a documentação do Prisma muda entre majors — **não** decidir de memória).
+  - [x] `pre-implementation-check`: produzir relatório com status GO / GO WITH CONDITIONS / NO-GO.
+  - [x] Registrar decisão sobre `packages/` (ver **Risco CR2-09** abaixo).
 
-- [ ] **T2 — Infraestrutura de banco no Compose (AC: 4)**
-  - [ ] Serviço `db` (PostgreSQL) no `docker-compose.yml`, com healthcheck e volume nomeado.
-  - [ ] Variáveis de ambiente validadas no kernel de config (fail-fast, sanitizado — padrão da Story 1.1): URL do papel de aplicação e URL do papel de migration, **separadas**.
-  - [ ] `.env.example` atualizado, sem valor sensível real.
+- [x] **T2 — Infraestrutura de banco no Compose (AC: 4)**
+  - [x] Serviço `db` (PostgreSQL) no `docker-compose.yml`, com healthcheck e volume nomeado.
+  - [x] Variáveis de ambiente validadas no kernel de config (fail-fast, sanitizado — padrão da Story 1.1): URL do papel de aplicação e URL do papel de migration, **separadas**.
+  - [x] `.env.example` atualizado, sem valor sensível real.
 
-- [ ] **T3 — Papéis de banco e privilégios (AC: 4)**
-  - [ ] Papel **`giraffe_migrator`**: dono do schema, executa migrations. **Nunca** usado em requisição.
-  - [ ] Papel **`giraffe_app`**: usado pela aplicação em runtime. **SEM** `BYPASSRLS`, **SEM** `SUPERUSER`, **não proprietário** das tabelas (proprietário faz bypass implícito de RLS — por isso `FORCE ROW LEVEL SECURITY` é obrigatório, mas não basta).
-  - [ ] `GRANT` mínimo a `giraffe_app` (SELECT/INSERT/UPDATE/DELETE nas tabelas do domínio; sem DDL).
-  - [ ] Teste automatizado que **prova** que `giraffe_app` não tem `BYPASSRLS` nem `SUPERUSER` (consulta a `pg_roles`).
+- [x] **T3 — Papéis de banco e privilégios (AC: 4)**
+  - [x] Papel **`giraffe_migrator`**: dono do schema, executa migrations. **Nunca** usado em requisição.
+  - [x] Papel **`giraffe_app`**: usado pela aplicação em runtime. **SEM** `BYPASSRLS`, **SEM** `SUPERUSER`, **não proprietário** das tabelas (proprietário faz bypass implícito de RLS — por isso `FORCE ROW LEVEL SECURITY` é obrigatório, mas não basta).
+  - [x] `GRANT` mínimo a `giraffe_app` (SELECT/INSERT/UPDATE/DELETE nas tabelas do domínio; sem DDL).
+  - [x] Teste automatizado que **prova** que `giraffe_app` não tem `BYPASSRLS` nem `SUPERUSER` (consulta a `pg_roles`).
 
-- [ ] **T4 — Modelo de dados (AC: 1,2,3)**
-  - [ ] `Account` — identidade **global** da Plataforma (AD-7/AD-10). **Sem `orgId`.** E-mail único global.
-  - [ ] `Organization` — a raiz do tenant.
-  - [ ] `Membership` — vínculo `Account × Organization`, com **papel único** (enum) e **estado** (enum). Unicidade `(accountId, orgId)`.
-  - [ ] `orgId` **NOT NULL** em toda tabela organizacional; FK para `Organization`.
-  - [ ] Índices: todo acesso organizacional começa por `orgId` — índice composto com `orgId` como **primeira** coluna.
-  - [ ] IDs estáveis (UUID), nunca sequenciais expostos (AD-11).
+- [x] **T4 — Modelo de dados (AC: 1,2,3)**
+  - [x] `Account` — identidade **global** da Plataforma (AD-7/AD-10). **Sem `orgId`.** E-mail único global.
+  - [x] `Organization` — a raiz do tenant.
+  - [x] `Membership` — vínculo `Account × Organization`, com **papel único** (enum) e **estado** (enum). Unicidade `(accountId, orgId)`.
+  - [x] `orgId` **NOT NULL** em toda tabela organizacional; FK para `Organization`.
+  - [x] Índices: todo acesso organizacional começa por `orgId` — índice composto com `orgId` como **primeira** coluna.
+  - [x] IDs estáveis (UUID), nunca sequenciais expostos (AD-11).
 
-- [ ] **T5 — Contexto de tenant no banco (AC: 1,2,3,4)**
-  - [ ] Contrato: `app.current_org_id` e `app.current_account_id`, definidos com `set_config(..., true)` — **transaction-local**, nunca global no pool (AD-6).
-  - [ ] Extensão do Prisma Client que injeta o contexto **dentro da mesma transação** da query.
-  - [ ] Sem contexto → `current_setting('app.current_org_id', true)` retorna `NULL` → toda policy avalia falso → **acesso negado** (deny-by-default).
-  - [ ] **Proibido:** qualquer policy, flag ou caminho de bypass (`app.bypass_rls` ou equivalente). Ver **Armadilha 1**.
+- [x] **T5 — Contexto de tenant no banco (AC: 1,2,3,4)**
+  - [x] Contrato: `app.current_org_id` e `app.current_account_id`, definidos com `set_config(..., true)` — **transaction-local**, nunca global no pool (AD-6).
+  - [x] Extensão do Prisma Client que injeta o contexto **dentro da mesma transação** da query.
+  - [x] Sem contexto → `current_setting('app.current_org_id', true)` retorna `NULL` → toda policy avalia falso → **acesso negado** (deny-by-default).
+  - [x] **Proibido:** qualquer policy, flag ou caminho de bypass (`app.bypass_rls` ou equivalente). Ver **Armadilha 1**.
 
-- [ ] **T6 — Políticas RLS por operação (AC: 1,2,3,4)**
-  - [ ] `ENABLE` **e** `FORCE ROW LEVEL SECURITY` em toda tabela organizacional.
-  - [ ] Policy com **`USING`** (SELECT/UPDATE/DELETE) **e `WITH CHECK`** (INSERT/UPDATE). Ver **Armadilha 2** — `USING` sozinho **não** protege INSERT.
-  - [ ] Policies explícitas por operação: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
-  - [ ] `Account`: **sem RLS** (identidade global, propriedade da Plataforma — AD-10). Justificar no código.
-  - [ ] `Membership`: ver **Armadilha 3** (leitura das próprias Memberships antes de haver contexto de Org).
+- [x] **T6 — Políticas RLS por operação (AC: 1,2,3,4)**
+  - [x] `ENABLE` **e** `FORCE ROW LEVEL SECURITY` em toda tabela organizacional.
+  - [x] Policy com **`USING`** (SELECT/UPDATE/DELETE) **e `WITH CHECK`** (INSERT/UPDATE). Ver **Armadilha 2** — `USING` sozinho **não** protege INSERT.
+  - [x] Policies explícitas por operação: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
+  - [x] `Account`: **sem RLS** (identidade global, propriedade da Plataforma — AD-10). Justificar no código.
+  - [x] `Membership`: ver **Armadilha 3** (leitura das próprias Memberships antes de haver contexto de Org).
 
-- [ ] **T7 — Migrations e seed (AC: 2,4)**
-  - [ ] Migration versionada, executada pelo papel `giraffe_migrator` como **etapa controlada** — **nunca** por cada container no boot (AD-17/AD-32).
-  - [ ] SQL de RLS (policies, `FORCE`, `GRANT`, papéis) versionado **na migration**, não aplicado à mão.
-  - [ ] Plano de **rollback** da migration, verificável.
-  - [ ] Seed de desenvolvimento com **duas Organizações** distintas e Accounts/Memberships em cada — é a fixture dos testes de isolamento. Sem dado real de produção (LGPD).
-  - [ ] `migration-check` e `backup-check` executados e registrados (deixam de ser N/A).
+- [x] **T7 — Migrations e seed (AC: 2,4)**
+  - [x] Migration versionada, executada pelo papel `giraffe_migrator` como **etapa controlada** — **nunca** por cada container no boot (AD-17/AD-32).
+  - [x] SQL de RLS (policies, `FORCE`, `GRANT`, papéis) versionado **na migration**, não aplicado à mão.
+  - [x] Plano de **rollback** da migration, verificável.
+  - [x] Seed de desenvolvimento com **duas Organizações** distintas e Accounts/Memberships em cada — é a fixture dos testes de isolamento. Sem dado real de produção (LGPD).
+  - [x] `migration-check` e `backup-check` executados e registrados (deixam de ser N/A).
 
-- [ ] **T8 — Testes de isolamento, positivos e negativos (AC: 1,2,3,4)**
-  - [ ] **Positivo:** no contexto da Org A, leitura/criação/atualização/arquivamento de dados da Org A funcionam.
-  - [ ] **Negativo — leitura cruzada:** no contexto da Org A, `SELECT` não retorna **nenhuma** linha da Org B.
-  - [ ] **Negativo — escrita cruzada:** no contexto da Org A, `INSERT` com `orgId` da Org B é **rejeitado** (prova o `WITH CHECK`).
-  - [ ] **Negativo — `UPDATE` cruzado:** no contexto da Org A, `UPDATE` em linha da Org B afeta **0 linhas**.
-  - [ ] **Negativo — `DELETE`/arquivamento cruzado:** idem, **0 linhas**.
-  - [ ] **Negativo — `orgId` forjado:** contexto Org A + payload com `orgId` da Org B → não alcança dado da Org B (AC3).
-  - [ ] **Negativo — sem contexto:** nenhuma transação sem `app.current_org_id` lê ou escreve qualquer linha organizacional (AC4).
-  - [ ] **Negativo — privilégio:** `giraffe_app` sem `BYPASSRLS`/`SUPERUSER`; não é dono das tabelas.
-  - [ ] Testes rodam contra **PostgreSQL real** (RLS não existe em mock nem em SQLite) e entram em `pnpm test`.
+- [x] **T8 — Testes de isolamento, positivos e negativos (AC: 1,2,3,4)**
+  - [x] **Positivo:** no contexto da Org A, leitura/criação/atualização/arquivamento de dados da Org A funcionam.
+  - [x] **Negativo — leitura cruzada:** no contexto da Org A, `SELECT` não retorna **nenhuma** linha da Org B.
+  - [x] **Negativo — escrita cruzada:** no contexto da Org A, `INSERT` com `orgId` da Org B é **rejeitado** (prova o `WITH CHECK`).
+  - [x] **Negativo — `UPDATE` cruzado:** no contexto da Org A, `UPDATE` em linha da Org B afeta **0 linhas**.
+  - [x] **Negativo — `DELETE`/arquivamento cruzado:** idem, **0 linhas**.
+  - [x] **Negativo — `orgId` forjado:** contexto Org A + payload com `orgId` da Org B → não alcança dado da Org B (AC3).
+  - [x] **Negativo — sem contexto:** nenhuma transação sem `app.current_org_id` lê ou escreve qualquer linha organizacional (AC4).
+  - [x] **Negativo — privilégio:** `giraffe_app` sem `BYPASSRLS`/`SUPERUSER`; não é dono das tabelas.
+  - [x] Testes rodam contra **PostgreSQL real** (RLS não existe em mock nem em SQLite) e entram em `pnpm test`.
 
-- [ ] **T9 — Observabilidade e auditoria mínima (AC: 4)**
-  - [ ] Log estruturado inclui a Organização do contexto (AD-29), **sem** dado pessoal desnecessário.
-  - [ ] Negação por ausência/invalidez de contexto é **visível** no log (não falha silenciosa).
-  - [ ] Auditoria mínima: criação de Organization/Membership e mudança de papel/estado registram ator, Organização, ação, recurso, resultado e timestamp.
-  - [ ] `observability-check`, `security-check`, `lgpd-check` executados e registrados.
+- [x] **T9 — Observabilidade e auditoria mínima (AC: 4)**
+  - [x] Log estruturado inclui a Organização do contexto (AD-29), **sem** dado pessoal desnecessário.
+  - [x] Negação por ausência/invalidez de contexto é **visível** no log (não falha silenciosa).
+  - [x] Auditoria mínima: criação de Organization/Membership e mudança de papel/estado registram ator, Organização, ação, recurso, resultado e timestamp.
+  - [x] `observability-check`, `security-check`, `lgpd-check` executados e registrados.
 
-- [ ] **T10 — Container e boot real de produção (AC: 4) — trata CR2-09**
-  - [ ] `prisma generate` no build da imagem da API; client gerado + binários de engine presentes na imagem final.
-  - [ ] **Teste real de boot** do container de produção (não só build): a API sobe, conecta ao banco com o papel `giraffe_app` e `/ready` reflete a dependência do banco.
-  - [ ] `/ready` deixa de ser equivalente a `/health`: passa a checar o banco (é a **primeira dependência externa**; contrato preservado, sem breaking change — previsto na Story 1.1). **Dois caminhos testados:** apto → `200 {status:"ok"}`; banco indisponível → **`503`**. `/health` (liveness) **não** checa o banco. Nenhum detalhe do erro do banco no payload. Ver **Armadilha 5**.
-  - [ ] Compose: `api` `depends_on` o `db` com `condition: service_healthy`.
-  - [ ] Migration como **etapa controlada e separada** — não roda no entrypoint de cada container (AD-32).
-  - [ ] Se — e somente se — a solução introduzir dependência interna de workspace (`packages/`), **resolver o CR2-09 nesta Story**, não adiar de novo.
+- [x] **T10 — Container e boot real de produção (AC: 4) — trata CR2-09**
+  - [x] `prisma generate` no build da imagem da API; client gerado + binários de engine presentes na imagem final.
+  - [x] **Teste real de boot** do container de produção (não só build): a API sobe, conecta ao banco com o papel `giraffe_app` e `/ready` reflete a dependência do banco.
+  - [x] `/ready` deixa de ser equivalente a `/health`: passa a checar o banco (é a **primeira dependência externa**; contrato preservado, sem breaking change — previsto na Story 1.1). **Dois caminhos testados:** apto → `200 {status:"ok"}`; banco indisponível → **`503`**. `/health` (liveness) **não** checa o banco. Nenhum detalhe do erro do banco no payload. Ver **Armadilha 5**.
+  - [x] Compose: `api` `depends_on` o `db` com `condition: service_healthy`.
+  - [x] Migration como **etapa controlada e separada** — não roda no entrypoint de cada container (AD-32).
+  - [x] Se — e somente se — a solução introduzir dependência interna de workspace (`packages/`), **resolver o CR2-09 nesta Story**, não adiar de novo.
 
 ## Dev Notes
 
@@ -231,12 +231,102 @@ claude-opus-4-8
 
 ### Debug Log References
 
+**Achados de teste de mutação (as policies foram atacadas de propósito, para verificar se a
+suíte reagia):**
+
+1. **`WITH CHECK` protegido apenas por acidente.** Com a policy de INSERT enfraquecida para
+   `WITH CHECK (true)`, o teste de inserção cruzada **continuou verde**. Motivo: o `create`
+   do Prisma emite `INSERT ... RETURNING`, e o `RETURNING` esbarra na policy de **SELECT** —
+   não no `WITH CHECK`. Um `INSERT` sem `RETURNING` teria gravado a linha na outra
+   Organização. Confirmado materialmente: a mutação deixou a conta Ana com Membership dentro
+   da Org B. Corrigido com testes via `createMany` (INSERT puro), que hoje reprovam a
+   mutação. Sem isso, a Story teria entregue uma prova de isolamento falsa.
+2. **Vazamento de contexto pelo pool.** Trocar `set_config(..., true)` por `false` faz o
+   contexto grudar na conexão devolvida ao pool. Dois testes reprovam a mutação — inclusive
+   o de "sem contexto", que passa a **enxergar dados alheios**.
+
+**Outros:**
+
+- `pnpm prune --prod` é no-op num workspace pnpm: o store `.pnpm` continua guardando as
+  devDependencies (medido: 465 MB). Resolvido com `output` explícito do Prisma Client e um
+  stage `prod-deps` novo — imagem final em 222 MB, com o engine nativo Linux.
+- `scripts/db-migrate.mjs` falhava silenciosamente: o Node se recusa a executar `.cmd` sem
+  shell (correção do CVE-2024-27980). Passou a invocar o entrypoint JS do Prisma com o
+  próprio Node.
+- Testes rodam em paralelo por arquivo: dois arquivos criando o mesmo `(accountId, orgId)`
+  colidiam na constraint única — falha sem relação com RLS, que mascarava o teste. Cada
+  arquivo ganhou fixture própria (conta `Dani`).
+- `pnpm typecheck` reprovou `import.meta` em `test/setup-env.ts` (o alvo da API é CommonJS) —
+  exatamente o valor do CR2-01, que trouxe os testes para dentro do typecheck.
+
 ### Completion Notes List
 
+- **Isolamento imposto pelo banco, não pela aplicação.** `Organization` e `Membership` com
+  `ENABLE` + `FORCE ROW LEVEL SECURITY`; 8 policies com `USING`/`WITH CHECK` separados por
+  operação. `Account` global e sem RLS (AD-10).
+- **Nenhum caminho de bypass.** O exemplo oficial do Prisma sugere uma `bypass_rls_policy` —
+  proibida pelo AD-6 e **não** implementada. `giraffe_app`: `NOSUPERUSER`, `NOBYPASSRLS`, não
+  proprietário. Verificado por teste contra `pg_roles`.
+- **Contexto transaction-local** (`set_config(..., true)`), o que fecha o vazamento clássico
+  de RLS com pool de conexões.
+- **Falha fechada.** Contexto ausente ⇒ nenhuma linha; contexto inválido (não-UUID) ⇒
+  negação, e **não** erro 500 — `current_org_id()` captura a exceção de cast e devolve NULL.
+- **Descoberta segura das próprias Organizações** (pré-requisito da Story 1.4): o SELECT de
+  `Membership` também libera `accountId = current_account_id()`, sem expor memberships
+  alheias.
+- **Rollback exercitado**, não descrito: aplicar → reverter (0 tabelas, 0 funções) →
+  reaplicar → re-seed, com estado final idêntico.
+- **Backup com restore verificado** (AD-33): dump restaurado num banco novo preservou dados,
+  as 8 policies e o `FORCE RLS`; o isolamento continua valendo no banco restaurado e a
+  escrita cruzada segue negada.
+- **`/ready` passa a checar o banco** (200/503). `/health` não checa — com o banco fora o
+  processo segue vivo, e reiniciá-lo não resolveria. O `HEALTHCHECK` do container usa
+  `/ready`; verificado em container real que ele **vira `unhealthy`** com o banco parado.
+- **Auditoria (FR-214)** como evento estruturado com os seis campos, incluindo tentativas
+  **negadas**. Não foi criada tabela de auditoria: nem Spec nem Plan a pedem, e ela exigiria
+  policies próprias — escopo não especificado.
+- **CR2-09 permanece não aplicável**: nenhum `packages/` e nenhuma dependência `workspace:`
+  foi introduzida.
+- **Fora de escopo, deliberadamente**: a matriz de permissões de `ADMIN`/`MEMBER`/`GUEST` não
+  é aplicada — é da Story 1.6. Os papéis existem no schema; o isolamento entregue é **entre
+  Organizações**, não entre papéis.
+
 ### File List
+
+**Novos**
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations/20260712000000_init_tenancy_rls/migration.sql`
+- `apps/api/prisma/rollback/20260712000000_init_tenancy_rls.down.sql`
+- `apps/api/prisma/seed.sql`
+- `apps/api/src/kernel/db/prisma.service.ts`
+- `apps/api/src/kernel/db/db.module.ts`
+- `apps/api/src/kernel/db/tenant-context.ts`
+- `apps/api/src/kernel/db/rls-denial.ts`
+- `apps/api/test/rls.test.ts`
+- `apps/api/test/rls-observability.test.ts`
+- `apps/api/test/setup-env.ts`
+- `docker/db/init/01-roles.sh`
+- `scripts/db-migrate.mjs`
+
+**Modificados**
+
+- `apps/api/src/kernel/config/env.ts` (`DATABASE_URL` obrigatória e validada)
+- `apps/api/src/app.module.ts` (importa `DbModule`)
+- `apps/api/src/health/health.controller.ts` (`/ready` → 503 com banco fora)
+- `apps/api/src/health/health.payload.ts`
+- `apps/api/test/health.test.ts` (200 e 503, payload sem vazamento)
+- `apps/api/test/env.test.ts`
+- `apps/api/Dockerfile` (`prisma generate` + `prod-deps`; `HEALTHCHECK` → `/ready`)
+- `apps/api/package.json`, `apps/api/vitest.config.ts`
+- `docker-compose.yml` (serviço `db`; porta em `127.0.0.1`; senhas via env)
+- `scripts/smoke.mjs` (diagnóstico do 503; payload exato)
+- `.env.example`, `.gitignore`, `.dockerignore`, `.prettierignore`, `eslint.config.mjs`
+- `README.md`
 
 ### Change Log
 
 | Data | Mudança |
 |---|---|
 | 2026-07-12 | Story criada a partir de `epics.md` (Story 1.2), Architecture Spine (AD-6/7/10/11), Constitution e aprendizados da Story 1.1. Registradas 5 armadilhas conhecidas (2 delas presentes no exemplo oficial do Prisma) e o risco herdado CR2-09. Status → ready-for-dev. |
+| 2026-07-12 | Implementação das 55 tasks. Isolamento provado contra PostgreSQL real (47 testes na API, 8 na Web, smoke 4/4). Dois bugs de segurança encontrados por teste de mutação e corrigidos (ver Debug Log). Ciclo Docker completo verde com boot real do container de produção. Status → review. |
