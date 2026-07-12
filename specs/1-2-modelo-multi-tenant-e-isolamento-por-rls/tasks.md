@@ -86,4 +86,4 @@ Nenhuma task genérica do tipo "configurar RLS" — cada uma nomeia o artefato e
 - [x] T052 **Teste real de boot do container de produção**: a API sobe, conecta ao banco com `giraffe_app`, `/ready` responde 200 — build verde **não** prova boot (lição F2/F8 da Story 1.1) (SC-107)
 - [x] T053 Verificar que **nenhum** `packages/` foi criado; se tiver sido, **resolver o CR2-09 nesta Story** (fechamento transitivo de deps internas no Dockerfile) — proibido adiar de novo
 - [x] T054 Ciclo completo verde: `install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `test`, `build`, `docker compose up` (db+api healthy), `smoke`, `down`
-- [ ] T055 `code-review` e `commit-check` antes de qualquer commit
+- [x] T055 `code-review` e `commit-check` antes de qualquer commit
