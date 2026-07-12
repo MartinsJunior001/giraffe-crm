@@ -22,3 +22,6 @@ skills
 
 # Artefatos Spec Kit da Story (não alterar durante dev-story)
 specs
+
+# Prisma Client gerado — artefato de build, não código-fonte.
+apps/api/generated/

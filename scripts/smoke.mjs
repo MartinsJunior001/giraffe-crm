@@ -29,6 +29,18 @@ function diagnose(err) {
   return `erro inesperado: ${err?.name ?? 'Error'} — ${err?.message ?? 'sem detalhe'}`;
 }
 
+/**
+ * Nomeia o que um status HTTP inesperado significa. Um `503` no `/ready` não é um erro
+ * qualquer: é a API declarando, corretamente, que não alcança o banco. Sem esta linha,
+ * quem depura vê "HTTP 503" e vai procurar bug na API — quando o serviço a consertar é o
+ * PostgreSQL. O smoke continua FALHANDO; ele só para de mentir sobre a causa.
+ */
+function explainStatus(status) {
+  if (status === 503) return ' — dependência indisponível (provavelmente o banco)';
+  if (status === 404) return ' — rota inexistente (versão da API divergente?)';
+  return '';
+}
+
 /** Lê o corpo como JSON, transformando resposta não-JSON em falha de contrato explícita. */
 async function readJson(res) {
   const text = await res.text();
@@ -52,7 +64,9 @@ async function check(name, url, validate) {
     if (!res.ok) {
       // Drena para liberar o socket keep-alive e o processo encerrar limpo.
       await res.body?.cancel().catch(() => {});
-      console.log(`FAIL  ${name}  (${url}) -> HTTP ${res.status} (esperado 2xx)`);
+      console.log(
+        `FAIL  ${name}  (${url}) -> HTTP ${res.status} (esperado 2xx)${explainStatus(res.status)}`,
+      );
       return false;
     }
 
@@ -71,11 +85,23 @@ async function check(name, url, validate) {
   }
 }
 
-/** Contrato de saúde: JSON exatamente `{ status: "ok" }`. */
+/**
+ * Contrato de saúde: JSON com EXATAMENTE a chave `status`, valor `"ok"`.
+ *
+ * A checagem de chaves extras não é preciosismo: o payload de health é público e não pode
+ * vazar versão, host, nome de banco ou env (AC2 da Story 1.1). Agora que o `/ready` consulta
+ * o PostgreSQL, a tentação de "só devolver o detalhe do erro" fica a um commit de distância —
+ * este assert é o que barra isso.
+ */
 async function expectStatusOk(res) {
   const body = await readJson(res);
   if (body?.status !== 'ok') {
     throw new BodyError(`esperado status "ok", recebido ${JSON.stringify(body?.status)}`);
+  }
+
+  const chaves = Object.keys(body ?? {});
+  if (chaves.length !== 1) {
+    throw new BodyError(`payload deve conter apenas "status"; veio: ${chaves.join(', ')}`);
   }
 }
 

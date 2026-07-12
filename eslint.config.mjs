@@ -17,6 +17,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/build/**',
       'apps/web/next-env.d.ts',
+      // Prisma Client gerado: artefato de build, reescrito a cada `prisma generate`.
+      'apps/api/generated/**',
       // Tooling / documentação / scaffolding — não é código da aplicação
       'docs/**',
       '_bmad/**',

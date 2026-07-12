@@ -15,6 +15,20 @@ export class ConfigValidationError extends Error {
   }
 }
 
+/**
+ * Valida o formato da URL de banco sem nunca ecoar o valor (ela contém senha).
+ * Deliberadamente NÃO existe `MIGRATION_DATABASE_URL` neste schema: o processo de
+ * runtime não deve sequer possuir a credencial do papel dono do schema (AD-6).
+ */
+function isPostgresUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'postgresql:' || protocol === 'postgres:';
+  } catch {
+    return false;
+  }
+}
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().max(65535).default(3001),
@@ -27,6 +41,15 @@ const EnvSchema = z.object({
       message: 'CORS_ALLOWED_ORIGINS deve conter ao menos uma origem válida',
     }),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  // Papel de RUNTIME: sem BYPASSRLS, não proprietário das tabelas (AD-6). Obrigatória.
+  // A mensagem de erro cita apenas o NOME da variável — a URL carrega senha e nunca
+  // pode vazar para log/stderr (AD-29/AD-31).
+  DATABASE_URL: z
+    .string()
+    .min(1, 'DATABASE_URL é obrigatória (papel de runtime da aplicação)')
+    .refine(isPostgresUrl, {
+      message: 'DATABASE_URL deve ser uma URL PostgreSQL válida',
+    }),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

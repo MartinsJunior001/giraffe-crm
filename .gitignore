@@ -29,3 +29,6 @@ next-env.d.ts
 # SO / editor
 .DS_Store
 Thumbs.db
+
+# Prisma Client gerado (artefato de build — regenerado por `pnpm install`)
+apps/api/generated/

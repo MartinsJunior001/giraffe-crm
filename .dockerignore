@@ -28,3 +28,7 @@ skills
 
 # Markdown de topo (docs) — não necessários no build
 *.md
+
+# Client gerado no host: o engine e binario NATIVO e nao serve na imagem Linux.
+# A imagem roda seu proprio `prisma generate`.
+apps/api/generated/

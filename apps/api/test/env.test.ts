@@ -1,16 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConfigValidationError, getEnv, loadEnv, parseCorsOrigins } from '../src/kernel/config/env';
 
+const DB_URL = 'postgresql://giraffe_app:pw@localhost:5434/giraffe?schema=public';
+
 const validBase = {
   NODE_ENV: 'test',
   API_PORT: '3001',
   CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
   LOG_LEVEL: 'info',
+  DATABASE_URL: DB_URL,
 } as NodeJS.ProcessEnv;
 
 describe('loadEnv (validação server-side / fail-fast)', () => {
   it('aceita configuração válida e aplica defaults', () => {
-    const env = loadEnv({ CORS_ALLOWED_ORIGINS: 'http://localhost:3000' } as NodeJS.ProcessEnv);
+    const env = loadEnv({
+      CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
+      DATABASE_URL: DB_URL,
+    } as NodeJS.ProcessEnv);
     expect(env.NODE_ENV).toBe('development');
     expect(env.API_PORT).toBe(3001);
     expect(env.LOG_LEVEL).toBe('info');
@@ -43,6 +49,52 @@ describe('loadEnv (validação server-side / fail-fast)', () => {
 
   it('rejeita API_PORT inválida', () => {
     expect(() => loadEnv({ ...validBase, API_PORT: 'abc' })).toThrowError(ConfigValidationError);
+  });
+
+  it('exige DATABASE_URL — sem banco, a API não sobe', () => {
+    const semBanco = { ...validBase };
+    delete semBanco.DATABASE_URL;
+
+    expect(() => loadEnv(semBanco)).toThrowError(ConfigValidationError);
+    try {
+      loadEnv(semBanco);
+    } catch (err) {
+      expect((err as ConfigValidationError).issues.some((i) => i.includes('DATABASE_URL'))).toBe(
+        true,
+      );
+    }
+  });
+
+  it('rejeita DATABASE_URL que não seja PostgreSQL', () => {
+    // Apontar para outro banco por engano (ou por variável trocada) faria o RLS —
+    // que é a garantia de isolamento desta Story — simplesmente não existir.
+    expect(() => loadEnv({ ...validBase, DATABASE_URL: 'mysql://x/y' })).toThrowError(
+      ConfigValidationError,
+    );
+  });
+
+  it('a mensagem de erro NUNCA imprime a DATABASE_URL (a senha está nela)', () => {
+    const comSenha = 'postgresql://giraffe_app:SENHA_SECRETA_123@db:5432/giraffe';
+    try {
+      // Força a falha por outro campo, com a URL válida presente no ambiente.
+      loadEnv({ ...validBase, DATABASE_URL: comSenha, API_PORT: 'abc' });
+      throw new Error('deveria ter falhado');
+    } catch (err) {
+      const e = err as ConfigValidationError;
+      expect(e.message).not.toContain('SENHA_SECRETA_123');
+      expect(e.message).not.toContain(comSenha);
+    }
+  });
+
+  it('NÃO expõe MIGRATION_DATABASE_URL ao runtime', () => {
+    // A credencial do DONO do schema não pode estar ao alcance do processo da aplicação:
+    // quem é dono ignora as policies quando bem entende. Migration é etapa separada.
+    const env = loadEnv({
+      ...validBase,
+      MIGRATION_DATABASE_URL: 'postgresql://giraffe_migrator:pw@localhost:5434/giraffe',
+    } as NodeJS.ProcessEnv);
+
+    expect(env).not.toHaveProperty('MIGRATION_DATABASE_URL');
   });
 
   it('valida múltiplas configurações distintas na mesma execução (sem estado global)', () => {

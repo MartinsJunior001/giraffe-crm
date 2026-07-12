@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
+import { DbModule } from './kernel/db/db.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -60,6 +61,7 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
         };
       },
     }),
+    DbModule,
     HealthModule,
   ],
 })
