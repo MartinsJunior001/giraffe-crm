@@ -155,16 +155,23 @@ describe('contexto organizacional sobre HTTP', () => {
     });
 
     it('header repetido é pedido ambíguo, e ambíguo é negado', async () => {
-      // Dois `x-org-id` chegam como array. Escolher "o primeiro" (ou o último) é a assimetria de
-      // que vive o request smuggling: o proxy lê um, a aplicação lê outro.
+      // ATENÇÃO ao que o Node faz aqui, porque a primeira versão deste teste passava pelo motivo
+      // errado: duplicatas NÃO viram array (só `set-cookie` vira). Elas chegam como uma única
+      // string juntada por vírgula — `"uuid-a, uuid-b"`. O `Array.isArray()` original nunca
+      // disparava, e o 403 vinha por acidente, da vírgula quebrando a regex de UUID.
+      //
+      // Escolher "o primeiro" (ou o último) é a assimetria de que vive o request smuggling: o proxy
+      // valida um valor, a aplicação honra outro.
       const res = await fetch(`${baseUrl}/organizations/current`, {
         headers: [
           [HEADER_CONTA, ANA],
-          ['x-org-id', ORG_A],
+          ['x-org-id', ORG_A], // ← a Org de Ana: se a aplicação "escolhesse o primeiro", daria 200
           ['x-org-id', ORG_B],
         ],
       });
 
+      // 403 e não 200: a requisição é negada mesmo que o PRIMEIRO valor fosse legítimo. É isso que
+      // distingue "rejeitou a ambiguidade" de "escolheu um dos dois e deu certo por sorte".
       expect(res.status).toBe(403);
     });
 
@@ -172,6 +179,17 @@ describe('contexto organizacional sobre HTTP', () => {
       const res = await comoConta(baseUrl, ANA, 'nao-e-um-uuid');
 
       expect(res.status).toBe(403);
+    });
+
+    it('UUID em MAIÚSCULAS de um membro legítimo é aceito (200)', async () => {
+      // O PostgreSQL emite `uuid` sempre em minúsculas. A regex aceitava maiúsculas, mas a
+      // comparação com a Membership era byte a byte — então um cliente .NET/Java mandando
+      // `Guid.ToString().ToUpper()` levava 403 sendo membro ativo, E gerava um `context.denied`.
+      // Ruído fabricado em cima do único sinal de segurança que esta Story produz.
+      const res = await comoConta(baseUrl, EVA, ORG_B.toUpperCase());
+
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { id: string }).toMatchObject({ id: ORG_B });
     });
   });
 
@@ -195,6 +213,29 @@ describe('contexto organizacional sobre HTTP', () => {
       respostas.forEach((res, i) => {
         expect(res.status).toBe(200);
         expect(res.corpo.id).toBe(esperado[i]!.org);
+      });
+    });
+
+    it('a MESMA conta pedindo Organizações diferentes ao mesmo tempo não se contamina', async () => {
+      // O teste acima alterna CONTAS, e por isso deixaria passar um vazamento chaveado por conta —
+      // um cache/memoização por `accountId`, um `Map` no resolvedor, um `set_config` que escapasse
+      // do escopo transacional. Todos resolveriam "a Org da conta X" e devolveriam a mesma resposta
+      // para as duas requisições dela.
+      //
+      // Eva é ACTIVE nas Orgs A e B. Aqui ela pede as duas simultaneamente, e cada resposta tem de
+      // corresponder ao que AQUELA requisição pediu.
+      const pedidos = Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? ORG_A : ORG_B));
+
+      const respostas = await Promise.all(
+        pedidos.map(async (org) => {
+          const res = await comoConta(baseUrl, EVA, org);
+          return { status: res.status, corpo: (await res.json()) as { id: string } };
+        }),
+      );
+
+      respostas.forEach((res, i) => {
+        expect(res.status).toBe(200);
+        expect(res.corpo.id).toBe(pedidos[i]);
       });
     });
   });

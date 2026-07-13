@@ -129,22 +129,26 @@ describe('negação', () => {
     await expect(resolver.resolver(EVA)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('orgId malformado é rejeitado ANTES do banco (403, não 500)', async () => {
-    // `'não-é-uuid'::uuid` estoura erro de driver, que vira 500 — e um 500 num caminho de
-    // autorização é uma resposta que não diz "negado", diz "quebrei". Além disso, entregar
-    // texto arbitrário do cliente ao banco é o hábito que precede a injeção.
+  it('orgId malformado é negado COM O MOTIVO CERTO — e não confundido com acesso cruzado', async () => {
+    // A primeira versão deste teste só afirmava "403", e depois consultava `to_regclass` para
+    // provar que a tabela `Membership` continuava existindo — teatro: a string nunca chegou ao
+    // banco, porque o `orgIdPedido` não entra em query nenhuma. Ele é comparado em memória. O
+    // teste continuaria verde com a regex inteira apagada, e passaria pelo motivo errado.
+    //
+    // O que a regex realmente entrega é o MOTIVO. Sem ela, um `orgId` malformado cairia no
+    // `some()`, não casaria com nada, e seria auditado como "sem Membership ativa na Organização
+    // pedida" — isto é, como uma tentativa de acesso cruzado, quando foi só um cliente com bug de
+    // formatação. Um alerta de segurança que confunde as duas coisas é um alerta inútil.
+    //
+    // Por isso a asserção é sobre o motivo: ela FALHA se a regex for removida.
+    limparEventos();
+
     await expect(resolver.resolver(ANA, 'nao-e-um-uuid')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
 
-    await expect(resolver.resolver(ANA, '\'; DROP TABLE "Membership"; --')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-
-    // E a tabela continua lá.
-    const vivas = await prisma.$queryRaw<{ existe: boolean }[]>`
-      SELECT to_regclass('public."Membership"') IS NOT NULL AS existe`;
-    expect(vivas[0]?.existe).toBe(true);
+    const negacao = eventos.find((e) => e.dados['event'] === 'context.denied');
+    expect(negacao?.dados['motivo']).toBe('orgId malformado');
   });
 });
 

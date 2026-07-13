@@ -1,12 +1,14 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'node:http';
+import { PinoLogger } from 'nestjs-pino';
 import { OrgContextResolver } from './org-context.resolver';
 import { PRINCIPAL_PROVIDER, type PrincipalProvider } from './principal.provider';
 import { RequestContext } from './request-context';
@@ -30,6 +32,7 @@ export class TenantContextGuard implements CanActivate {
     private readonly requestContext: RequestContext,
     private readonly resolver: OrgContextResolver,
     @Inject(PRINCIPAL_PROVIDER) private readonly principais: PrincipalProvider,
+    private readonly logger: PinoLogger,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -62,14 +65,42 @@ export class TenantContextGuard implements CanActivate {
   }
 
   /**
-   * Lê o `orgId` pedido pelo cliente. Um header repetido chega como array — nesse caso não se
-   * escolhe o primeiro: pedido ambíguo é pedido inválido, e "escolher um" é como se contrabandeia
-   * valor por request smuggling.
+   * Lê o `orgId` pedido pelo cliente.
+   *
+   * **Header repetido é pedido AMBÍGUO, e ambíguo é inválido.** Escolher "o primeiro" (ou o último)
+   * é a assimetria de que vive o request smuggling: o proxy valida um valor, a aplicação honra
+   * outro.
+   *
+   * Cuidado com a forma que a duplicata assume: o Node só devolve **array** para `set-cookie`.
+   * Qualquer outro header repetido chega como **uma única string juntada por `", "`** —
+   * `"uuid-a, uuid-b"`. Um `Array.isArray()` sozinho, portanto, nunca dispara, e a rejeição
+   * aconteceria só por acidente (a vírgula quebra a regex de UUID lá no resolvedor). Defesa que
+   * depende de acidente é defesa que some no dia em que alguém "consertar" a regex.
+   *
+   * A normalização para minúsculas existe porque o PostgreSQL emite `uuid` sempre em minúsculas:
+   * sem ela, um cliente que mandasse o UUID em maiúsculas (comum em .NET/Java) receberia 403 sendo
+   * membro legítimo — e ainda geraria um evento `context.denied`, poluindo com ruído o único sinal
+   * de segurança que esta Story produz.
+   *
+   * A ambiguidade é rejeitada AQUI, e não devolvendo `''` para o resolvedor tropeçar nele. O `''`
+   * só era rejeitado porque `UUID.test('')` é falso — um acoplamento invisível entre dois arquivos.
+   * Bastaria alguém acrescentar no resolvedor um `if (pedido === '') return undefined` — leitura
+   * perfeitamente razoável de "não pediu nada" — para o header duplicado passar a significar
+   * "nenhuma Organização pedida", e a requisição ser ACEITA. Seria o buraco que este método existe
+   * para fechar, aberto por uma correção de aparência inocente.
    */
   private orgIdPedido(req: IncomingMessage): string | undefined {
     const bruto = req.headers[HEADER_ORG];
     if (bruto === undefined) return undefined;
-    if (Array.isArray(bruto)) return '';
-    return bruto;
+
+    if (Array.isArray(bruto) || bruto.includes(',')) {
+      this.logger.warn(
+        { event: 'context.denied', motivo: 'x-org-id repetido (pedido ambíguo)' },
+        'contexto organizacional negado',
+      );
+      throw new ForbiddenException();
+    }
+
+    return bruto.trim().toLowerCase();
   }
 }

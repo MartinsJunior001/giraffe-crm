@@ -4,7 +4,14 @@ import { PrismaService } from '../db/prisma.service';
 import { withAccountContext } from '../db/tenant-context';
 import type { ContextoOrganizacional } from './request-context';
 
-/** UUID v4 canônico. Um `orgId` que não é UUID nem chega ao banco. */
+/**
+ * Forma canônica de um UUID — hex e hífens, sem checar versão/variante (os ids do seed não são v4).
+ *
+ * A flag `i` aceita maiúsculas porque o guard normaliza para minúsculas ANTES de chegar aqui. Sem
+ * essa normalização, a regex aprovaria `AAAA...` e a comparação com a Membership (`===`, byte a
+ * byte, contra o que o PostgreSQL devolve — sempre minúsculo) reprovaria: 403 para um membro
+ * legítimo, e um `context.denied` espúrio contaminando o único sinal de segurança da Story.
+ */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -35,8 +42,16 @@ export class OrgContextResolver {
    * corrigir em silêncio ensina o cliente a mandar qualquer coisa e ainda esconde a tentativa.
    */
   async resolver(accountId: string, orgIdPedido?: string): Promise<ContextoOrganizacional> {
-    // Sintaticamente inválido é rejeitado ANTES do banco: `'x'::uuid` estouraria um erro de
-    // driver, e erro de driver vira 500 — quando a resposta correta é 403.
+    // Rejeita o que é sintaticamente inválido. Note o que esta guarda NÃO é: ela não protege o
+    // banco de injeção — o `orgIdPedido` nunca entra em query nenhuma (a consulta abaixo filtra
+    // por `accountId`; o pedido só é comparado em memória, no `some()`). Quem protege o banco são
+    // as queries parametrizadas do Prisma.
+    //
+    // O que ela faz é rejeitar cedo e com o motivo CERTO: sem ela, um `orgId` malformado cairia no
+    // `some()`, não casaria com nada, e seria auditado como "sem Membership ativa na Organização
+    // pedida" — um evento de tentativa de acesso cruzado, quando na verdade foi um cliente com um
+    // bug de formatação. Um sinal de segurança que confunde as duas coisas é um sinal que ninguém
+    // consegue usar.
     if (orgIdPedido !== undefined && !UUID.test(orgIdPedido)) {
       this.negar(accountId, orgIdPedido, 'orgId malformado');
     }

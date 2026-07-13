@@ -118,14 +118,16 @@ describe('log estruturado do contexto organizacional', () => {
 describe('auditoria mínima de Organization e Membership (FR-214)', () => {
   // Dani não tem Membership no seed, e a Org C nasce vazia. Os arquivos de teste rodam em
   // PARALELO: escrever na Org A colidiria com o arquivo que afirma quantos vínculos ela tem.
-  const DANI = '44444444-4444-4444-4444-444444444444';
+  // Conta de ESCRITA deste arquivo. Ver o cabeçalho do seed: cada arquivo paralelo tem a sua —
+  // e Dani NÃO serve, porque é a fixture de "conta sem Membership nenhuma" da Story 1.3.
+  const GIL = '77777777-7777-7777-7777-777777777777';
 
   it('registra os seis campos exigidos numa mutação permitida', async () => {
     const { logger, entradas } = loggerEspiao();
     const db = withTenantContext(prisma, { orgId: ORG_C, accountId: ANA }, logger);
 
     const criada = await db.membership.create({
-      data: { accountId: DANI, orgId: ORG_C, role: 'GUEST' },
+      data: { accountId: GIL, orgId: ORG_C, role: 'GUEST' },
     });
 
     const trilha = entradas.find((e) => e.obj.event === 'audit');
