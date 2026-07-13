@@ -3,6 +3,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '../generated/prisma';
 import { OrgContextResolver } from '../src/kernel/context/org-context.resolver';
+import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-context';
 import type { PrismaService } from '../src/kernel/db/prisma.service';
 
 /**
@@ -24,6 +25,7 @@ const ANA = '11111111-1111-1111-1111-111111111111'; // ACTIVE só na Org A
 const BRUNO = '22222222-2222-2222-2222-222222222222'; // ACTIVE na Org A, SUSPENDED na Org B
 const DANI = '44444444-4444-4444-4444-444444444444'; // nenhuma Membership
 const EVA = '55555555-5555-5555-5555-555555555555'; // ACTIVE nas Orgs A e B
+const HEITOR = '88888888-8888-8888-8888-888888888888'; // conta de escrita DESTE arquivo (Org C)
 
 /** Evento capturado, para provar que a negação é observável — não um 403 mudo. */
 interface Evento {
@@ -112,6 +114,29 @@ describe('negação', () => {
     // Bruno TEM vínculo na Org B — só que suspenso. Se o resolvedor filtrasse apenas por
     // `accountId`, este pedido passaria.
     await expect(resolver.resolver(BRUNO, ORG_B)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('Membership REMOVED (remoção lógica) não concede contexto — SC-414', async () => {
+    // O AC2 pede remoção LÓGICA: `state = REMOVED`, a linha permanece para auditoria. Removido é o
+    // oposto de ativo — se o resolvedor filtrasse só por `accountId`, um ex-membro manteria acesso à
+    // Organização de onde foi tirado. O seed não traz um REMOVED de propósito (seria fixture de
+    // LEITURA e um arquivo paralelo poderia lê-lo em contagens); criamos e apagamos o nosso, na Org
+    // C, com a conta de escrita deste arquivo (Heitor).
+    const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
+    const dbC = withTenantContext(prisma, { orgId: ORG_C, accountId: HEITOR }, semLog);
+    await dbC.membership.create({
+      data: { accountId: HEITOR, orgId: ORG_C, role: 'GUEST', state: 'REMOVED' },
+    });
+
+    try {
+      // Pedindo a Org C explicitamente: negado — o vínculo existe, mas está REMOVED.
+      await expect(resolver.resolver(HEITOR, ORG_C)).rejects.toBeInstanceOf(ForbiddenException);
+      // E sem pedir nada: o REMOVED não entra na contagem de "Organizações ativas" — também negado.
+      await expect(resolver.resolver(HEITOR)).rejects.toBeInstanceOf(ForbiddenException);
+    } finally {
+      // A Org C tem de voltar VAZIA: o vínculo é só o insumo deste teste, não fixture de ninguém.
+      await dbC.membership.deleteMany({ where: { accountId: HEITOR, orgId: ORG_C } });
+    }
   });
 
   it('e a Membership suspensa também não conta como "única Organização"', async () => {

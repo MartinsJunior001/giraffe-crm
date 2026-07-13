@@ -54,6 +54,28 @@ services:
       # A credencial do MIGRATOR (dono do schema) NÃO é exposta aqui — de propósito: o
       # runtime não pode ter em mãos um papel capaz de ignorar as policies.
       DATABASE_URL: postgresql://giraffe_app:${APP_PASSWORD:?defina APP_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+
+      # Story 1.4 — autenticação e antiabuso. Sem valor padrão (`:?`), pelo mesmo motivo das senhas
+      # do banco: um default silencioso é um segredo público. A API já recusa subir sem elas
+      # (fail-fast, `getEnv()`); o `:?` faz o próprio `compose up` parar antes, dizendo qual falta.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?defina BETTER_AUTH_SECRET (ver .env.example)}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      LOGIN_HMAC_SECRET: ${LOGIN_HMAC_SECRET:?defina LOGIN_HMAC_SECRET (ver .env.example)}
+      LOGIN_HMAC_KEY_VERSION: ${LOGIN_HMAC_KEY_VERSION:-1}
+
+      # Rotação do HMAC: presentes só durante a janela de sobreposição.
+      # Ver docs/04-operacao/rotacao-do-segredo-hmac.md
+      LOGIN_HMAC_PREVIOUS_SECRET: ${LOGIN_HMAC_PREVIOUS_SECRET:-}
+      LOGIN_HMAC_PREVIOUS_KEY_VERSION: ${LOGIN_HMAC_PREVIOUS_KEY_VERSION:-}
+
+      # VAZIO por padrão: sem proxy confiável declarado, o IP vem do SOCKET e o
+      # `X-Forwarded-For` do cliente é ignorado (ver kernel/auth/client-ip.ts).
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      # Este Compose é execução LOCAL, exposição DIRETA (sem proxy reverso na frente). Em produção,
+      # `TRUSTED_PROXY_IPS` vazio SEM este opt-in falha no boot — para que ninguém suba atrás de um
+      # proxy com o G2 colapsado num balde único por esquecimento. Aqui a exposição direta é real e
+      # declarada. A topologia com o proxy do Coolify é validada no gate de staging (débito D-01).
+      ALLOW_DIRECT_EXPOSURE: ${ALLOW_DIRECT_EXPOSURE:-true}
     ports:
       - '3001:3001'
     depends_on:

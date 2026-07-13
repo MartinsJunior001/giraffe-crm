@@ -116,15 +116,30 @@ jobs:
         run: |
           gerar() { openssl rand -hex 16; }
           POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          # Segredos da 1.4 (sessão e HMAC do G1). São necessários por dois motivos: o `docker compose
+          # up -d db` interpola o arquivo INTEIRO — e o serviço `api` os exige via `${VAR:?}` mesmo
+          # subindo só o `db`; e o `pnpm test` sobe o AppModule real (login-http), cujo `getEnv()` os
+          # exige (fail-fast). Gerados por execução, como as senhas do banco — nunca fixos
+          # (Constitution VI) — e mascarados no log. `-hex 32` = 64 chars, acima do mínimo de 32.
+          BETTER_AUTH_SECRET="$(openssl rand -hex 32)"; LOGIN_HMAC_SECRET="$(openssl rand -hex 32)"
           echo "::add-mask::$POSTGRES_PASSWORD"
           echo "::add-mask::$MIGRATOR_PASSWORD"
           echo "::add-mask::$APP_PASSWORD"
+          echo "::add-mask::$BETTER_AUTH_SECRET"
+          echo "::add-mask::$LOGIN_HMAC_SECRET"
           {
             echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
             echo "APP_PASSWORD=$APP_PASSWORD"
             echo "DATABASE_URL=postgresql://giraffe_app:$APP_PASSWORD@localhost:5434/giraffe?schema=public"
             echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+            echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
+            echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
+            echo "BETTER_AUTH_URL=http://localhost:3001"
+            # O `getEnv()` valida o schema INTEIRO, então qualquer teste que o chame — inclusive os
+            # que exercitam o LoginFailureService SEM subir o AppModule (login-failure, hmac-rotacao)
+            # — exige CORS_ALLOWED_ORIGINS. Localmente vem do `.env`; aqui, do ambiente do job.
+            echo "CORS_ALLOWED_ORIGINS=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
       - name: Instalar dependências (imutável)
@@ -212,14 +227,21 @@ jobs:
         run: |
           gerar() { openssl rand -hex 16; }
           POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          # Segredos da 1.4: o Compose os exige (`${VAR:?}`) para interpolar o serviço `api` no
+          # `config`/`build`/`up`. Gerados por execução, mascarados no log — nunca fixos.
+          BETTER_AUTH_SECRET="$(openssl rand -hex 32)"; LOGIN_HMAC_SECRET="$(openssl rand -hex 32)"
           echo "::add-mask::$POSTGRES_PASSWORD"
           echo "::add-mask::$MIGRATOR_PASSWORD"
           echo "::add-mask::$APP_PASSWORD"
+          echo "::add-mask::$BETTER_AUTH_SECRET"
+          echo "::add-mask::$LOGIN_HMAC_SECRET"
           {
             echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
             echo "APP_PASSWORD=$APP_PASSWORD"
             echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+            echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
+            echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
           } >> "$GITHUB_ENV"
 
       # O `smoke` e o `db:migrate` são scripts do repositório; a imagem de produção

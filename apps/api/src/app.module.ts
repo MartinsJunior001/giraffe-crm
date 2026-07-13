@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
+import { AuthModule } from './kernel/auth/auth.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -67,6 +68,10 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     // Antes de HealthModule/OrganizationsModule: registra o guard global e o middleware que abre
     // o escopo de contexto. O guard é deny-by-default — rota nova nasce protegida.
     ContextModule,
+    // Fornece o `PRINCIPAL_PROVIDER` que o guard do ContextModule injeta. Sem ele, o guard não
+    // resolve — e é assim que deve ser: uma aplicação sem autenticação registrada não deveria
+    // conseguir subir fingindo que autoriza alguém.
+    AuthModule,
     HealthModule,
     OrganizationsModule,
   ],

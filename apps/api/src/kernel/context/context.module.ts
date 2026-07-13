@@ -2,7 +2,6 @@ import { Global, MiddlewareConsumer, Module, type NestModule } from '@nestjs/com
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ContextoIndisponivelFilter } from './contexto-indisponivel.filter';
 import { OrgContextResolver } from './org-context.resolver';
-import { PRINCIPAL_PROVIDER, SemSessaoPrincipalProvider } from './principal.provider';
 import { RequestContext } from './request-context';
 import { RequestContextMiddleware } from './request-context.middleware';
 import { TenantContextGuard } from './tenant-context.guard';
@@ -22,7 +21,12 @@ import { TenantContextGuard } from './tenant-context.guard';
   providers: [
     RequestContext,
     OrgContextResolver,
-    { provide: PRINCIPAL_PROVIDER, useClass: SemSessaoPrincipalProvider },
+    // O `PRINCIPAL_PROVIDER` NÃO é registrado aqui — quem o fornece é o `AuthModule` (Story 1.4).
+    //
+    // Registrá-lo nos dois seria pior que redundante: um provider LOCAL vence um provider global de
+    // mesmo token, então o guard continuaria injetando o `SemSessaoPrincipalProvider` da 1.3 e o
+    // login não teria efeito nenhum. Toda requisição seguiria em 401, e a causa estaria escondida na
+    // ordem de resolução do container de DI — o pior lugar possível para um bug de autenticação.
     { provide: APP_GUARD, useClass: TenantContextGuard },
     // Sem este filtro, "um handler rodou sem contexto organizacional" — a falha estrutural mais
     // perigosa desta arquitetura — vira um 500 anônimo, indistinguível de um erro de banco.

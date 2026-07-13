@@ -43,16 +43,137 @@ enum MembershipState {
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
+///
+/// Story 1.4: esta tabela É o `user` do Better Auth (`user: { modelName: 'Account' }`).
+/// Não existe uma segunda tabela de pessoas, e isso é deliberado. Deixar o Better Auth
+/// criar o `user` dele daria DUAS identidades — `user`, dona da sessão, e `Account`,
+/// dona da Membership — a serem sincronizadas para sempre. Toda divergência entre elas
+/// (um `user` sem `Account`, um e-mail atualizado num lado só) é um bug de identidade,
+/// que é a classe de bug que termina em "o usuário X viu os dados do usuário Y".
+/// Uma identidade, uma tabela.
 model Account {
   id        String   @id @default(uuid()) @db.Uuid
   email     String   @unique
   name      String
+  /// Exigidos pelo Better Auth. `emailVerified` não governa acesso nesta Story —
+  /// quem governa é a Membership ativa (1.3). Verificação de e-mail é da Story 1.10.
+  emailVerified Boolean @default(false)
+  image         String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   memberships Membership[]
+  sessions    AuthSession[]
+  credentials AuthCredential[]
 
   @@map("Account")
+}
+
+/// Sessão emitida pelo Better Auth (o `session` dele).
+///
+/// GLOBAL, como `Account` e pela mesma razão (AD-10): uma sessão é da PESSOA, não de uma
+/// Organização. Sem `orgId`, sem RLS.
+///
+/// `activeOrganizationId` é um PEDIDO persistido, jamais autoridade. Quem decide se ele
+/// vale é o `OrgContextResolver` da Story 1.3, conferindo contra a Membership ativa. Tratá-lo
+/// como autoridade — "a sessão diz que ele é da Org X, logo é" — reabriria exatamente o buraco
+/// que a 1.3 fechou: bastaria uma Membership ser suspensa para a sessão continuar valendo.
+model AuthSession {
+  id                   String   @id
+  token                String   @unique
+  expiresAt            DateTime
+  ipAddress            String?
+  userAgent            String?
+  activeOrganizationId String?  @db.Uuid
+  userId               String   @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  account Account @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("AuthSession")
+}
+
+/// O `account` do Better Auth, renomeado — e o nome importa.
+///
+/// Ela NÃO guarda "contas": guarda hash de senha e vínculos com provedores externos. Manter
+/// o nome original num sistema onde `Account` significa "a identidade da pessoa" seria um
+/// convite permanente ao erro, além de colidir com o nosso model (nome de model em Prisma é
+/// único).
+model AuthCredential {
+  id                    String    @id
+  /// Identificador da conta NO PROVEDOR (não é o nosso `Account.id`).
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  /// Hash da senha (credential provider). NUNCA em log, erro, métrica ou resposta.
+  password              String?
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  account Account @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("AuthCredential")
+}
+
+/// Tokens de verificação do Better Auth (`verification`).
+model AuthVerification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("AuthVerification")
+}
+
+/// Contador do rate limit NATIVO do Better Auth (G2): chave = `${ip}|${path}`.
+///
+/// Vive no BANCO, não em memória. O padrão do Better Auth é `storage: 'memory'`, e memória
+/// (a) não sobrevive a restart — o atacante zera a contagem esperando o container reciclar — e
+/// (b) não é compartilhada entre instâncias: com 3 réplicas, o limite efetivo TRIPLICA. Um
+/// limite assim não é uma proteção, é um enfeite.
+model RateLimit {
+  /// Sem default: quem preenche é o `generateId` do Better Auth (ver `auth.factory.ts`). Um default
+  /// aqui só mascararia uma eventual regressão daquela configuração — e o INSERT sem `id` deve
+  /// falhar alto, não ser silenciosamente remendado pelo schema.
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("RateLimit")
+}
+
+/// Contador de FALHAS por identificador (G1). Nosso, e obrigatoriamente nosso.
+///
+/// O rate limiter nativo do Better Auth chaveia por `${ip}|${path}` e conta SOLICITAÇÕES —
+/// verificado na fonte. Ele faz o G2 e é incapaz de fazer o G1. Confiar nele para as duas
+/// coisas deixaria a força bruta dirigida a UMA conta sem proteção alguma: um atacante com uma
+/// lista de e-mails, testando uma senha comum em cada, nunca estoura um limite por conta.
+///
+/// `key` é o HMAC do identificador NORMALIZADO, com prefixo de finalidade — nunca o e-mail em
+/// claro. E-mail é PII: guardá-lo aqui criaria um segundo cadastro de e-mails, fora do controle
+/// de `Account`, e um dump desta tabela viraria uma lista de usuários.
+model LoginFailure {
+  /// HMAC-SHA256(`login:` + e-mail normalizado), hex.
+  key         String   @id
+  /// Versão do segredo que gerou a chave (D6 — rotação sem zerar contadores em silêncio).
+  keyVersion  Int
+  count       Int
+  windowStart DateTime
+
+  @@map("LoginFailure")
 }
 
 /// Raiz do tenant. Toda linha organizacional aponta para cá.
