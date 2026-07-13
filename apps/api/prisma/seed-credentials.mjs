@@ -38,6 +38,9 @@ const CONTAS = [
   '33333333-3333-3333-3333-333333333333', // Carla — ACTIVE só na Org B
   '44444444-4444-4444-4444-444444444444', // Dani  — nenhuma Membership
   '55555555-5555-5555-5555-555555555555', // Eva   — ACTIVE nas Orgs A e B
+  // Iris é conta de ESCRITA (Org C), mas — ao contrário de Fabio/Gil/Heitor — precisa LOGAR: os
+  // testes de sessão da Story 1.5 exigem uma sessão real (cookie assinado). Por isso recebe senha.
+  '99999999-9999-9999-9999-999999999999', // Iris  — sessao.test.ts (sessão real; vínculo próprio na Org C)
 ];
 
 const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;

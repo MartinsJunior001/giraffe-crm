@@ -63,6 +63,29 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
     user: { modelName: 'Account' },
     session: {
       modelName: 'AuthSession',
+
+      // ── Expiração por INATIVIDADE, não absoluta (Story 1.5) ─────────────────────────────────
+      // `expiresIn` é a janela de inatividade: cada uso após `updateAge` empurra a expiração para
+      // frente, então uma sessão ATIVA renova indefinidamente — não há teto de vida. O épico pede
+      // expiração por inatividade e NÃO um limite absoluto; inventar um teto seria alterar requisito.
+      //
+      // Estes valores COINCIDEM com os defaults do Better Auth, mas ficam explícitos de propósito:
+      // por quanto tempo uma credencial vale é política de segurança, não pode depender de um default
+      // invisível que uma atualização da lib mudaria em silêncio. Confirmado no context7 (1.6.23) —
+      // ver gates/1-5/context7-check.md.
+      expiresIn: 60 * 60 * 24 * 7, // 7 dias — janela de inatividade
+      updateAge: 60 * 60 * 24, // 1 dia — só reescreve a expiração após ~1 dia de uso (evita UPDATE por requisição)
+      // `disableSessionRefresh` fica FORA (default false): ligá-lo pararia o deslize e a sessão ativa
+      // expiraria por inatividade indevidamente. É um dos alvos de mutação da Story (M2).
+
+      // ── Revogação imediata: cookieCache DESABILITADO ────────────────────────────────────────
+      // Com o cache de sessão em cookie assinado, uma sessão REVOGADA continuaria sendo aceita até o
+      // `maxAge` do cache expirar — o servidor não apaga cookie de cliente. A doc oficial recomenda
+      // desabilitá-lo quando revogação imediata é requisito, e aqui é: o logout (RN-012) precisa ter
+      // efeito no mesmo instante. Já é o default (false); torná-lo explícito converte um default
+      // silencioso num invariante revisável e testável (TS-06).
+      cookieCache: { enabled: false },
+
       // `activeOrganizationId` é PEDIDO persistido, não autoridade. Quem decide se ele vale é o
       // OrgContextResolver (1.3), conferindo contra a Membership ATIVA a cada requisição. Se a
       // sessão fosse autoridade, suspender uma Membership não tiraria o acesso de ninguém.
