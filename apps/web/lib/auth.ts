@@ -73,8 +73,10 @@ export async function logoutNaApi(
   }
 }
 
+import type { Papel } from './navegacao';
+
 export type EstadoOrg =
-  | { ok: true; orgId: string }
+  | { ok: true; orgId: string; orgNome: string; papel: Papel }
   | { ok: false; motivo: 'sem-sessao' | 'sem-organizacao' | 'indisponivel' };
 
 /**
@@ -96,6 +98,12 @@ export async function fetchOrgAtual(baseUrl: string, cookie: string): Promise<Es
   if (res.status === 401) return { ok: false, motivo: 'sem-sessao' };
   if (res.status === 403) return { ok: false, motivo: 'sem-organizacao' };
   if (!res.ok) return { ok: false, motivo: 'indisponivel' };
-  const body = (await res.json().catch(() => ({}))) as { id?: string };
-  return body.id ? { ok: true, orgId: body.id } : { ok: false, motivo: 'sem-organizacao' };
+  const body = (await res.json().catch(() => ({}))) as {
+    id?: string;
+    name?: string;
+    papel?: Papel;
+  };
+  return body.id && body.name && body.papel
+    ? { ok: true, orgId: body.id, orgNome: body.name, papel: body.papel }
+    : { ok: false, motivo: 'sem-organizacao' };
 }

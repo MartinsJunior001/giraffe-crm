@@ -119,7 +119,14 @@ describe('contexto organizacional sobre HTTP', () => {
       const res = await comoConta(baseUrl, ANA);
 
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ id: ORG_A, name: 'Organização A', slug: 'org-a' });
+      // `papel` (Story 1.7) vem do contexto resolvido: Ana é ADMIN na Org A. É o único campo além de
+      // id/name/slug — sem PII, sem contagem.
+      expect(await res.json()).toEqual({
+        id: ORG_A,
+        name: 'Organização A',
+        slug: 'org-a',
+        papel: 'ADMIN',
+      });
     });
 
     it('o handler não recebe orgId nenhum do cliente — a Org vem do contexto', async () => {

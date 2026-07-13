@@ -1,15 +1,23 @@
 import { Controller, Get, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import type { MembershipRole } from '../../generated/prisma';
 import { Requer } from '../kernel/authz/requer.decorator';
 import { RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { withTenantContext } from '../kernel/db/tenant-context';
 
-/** O que a Organização do contexto expõe. Sem PII, sem contagem, sem campo "de brinde". */
+/**
+ * O que a Organização do contexto expõe. Sem PII, sem contagem, sem campo "de brinde".
+ *
+ * `papel` é o `MembershipRole` efetivo do requisitante NESTA Organização — já resolvido no contexto
+ * (Story 1.6). A casca (Story 1.7) o usa para adaptar a navegação e mostrar o contexto atual. Não é
+ * PII e não concede nada por si: a autorização real continua sendo do servidor (deny-by-default).
+ */
 interface OrganizacaoAtual {
   id: string;
   name: string;
   slug: string;
+  papel: MembershipRole;
 }
 
 /**
@@ -54,6 +62,8 @@ export class OrganizationsController {
     // 404 sanitizado, sem dizer o que aconteceu.
     if (!org) throw new NotFoundException();
 
-    return org;
+    // `papel` vem do contexto já resolvido (1.6), não de nova consulta — a mesma Membership que
+    // decide a Organização decide o papel.
+    return { ...org, papel: contexto.papel };
   }
 }

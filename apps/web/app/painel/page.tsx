@@ -1,59 +1,42 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { getApiBaseUrl } from '@/lib/env';
-import { fetchOrgAtual, type EstadoOrg } from '@/lib/auth';
+import { Botao } from '@/components/ui/button';
+import { obterContexto } from '@/lib/contexto';
 
 /**
- * Página protegida mínima (Story 1.5).
+ * Conteúdo do Dashboard dentro da casca (Story 1.7).
  *
- * O middleware já barra quem não tem cookie de sessão — mas isso é UX. AQUI a verdade é confirmada no
- * SERVIDOR contra a API: se a sessão não vale mais (401), volta ao Login; se vale mas não há Organização
- * ativa (403 — Membership suspensa/removida/ausente), mostra o estado honesto "sem Organização", que
- * NÃO é erro de credencial. A negação real é sempre do backend.
+ * A casca (layout) já resolveu o contexto e já redirecionou quem não tem sessão. Aqui mostramos SÓ a
+ * rota/casca do Dashboard — **sem indicadores de FR-4** (que são do Épico 7) e **sem dado fictício**.
+ * O estado honesto do contexto (org ativa × sem-org × indisponível) é preservado, herdado da 1.5.
  */
 export const dynamic = 'force-dynamic';
 
-export default async function PainelPage() {
-  const cookieStore = await cookies();
-  const cookieHeader = cookieStore
-    .getAll()
-    .map((c) => `${c.name}=${c.value}`)
-    .join('; ');
-
-  let estado: EstadoOrg;
-  try {
-    estado = await fetchOrgAtual(getApiBaseUrl(), cookieHeader);
-  } catch {
-    estado = { ok: false, motivo: 'indisponivel' };
-  }
-
-  // Sessão inválida/expirada: a negação real do backend leva ao Login (o middleware só cobre a ausência
-  // do cookie; um cookie expirado só o backend reprova).
-  if (!estado.ok && estado.motivo === 'sem-sessao') redirect('/login');
+export default async function DashboardPage() {
+  const estado = await obterContexto();
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-2xl font-semibold">Painel</h1>
+    <section className="flex flex-col gap-4">
+      <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
 
       {estado.ok ? (
-        <p className="rounded-md border px-4 py-2 text-sm">
-          Organização ativa: <span className="font-medium">{estado.orgId}</span>
+        <p className="text-sm text-muted-foreground">
+          Você está em <span className="font-medium text-foreground">{estado.orgNome}</span>. Os
+          indicadores chegam em uma etapa futura — por ora, esta é a casca navegável.
         </p>
       ) : estado.motivo === 'sem-organizacao' ? (
-        <p className="rounded-md border px-4 py-2 text-sm">
+        <p className="text-sm text-muted-foreground">
           Você está autenticado, mas sem Organização ativa.
         </p>
       ) : (
-        <p className="rounded-md border px-4 py-2 text-sm">
+        <p className="text-sm text-muted-foreground">
           Não foi possível confirmar seu contexto agora. Tente novamente.
         </p>
       )}
 
-      <form method="post" action="/logout">
-        <button type="submit" className="rounded-md border px-4 py-2 font-medium">
+      <form method="post" action="/logout" className="mt-2">
+        <Botao type="submit" variante="secondary" tamanho="sm">
           Sair
-        </button>
+        </Botao>
       </form>
-    </main>
+    </section>
   );
 }
