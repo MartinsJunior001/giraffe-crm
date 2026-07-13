@@ -182,6 +182,22 @@ describe('invalidação de abilities em cache (SC-606 / AC4)', () => {
     // A ability da Org C é a MESMA instância memoizada — invalidar A não a tocou.
     expect(cache.obter(CONTA, ORG_C, 'MEMBER')).toBe(antesC);
   });
+
+  it('o cache tem teto: cresce até o limite e a evicção não corrompe a correção', () => {
+    const cache = new AbilityCache();
+
+    // Enche muito além do teto (10k). Sem limite, o Map guardaria todas as 10.050 entradas — um
+    // vazamento de memória lento. Com o teto FIFO, as mais antigas são descartadas.
+    for (let i = 0; i < 10_050; i++) {
+      cache.obter(`conta-${i}`, ORG_A, 'GUEST');
+    }
+
+    // Evictada e reconstruída: a ability de uma conta ADMIN, mesmo após passar pelo cache cheio,
+    // continua deny-by-default e escopada — evictar só custa reconstrução, nunca correção.
+    const admin = cache.obter(CONTA, ORG_A, 'ADMIN');
+    expect(admin.can('administrar', subject('Organizacao', { id: ORG_A }))).toBe(true);
+    expect(admin.can('administrar', subject('Organizacao', { id: ORG_C }))).toBe(false);
+  });
 });
 
 describe('permissão derivada, nunca em token (SC-607 / AC de AD-9)', () => {
