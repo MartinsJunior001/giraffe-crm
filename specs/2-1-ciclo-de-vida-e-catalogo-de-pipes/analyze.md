@@ -158,9 +158,18 @@ Classificados e **mantidos fora do commit** (nenhum arquivo apagado):
 O `.gitignore` versionado **não** foi alterado: ignorar tooling de agente afeta toda a equipe e merece
 decisão própria.
 
-## Pendências (não bloqueantes para a entrega)
+## Pendências (resolvidas nesta rodada de revisão)
 
-- **P-1 — revisão adversarial independente.** É o propósito da entrega ao revisor. Quem implementou não
-  pode atestá-la; o `gates/2-1/code-review.md` é auto-revisão declarada como tal.
-- **P-2 — `commit-check`.** Último gate, por definição executado no momento do commit.
-- **P-3 — R-3 (rollback no CI)** e **`.python-version`** — escalados como decisões próprias, fora da 2.1.
+- **P-1 — revisão adversarial independente.** ✅ **APPROVED** — 11 vetores de ataque refutados por
+  execução, 3 achados LOW aceitos e rastreados. Ver `gates/2-1/aceites-independentes.md` §1.
+- **P-1b — security-check independente.** ✅ **APPROVED** — isolamento provado nas 4 frentes com evidência
+  real. §2.
+- **P-1c — decisão de Arquitetura D-1/C3.** ✅ **`C3 COMPATIBLE — APPROVED`** — extensão de catálogo
+  prevista pelo AD-9; comportamento de `Organizacao` preservado; sem reabrir o C3. §3.
+- **P-2 — `commit-check`.** ✅ **APPROVED FOR COMMIT**; commit `c91e321`.
+- **P-3 — débitos gerados.** R-3 → **DBT-ROLLBACK-CI** (L6); D-1 → **DBT-AUTHZ-01** (Story 2.2) e
+  **GOV-C3-NOTA** (governança). Rastreados em `gates/2-1/debitos-gerados.md`. `.python-version` e
+  `.claude/skills/commit/` seguem escalados (decisão de equipe), fora do commit da 2.1.
+
+Nenhum achado CRITICAL/HIGH/MEDIUM em aberto. As condições de qualidade para o merge do PR #17 estão
+satisfeitas.

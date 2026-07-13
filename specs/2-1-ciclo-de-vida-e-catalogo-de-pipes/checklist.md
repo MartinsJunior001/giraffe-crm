@@ -177,6 +177,8 @@
 - [x] Gates executados e registrados: `context7-check`, `pre-implementation-check`, `security-check`,
       `lgpd-check`, `migration-check` (SC-206), `backup-check`, `observability-check`,
       `performance-check`, `safe-implementation`, `code-review`.
-- [ ] `commit-check` — executado no momento do commit (último gate, por definição).
-- [ ] Revisão adversarial **independente** (humana/segundo revisor) — é o propósito da entrega ao
-      revisor; não pode ser auto-atestada por quem implementou.
+- [x] `commit-check` — **APPROVED FOR COMMIT**; commit `c91e321`.
+- [x] Revisão adversarial **independente** — **APPROVED** (11 vetores refutados por execução; 3 LOW
+      aceitos). Ver `gates/2-1/aceites-independentes.md` §1.
+- [x] Security-check **independente** — **APPROVED** (isolamento provado nas 4 frentes). §2 do mesmo arquivo.
+- [x] Decisão de Arquitetura sobre D-1/C3 — **`C3 COMPATIBLE — APPROVED`**. §3 do mesmo arquivo.
