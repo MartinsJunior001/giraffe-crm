@@ -1,0 +1,25 @@
+installation:
+  version: 6.10.0
+  installDate: 2026-07-11T14:19:13.839Z
+  lastUpdated: 2026-07-11T14:19:13.839Z
+modules:
+  - name: core
+    version: 6.10.0
+    installDate: 2026-07-11T14:19:13.284Z
+    lastUpdated: 2026-07-11T14:19:13.838Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+  - name: bmm
+    version: 6.10.0
+    installDate: 2026-07-11T14:19:12.823Z
+    lastUpdated: 2026-07-11T14:19:13.839Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+ides:
+  - claude-code
+  - codex
+  - github-copilot
+  - antigravity
+  - cursor

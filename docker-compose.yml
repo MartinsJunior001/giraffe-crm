@@ -1,0 +1,78 @@
+# Execução local integrada (dev/local) — Stories 1.1 e 1.2.
+# Não usar como configuração de produção sem revisão (segredos via cofre/Coolify).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      # Credenciais vindas do AMBIENTE, sem valor padrão (`:?`). Um default silencioso é
+      # credencial insegura: o ambiente que esquece a variável não falha — ele sobe com uma
+      # senha conhecida e versionada. A Constitution VI proíbe credencial padrão, e o
+      # projeto já trata configuração ausente como falha honesta (`CORS_ALLOWED_ORIGINS`,
+      # `DATABASE_URL`). Aqui vale o mesmo: sem a variável, o `compose up` para e diz qual.
+      # Para desenvolvimento, `cp .env.example .env` já preenche as três.
+      # O superusuário do container NUNCA é usado pela aplicação: os papéis
+      # `giraffe_migrator` e `giraffe_app` são criados no bootstrap (AD-6).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD (ver .env.example)}
+      POSTGRES_DB: giraffe
+      # Consumidas pelo script de bootstrap dos papéis.
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}
+      APP_PASSWORD: ${APP_PASSWORD:?defina APP_PASSWORD (ver .env.example)}
+    ports:
+      # `127.0.0.1` é deliberado: sem ele o Docker publica em 0.0.0.0 e o banco — com senha
+      # de desenvolvimento, previsível — fica alcançável por qualquer máquina da rede local.
+      #
+      # 5434 no HOST: a 5432 é tomada por uma instalação local de PostgreSQL e a 5433 por
+      # outro container. Quando a porta já está ocupada, as conexões vão silenciosamente
+      # para o banco ERRADO — daí a porta alta e explícita.
+      # Dentro da rede do Compose, a API continua falando com `db:5432`.
+      - '127.0.0.1:5434:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Bootstrap dos papéis (roda uma vez, como superusuário, antes das migrations).
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
+      # O SQL de papéis é o MESMO usado no deploy — versionado junto das migrations.
+      # O script de init só o executa; não guarda uma segunda cópia.
+      - ./apps/api/prisma/bootstrap:/bootstrap:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d giraffe']
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_PORT: '3001'
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      LOG_LEVEL: info
+      # Papel de runtime: SEM BYPASSRLS, não proprietário das tabelas (AD-6).
+      # A credencial do MIGRATOR (dono do schema) NÃO é exposta aqui — de propósito: o
+      # runtime não pode ter em mãos um papel capaz de ignorar as policies.
+      DATABASE_URL: postgresql://giraffe_app:${APP_PASSWORD:?defina APP_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+    ports:
+      - '3001:3001'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      # Server-side (container) alcança a API pela rede do Compose. Variável de
+      # servidor (não NEXT_PUBLIC): não é exposta ao browser.
+      API_BASE_URL: http://api:3001
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+
+volumes:
+  db-data:

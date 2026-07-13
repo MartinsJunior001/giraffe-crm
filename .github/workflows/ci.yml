@@ -1,0 +1,321 @@
+# CI — verificação independente do Giraffe CRM.
+#
+# Existe porque, até a Story 1.2, TODO gate rodou na máquina de quem implementou. O Code Review
+# dessa Story encontrou dois vazamentos cross-tenant que só ficam visíveis quando a suíte roda
+# contra um PostgreSQL REAL, com papéis provisionados e migrations aplicadas. Sem isto, nada
+# impede uma regressão de isolamento de entrar no `main`.
+#
+# Os jobs são separados por NATUREZA DO SINAL, de propósito: um job monolítico diria apenas
+# "vermelho"; quatro dizem ONDE.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['main', 'story/**', 'tech/**']
+
+# Menor privilégio. O workflow só lê o código; não comenta em PR, não publica, não escreve tag.
+permissions:
+  contents: read
+
+# Um push novo no mesmo ref cancela a execução anterior — ela já está obsoleta e só consome fila.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Fixado pelo `.nvmrc`; o `setup-node` lê o arquivo, para não haver duas verdades sobre a versão.
+  NODE_VERSION_FILE: .nvmrc
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Estático: não precisa de banco. É o feedback mais rápido, então vem primeiro.
+  # ─────────────────────────────────────────────────────────────────────────────
+  qualidade:
+    name: Qualidade (format, lint, typecheck, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # pnpm ANTES do setup-node: o `cache: pnpm` do setup-node precisa do pnpm já disponível
+      # para localizar o store. A versão vem do campo `packageManager` do package.json.
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Instalar Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: pnpm
+
+      # `--frozen-lockfile`: lockfile dessincronizado do package.json REPROVA, em vez de ser
+      # silenciosamente atualizado. É o que torna o build reprodutível.
+      - name: Instalar dependências (imutável)
+        run: pnpm install --frozen-lockfile
+
+      - name: Formatação
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      # Cobre `src` E `test` (tsconfig.json da API). O build usa tsconfig.build.json, que exclui
+      # os testes de `dist` — as duas coisas são intencionalmente diferentes.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Um teste que vazasse para a imagem de produção seria um bug de empacotamento silencioso.
+      - name: A saída de produção não contém artefato de teste
+        run: |
+          if find apps/api/dist -name '*.test.*' -o -name '*.spec.*' | grep -q .; then
+            echo "::error::dist/ contém arquivo de teste — o build está usando o tsconfig errado"
+            find apps/api/dist -name '*.test.*' -o -name '*.spec.*'
+            exit 1
+          fi
+          echo "OK: nenhum artefato de teste em dist/"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Testes contra PostgreSQL REAL. É o job que sustenta o invariante-mãe do produto.
+  #
+  # O banco sobe pelo Docker Compose, e NÃO por `services:`. O `services:` inicia os containers
+  # antes do checkout, então não consegue montar o `prisma/bootstrap/00-roles.sql` — e a saída
+  # seria reescrever o provisionamento de papéis dentro deste YAML. Isso criaria uma SEGUNDA
+  # definição de quem são `giraffe_app` e `giraffe_migrator`, e a que vale em produção seria a
+  # que ninguém testa. É exatamente o defeito que o Code Review da Story 1.2 corrigiu.
+  # ─────────────────────────────────────────────────────────────────────────────
+  testes:
+    name: Testes (PostgreSQL real, migrations em banco vazio)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Instalar Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: pnpm
+
+      # Credenciais GERADAS por execução. Fixá-las aqui reintroduziria a credencial padrão que a
+      # Constitution VI proíbe e que o Code Review da Story 1.2 removeu do Compose. Elas vivem
+      # apenas nesta execução, num banco efêmero, e são mascaradas no log (`add-mask`).
+      - name: Gerar credenciais efêmeras do banco de CI
+        run: |
+          gerar() { openssl rand -hex 16; }
+          POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$MIGRATOR_PASSWORD"
+          echo "::add-mask::$APP_PASSWORD"
+          {
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
+            echo "APP_PASSWORD=$APP_PASSWORD"
+            echo "DATABASE_URL=postgresql://giraffe_app:$APP_PASSWORD@localhost:5434/giraffe?schema=public"
+            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+          } >> "$GITHUB_ENV"
+
+      - name: Instalar dependências (imutável)
+        run: pnpm install --frozen-lockfile
+
+      # Volume novo a cada execução ⇒ o bootstrap de papéis roda de verdade, todas as vezes.
+      - name: Subir o PostgreSQL (bootstrap de papéis versionado)
+        run: |
+          docker compose up -d db
+          for _ in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q db)")" = "healthy" ]; then
+              echo "banco healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::o banco não ficou healthy"; docker compose logs db; exit 1
+
+      # Banco vazio ⇒ a migration é EXERCITADA a cada execução, nunca presumida.
+      - name: Aplicar migrations (papel giraffe_migrator)
+        run: pnpm --filter @giraffe/api db:migrate
+
+      - name: Conferir que não há migration pendente
+        run: pnpm --filter @giraffe/api db:status
+
+      - name: Seed (fixture de isolamento)
+        run: pnpm --filter @giraffe/api db:seed
+
+      # Papel de runtime SEM privilégio administrativo. Se este passo falhar, todo teste de
+      # isolamento abaixo vira teatro — daí ele ser um gate, e não uma asserção enterrada.
+      - name: O papel de runtime não pode contornar o RLS
+        run: |
+          SAIDA=$(docker compose exec -T -e PGPASSWORD="$APP_PASSWORD" db \
+            psql -U giraffe_app -d giraffe -tAc \
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")
+          if [ "$SAIDA" != "f" ]; then
+            echo "::error::giraffe_app tem SUPERUSER ou BYPASSRLS — o isolamento seria ficção"
+            exit 1
+          fi
+          echo "OK: giraffe_app sem SUPERUSER e sem BYPASSRLS"
+
+      # A suíte fica VERMELHA se o banco estiver fora — nunca pulada. Banco indisponível é
+      # falha, não ausência de evidência.
+      - name: Testes (API + Web)
+        run: pnpm test
+
+      - name: Logs do banco (só em falha)
+        if: failure()
+        run: docker compose logs db > db.log 2>&1 || true
+
+      - name: Anexar evidência da falha
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: testes-falha-logs
+          path: db.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # A imagem sobe de verdade? Build verde não prova boot — foi a lição da Story 1.1.
+  # ─────────────────────────────────────────────────────────────────────────────
+  containers:
+    name: Containers (boot real + smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Instalar Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: pnpm
+
+      - name: Gerar credenciais efêmeras do banco de CI
+        run: |
+          gerar() { openssl rand -hex 16; }
+          POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$MIGRATOR_PASSWORD"
+          echo "::add-mask::$APP_PASSWORD"
+          {
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
+            echo "APP_PASSWORD=$APP_PASSWORD"
+            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+          } >> "$GITHUB_ENV"
+
+      # O `smoke` e o `db:migrate` são scripts do repositório; a imagem de produção
+      # deliberadamente NÃO carrega o CLI do Prisma nem `scripts/` (ver README, publicação).
+      - name: Instalar dependências (imutável)
+        run: pnpm install --frozen-lockfile
+
+      - name: Validar a composição
+        run: docker compose config --quiet
+
+      - name: Build das imagens
+        run: docker compose build
+
+      - name: Subir a stack
+        run: docker compose up -d
+
+      # Migration é ETAPA CONTROLADA (AD-32): não roda no boot do container. A API sobe antes,
+      # e é isso que faz o `/ready` dela responder 503 até o schema existir — comportamento
+      # desejado, e a razão de esperarmos `healthy` DEPOIS da migration.
+      - name: Aplicar migrations (etapa controlada, fora do container)
+        run: pnpm --filter @giraffe/api db:migrate
+
+      - name: Esperar api e web ficarem healthy
+        run: |
+          for _ in $(seq 1 45); do
+            estado_api=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q api)" 2>/dev/null || echo "n/a")
+            estado_web=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q web)" 2>/dev/null || echo "n/a")
+            echo "api=$estado_api web=$estado_web"
+            if [ "$estado_api" = "healthy" ] && [ "$estado_web" = "healthy" ]; then exit 0; fi
+            if [ "$estado_api" = "unhealthy" ] || [ "$estado_web" = "unhealthy" ]; then
+              echo "::error::container unhealthy"; exit 1
+            fi
+            sleep 4
+          done
+          echo "::error::timeout esperando os containers ficarem healthy"; exit 1
+
+      - name: Smoke (/health, /ready, /healthz e a casca)
+        run: pnpm smoke
+
+      # O contêiner não pode carregar segredo. Verificação direta, não confiança no .dockerignore.
+      - name: A imagem da API não carrega .env
+        run: |
+          if docker compose run --rm --no-deps --entrypoint sh api -c 'ls -a /repo/apps/api /repo 2>/dev/null' | grep -qx '.env'; then
+            echo "::error::há um .env dentro da imagem da API"
+            exit 1
+          fi
+          echo "OK: nenhum .env na imagem"
+
+      - name: Logs dos containers (só em falha)
+        if: failure()
+        run: |
+          docker compose ps > containers.log 2>&1 || true
+          docker compose logs --no-color >> containers.log 2>&1 || true
+
+      - name: Anexar evidência da falha
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: containers-falha-logs
+          path: containers.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Varredura de segurança. Reprova em CRITICAL/HIGH — um scanner que só avisa é decoração.
+  # ─────────────────────────────────────────────────────────────────────────────
+  seguranca:
+    name: Segurança (Trivy — dependências, configuração e segredos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # `exit-code: 1` é o ponto: um scanner que só imprime achado e deixa passar é decoração.
+      # CRITICAL/HIGH REPROVA. Achado sem correção disponível (`ignore-unfixed`) não reprova —
+      # não há ação possível, e transformar isso em vermelho permanente treina a equipe a
+      # ignorar o vermelho, que é o pior resultado possível para um gate de segurança.
+      #
+      # Este job não instala dependências (só faz checkout), então não há `node_modules` para
+      # varrer. As exclusões abaixo são explícitas para que isso continue verdade se alguém
+      # adicionar um `pnpm install` aqui — a varredura levava >5min com a árvore instalada.
+      - name: Trivy — vulnerabilidades, misconfiguração e segredos
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          timeout: 15m
+          skip-dirs: 'node_modules,**/node_modules,apps/*/generated,apps/*/.next'

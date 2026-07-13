@@ -1,0 +1,34 @@
+# Dependências
+node_modules/
+
+# Builds
+dist/
+.next/
+out/
+build/
+# Cache de compilação incremental do TS (regenerado pelo typecheck; específico da máquina)
+*.tsbuildinfo
+
+# Testes
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Ambiente — segredos NUNCA versionados (só o exemplo)
+.env
+.env.*
+!.env.example
+
+# Next
+next-env.d.ts
+.next/
+
+# SO / editor
+.DS_Store
+Thumbs.db
+
+# Prisma Client gerado (artefato de build — regenerado por `pnpm install`)
+apps/api/generated/

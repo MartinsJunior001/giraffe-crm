@@ -1,0 +1,27 @@
+node_modules
+dist
+.next
+out
+build
+coverage
+pnpm-lock.yaml
+
+# Artefatos BMAD / documentação (não reformatar)
+_bmad
+_bmad-output
+docs
+skills
+
+# Scaffolding/tooling gerado (Spec Kit, VSCode, GitHub) — não é código da aplicação
+.specify
+.github
+.vscode
+.agent
+.agents
+.codex
+
+# Artefatos Spec Kit da Story (não alterar durante dev-story)
+specs
+
+# Prisma Client gerado — artefato de build, não código-fonte.
+apps/api/generated/

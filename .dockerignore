@@ -1,0 +1,34 @@
+# Node
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/build
+
+# Git / editor
+.git
+.gitignore
+
+# Segredos — nunca copiar para a imagem (em qualquer nível do repo)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Artefatos BMAD / documentação / tooling (fora do build da aplicação)
+_bmad
+_bmad-output
+docs
+skills
+.agent
+.agents
+.claude
+.codex
+.github
+.python-version
+
+# Markdown de topo (docs) — não necessários no build
+*.md
+
+# Client gerado no host: o engine e binario NATIVO e nao serve na imagem Linux.
+# A imagem roda seu proprio `prisma generate`.
+apps/api/generated/

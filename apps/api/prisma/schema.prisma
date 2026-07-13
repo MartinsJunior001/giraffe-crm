@@ -1,0 +1,92 @@
+// Modelo multi-tenant — Story 1.2.
+//
+// O isolamento NÃO é garantido por este schema, e sim pelas policies de RLS na
+// migration `..._init_tenancy_rls`. Este arquivo descreve as tabelas; o banco é
+// quem nega. Ler `prisma/migrations/*/migration.sql` antes de mexer aqui.
+
+generator client {
+  provider = "prisma-client-js"
+  // Saída EXPLÍCITA, fora de `node_modules`. Por padrão o Prisma escreve o client dentro do
+  // pacote `@prisma/client` no store do pnpm, num caminho com hash de peer-dependency — que
+  // MUDA entre uma instalação completa e uma `--prod`. Resultado: a imagem de produção subia
+  // sem o client, ou só ficava correta carregando 465 MB de devDependencies junto.
+  // Um diretório estável é copiável entre stages do Docker. (Também é o formato exigido
+  // pelo Prisma 7.)
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Runtime → papel `giraffe_app` (sem BYPASSRLS, não proprietário).
+  // Migrations → o script `db:migrate` substitui esta URL pela do `giraffe_migrator`.
+  url      = env("DATABASE_URL")
+}
+
+/// Papel do vínculo com a Organização. Papel ÚNICO por Membership (AD-7).
+/// Origem: NFR-4 canônico (Admin da Org / Membro / Convidado). NÃO inventar papéis.
+/// Super Admin NÃO está aqui: é papel de Plataforma e não concede acesso a dados
+/// de Organização (INV-ADMIN-01).
+enum MembershipRole {
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+/// Estado do vínculo. `REMOVED` É a remoção lógica exigida pelo AC2 — por isso
+/// NÃO existe `deletedAt` paralelo (fonte de verdade única — AD-14).
+enum MembershipState {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+/// Identidade GLOBAL da Plataforma (AD-7/AD-10).
+/// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
+/// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
+model Account {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+
+  @@map("Account")
+}
+
+/// Raiz do tenant. Toda linha organizacional aponta para cá.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+
+  @@map("Organization")
+}
+
+/// Vínculo Account × Organization (AD-7, Forma B). É a tabela organizacional
+/// desta Story — e a fixture dos testes de isolamento.
+model Membership {
+  id        String          @id @default(uuid()) @db.Uuid
+  accountId String          @db.Uuid
+  orgId     String          @db.Uuid
+  role      MembershipRole
+  state     MembershipState @default(ACTIVE)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Uma conta tem no máximo UM vínculo por Organização (papel único — AD-7).
+  @@unique([accountId, orgId])
+  // Todo acesso organizacional começa por `orgId` → primeira coluna do índice.
+  @@index([orgId, state])
+  // Descoberta das próprias Organizações no login (Story 1.4), antes de haver contexto.
+  @@index([accountId])
+  @@map("Membership")
+}

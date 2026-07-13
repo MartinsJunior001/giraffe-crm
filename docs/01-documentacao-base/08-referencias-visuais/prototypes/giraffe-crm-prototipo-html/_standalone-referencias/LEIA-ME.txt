@@ -1,0 +1,10 @@
+REFERÊNCIA AUXILIAR — NÃO É FONTE OFICIAL
+
+Os arquivos desta pasta são versões standalone (autocontidas) antigas,
+mantidas apenas como referência visual:
+
+- login-standalone.html
+- kanban-standalone.html
+
+A fonte oficial do protótipo Giraffe CRM (Fase 1) é o pacote navegável
+na raiz deste ZIP, começando por index.html → login.html.

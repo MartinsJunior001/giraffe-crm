@@ -1,0 +1,161 @@
+# generated: 2026-07-12
+# last_updated: 2026-07-12
+# project: giraffe crm — Fase 1
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Ordered by the approved EXECUTION order: E1 -> E8 -> E2 -> E3 -> E4 -> E5 -> E6 -> E7.
+# - Epic transitions to 'in-progress' automatically when first story is created.
+# - Stories can be worked in parallel where the roadmap marks it safe.
+# - Dev moves story to 'review', then runs code-review (fresh context recommended).
+# - No story enters development before its Definition of Ready (incl. applicable gate closed).
+
+generated: 2026-07-12
+last_updated: 2026-07-12
+project: giraffe crm — Fase 1
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ===== Wave 1 — Épico 1: Fundação e Conta =====
+  epic-1: in-progress
+  1-1-esqueleto-executavel-e-ambiente-base: done
+  1-2-modelo-multi-tenant-e-isolamento-por-rls: done
+  tech-1-ci-github-actions: done
+  1-3-propagacao-segura-do-contexto-de-organizacao: backlog
+  1-4-login-e-resolucao-inicial-da-organizacao: backlog
+  1-5-continuidade-de-sessao-logout-e-protecao-de-rotas: backlog
+  1-6-substrato-de-autorizacao-efetiva: backlog
+  1-7-casca-navegavel-e-design-system: backlog
+  1-8-estados-honestos-e-acessibilidade-transversal: backlog
+  1-9-troca-explicita-de-organizacao: backlog
+  1-10-recuperacao-de-senha: backlog
+  1-11-perfil-basico-e-contexto-proprio: backlog
+  1-12-troca-autenticada-de-senha: backlog
+  1-13-alteracao-de-e-mail-em-duas-etapas: backlog
+  epic-1-retrospective: optional
+
+  # ===== Wave 2 — Épico 8: Administração, Membros e Auditoria =====
+  epic-8: backlog
+  8-1-casca-do-painel-administrativo-e-guarda-de-acesso: backlog
+  8-2-criar-reenviar-expirar-e-cancelar-convite: backlog
+  8-3-aceite-de-convite-e-ativacao-da-membership: backlog
+  8-4-alteracao-de-papel-da-membership: backlog
+  8-5-suspensao-e-reativacao-da-membership: backlog
+  8-6-remocao-saida-voluntaria-e-impacto-sobre-recursos: backlog
+  8-7-roster-de-membros-e-convites: backlog
+  8-8-auditoria-administrativa: backlog
+  epic-8-retrospective: optional
+
+  # ===== Wave 3 — Épico 2: Pipes, Fases, Formulários e Cards =====
+  epic-2: backlog
+  2-1-ciclo-de-vida-e-catalogo-de-pipes: backlog
+  2-2-papeis-e-acesso-por-pipe: backlog
+  2-3-gerenciamento-de-fases: backlog
+  2-4-form-builder-e-catalogo-canonico-de-campos: backlog
+  2-5-ciclo-de-vida-e-evolucao-segura-de-campos: backlog
+  2-6-ciclo-de-publicacao-dos-formularios: backlog
+  2-7-submissao-interna-do-formulario-inicial-e-criacao-do-card: backlog
+  2-8-submissao-publica-controlada-e-triagem: backlog
+  2-9-kanban-e-espaco-operacional-do-card: backlog
+  2-10-acesso-responsavel-e-concessoes-de-card: backlog
+  2-11-ciclo-de-vida-do-card: backlog
+  2-12-marcos-por-fase-e-override-por-card: backlog
+  2-13-saude-temporal-derivada-do-card: backlog
+  2-14-movimentacao-e-regras-de-transicao: backlog
+  2-15-formulario-de-fase-e-bloqueio-de-transicao: backlog
+  2-16-evento-canonico-de-movimentacao-e-contrato-opt-in: backlog
+  2-17-historico-do-card-consulta-da-timeline: backlog
+  2-18-integracao-fr32-pipes-relacionados-no-perfil: backlog
+  epic-2-retrospective: optional
+
+  # ===== Wave 4 — Épico 3: Databases, Registros, Vínculos e Arquivos =====
+  epic-3: backlog
+  3-1-ciclo-de-vida-e-catalogo-de-databases: backlog
+  3-2-papeis-e-acesso-por-database: backlog
+  3-3-formulario-de-database-schema-visual-do-registro: backlog
+  3-4-ciclo-de-vida-do-registro-historico-write-side: backlog
+  3-5-visualizacao-e-navegacao-de-registros: backlog
+  3-6-historico-do-registro-read-side: backlog
+  3-7-capacidade-compartilhada-de-arquivos: backlog
+  3-8-campo-arquivo-funcional-e-anexo-geral: backlog
+  3-9-vinculo-card-registro-n-n: backlog
+  3-10-integracao-fr32-avatar: backlog
+  epic-3-retrospective: optional
+
+  # ===== Wave 5 — Épico 4: Automações internas =====
+  epic-4: backlog
+  4-1-modelo-escopo-e-referencias-da-automacao: backlog
+  4-2-ciclo-de-vida-e-gestao-da-automacao: backlog
+  4-3-catalogo-de-eventos-gatilhos: backlog
+  4-4-catalogo-de-condicoes-e-avaliacao-and: backlog
+  4-5-catalogo-de-acoes-internas-card-registro: backlog
+  4-6-motor-de-disparo-e-avaliacao: backlog
+  4-7-encadeamento-e-prevencao-de-ciclos: backlog
+  4-8-trilha-de-execucoes: backlog
+  4-9-contrato-de-extensao-de-acoes-e-referencias: backlog
+  epic-4-retrospective: optional
+
+  # ===== Wave 6 — Épico 5: Tarefas, Solicitações e Notificações =====
+  epic-5: backlog
+  5-1-tarefas-ciclo-de-vida-e-acompanhamento: backlog
+  5-2-solicitacoes-ciclo-de-vida-e-responsavel: backlog
+  5-3-fonte-unica-de-notificacoes-write-side: backlog
+  5-4-superficies-leitura-e-preferencias: backlog
+  5-5-tempo-real-como-invalidacao-socket-io: backlog
+  5-6-catalogo-e-distribuicao-de-notificacoes-in-app: backlog
+  5-7-integracao-com-automacao-eventos-acoes-de-e5: backlog
+  epic-5-retrospective: optional
+
+  # ===== Wave 7 — Épico 6: E-mails, Templates e IA assistiva =====
+  epic-6: backlog
+  6-1-modelo-canonico-de-e-mail-e-composer: backlog
+  6-2-administracao-e-versionamento-de-templates: backlog
+  6-3-aplicacao-manual-de-template: backlog
+  6-4-envio-assincrono-identidade-e-estados-honestos: backlog
+  6-5-anexos-de-e-mail: backlog
+  6-6-integracao-e-mail-automacao: backlog
+  6-7-fundacao-segura-de-ia: backlog
+  6-8-sugestao-de-e-mail-e-resumo-de-card: backlog
+  6-9-ia-como-acao-e-comando-proposto: backlog
+  epic-6-retrospective: optional
+
+  # ===== Wave 8 — Épico 7: Visibilidade (Dashboard, Busca, Relatórios) =====
+  epic-7: backlog
+  7-1-base-de-read-models-derivados: backlog
+  7-2-conteudo-funcional-do-dashboard: backlog
+  7-3-badge-de-nao-lidas-integracao: backlog
+  7-4-busca-global-restrita-a-organizacao: backlog
+  7-5-relatorios-e-indicadores-agregados: backlog
+  epic-7-retrospective: optional
