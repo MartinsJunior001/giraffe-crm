@@ -3,7 +3,9 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
+import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -62,7 +64,11 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
       },
     }),
     DbModule,
+    // Antes de HealthModule/OrganizationsModule: registra o guard global e o middleware que abre
+    // o escopo de contexto. O guard é deny-by-default — rota nova nasce protegida.
+    ContextModule,
     HealthModule,
+    OrganizationsModule,
   ],
 })
 export class AppModule {}

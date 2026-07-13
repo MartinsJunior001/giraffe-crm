@@ -1,0 +1,17 @@
+# Quebras de linha: LF no repositório E no working tree, em qualquer sistema operacional.
+#
+# Sem este arquivo, um clone no Windows com `core.autocrlf=true` (o padrão do Git for Windows)
+# materializa CRLF no disco. Duas consequências reais, ambas observadas neste repositório:
+#
+#  1. `pnpm format:check` fica VERMELHO em ~47 arquivos cujo conteúdo está impecável — o Prettier
+#     usa `endOfLine: "lf"` por padrão. O gate deixa de significar "o código está formatado" e passa
+#     a significar "você clonou no sistema certo", e a reação natural da equipe vira ignorá-lo.
+#
+#  2. Pior: `docker/db/init/01-roles.sh` é EXECUTADO dentro do container Postgres. Um `\r` no fim de
+#     cada linha quebra o bootstrap dos papéis do banco — e o CI, que roda em Linux (onde
+#     `autocrlf` é `false`), nunca reproduz a falha. É exatamente a classe de bug que só aparece na
+#     máquina de quem acabou de entrar no time.
+#
+# `text=auto` deixa o Git detectar binários sozinho; `eol=lf` garante o working tree em LF mesmo
+# com `autocrlf=true`, porque o `.gitattributes` tem precedência sobre a configuração local.
+* text=auto eol=lf

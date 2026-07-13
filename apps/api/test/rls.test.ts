@@ -26,6 +26,8 @@ const BRUNO = '22222222-2222-2222-2222-222222222222'; // Org A E Org B
 const CARLA = '33333333-3333-3333-3333-333333333333'; // só Org B
 const MEMBERSHIP_ANA_EM_A = 'a1a1a1a1-0000-0000-0000-000000000001';
 const MEMBERSHIP_CARLA_EM_B = 'b1b1b1b1-0000-0000-0000-000000000001';
+/** Conta de ESCRITA deste arquivo. Ver o cabeçalho do seed: cada arquivo paralelo tem a sua. */
+const FABIO = '66666666-6666-6666-6666-666666666666';
 
 /** O log é observado em `rls-observability.test.ts`; aqui só interessa o comportamento. */
 const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
@@ -150,7 +152,7 @@ describe('escrita com contexto organizacional', () => {
     const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
 
     const criada = await db.membership.create({
-      data: { accountId: CARLA, orgId: ORG_C, role: 'GUEST' },
+      data: { accountId: FABIO, orgId: ORG_C, role: 'GUEST' },
     });
 
     expect(criada.orgId).toBe(ORG_C);
@@ -167,7 +169,7 @@ describe('escrita com contexto organizacional', () => {
     const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
 
     const criada = await db.membership.create({
-      data: { accountId: CARLA, orgId: ORG_C, role: 'GUEST' },
+      data: { accountId: FABIO, orgId: ORG_C, role: 'GUEST' },
     });
 
     const promovida = await db.membership.update({
