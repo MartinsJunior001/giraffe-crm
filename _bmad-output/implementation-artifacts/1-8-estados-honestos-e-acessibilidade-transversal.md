@@ -1,7 +1,7 @@
 ---
 story_key: 1-8-estados-honestos-e-acessibilidade-transversal
 epic: 1
-status: review
+status: done
 release: CORE (Lote 1)
 risco: NORMAL
 baseline_commit: 4d862bf32ba41f248e7d992a63f8eee83879ba2d
@@ -213,3 +213,4 @@ claude-opus-4-8 (Claude Code)
 |---|---|
 | 2026-07-13 | Story criada (create-story) a partir de `epics.md` (Story 1.8), `DESIGN.md`/`EXPERIENCE.md` (estados, a11y), do relatório de preparação read-only (agente Plan) e do estado atual do `apps/web` (casca da 1.7 `done`). Classificada **CORE (Lote 1)**, risco **NORMAL** (frontend/UX/a11y; sem migration; sem toque no backend; sem nova fronteira de segurança). Sem bloqueio de contrato: o estado "sem permissão" é não-revelador e não depende da matriz de permissões (OQ-1..4). Dependência **1.7** `done`. Status → ready-for-dev. |
 | 2026-07-13 | Implementação (T001–T005): `lib/contraste.ts` (razão WCAG pura + fase vermelha), `components/ui/estado.tsx` (`Estado` + 4 variantes honestas), consumo no Dashboard (vazio × falha distinguíveis), gate de a11y transversal. Gates **APROVADOS** (pre-implementation, context7, security, observability). Qualidade verde: format/lint/typecheck/**Web 68/68** (+22)/build. Code review **APROVADO** sem findings acionáveis. Status → review. |
+| 2026-07-13 | Merge do PR #11 (`--no-ff`, commit `870745c`) com CI 100% verde nos 4 jobs. Encerramento administrativo: Status → **done**. Encerra o Lote 1 do Épico 1 (1.5→1.6→1.7→1.8). |
