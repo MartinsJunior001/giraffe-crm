@@ -22,6 +22,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Forçar 0.0.0.0 para bindar em todas as interfaces (healthcheck e acesso externo).
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+
+# Mesma razão do Dockerfile da API: o runtime só executa `node server.js`. O npm embutido na imagem
+# base não é usado, traz CVE próprio (undici) e é uma ferramenta de instalar código arbitrário à
+# disposição de quem obtiver execução no container.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
+
 WORKDIR /app
 # Saída standalone do Next em monorepo: server.js + node_modules sob a raiz de tracing.
 COPY --from=build /repo/apps/web/.next/standalone ./

@@ -38,6 +38,20 @@ RUN pnpm install --prod --frozen-lockfile --ignore-scripts --filter @giraffe/api
 # resolução de módulos funcionar; usuário não-root; sem segredos.
 FROM node:24-slim AS runtime
 ENV NODE_ENV=production
+
+# Remove o npm/corepack que vêm embutidos na imagem base.
+#
+# O runtime executa `node dist/main.js` — não instala nada, e portanto não precisa de gerenciador de
+# pacotes. O npm embutido traz o próprio `undici`, que o Trivy apontou com um HIGH (CVE-2026-12151):
+# uma vulnerabilidade num código que nunca é executado aqui, mas que está presente na imagem e
+# disponível para quem obtiver execução dentro dela.
+#
+# Não dá para "atualizar a dependência": ela não é nossa, é do npm que vem na base. Apagar o que não
+# se usa resolve o achado e reduz a superfície — um gerenciador de pacotes num container de produção
+# é uma ferramenta de instalar código arbitrário à disposição de um atacante.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
+
 WORKDIR /repo/apps/api
 COPY --from=prod-deps /repo/node_modules /repo/node_modules
 COPY --from=prod-deps /repo/apps/api/node_modules /repo/apps/api/node_modules
