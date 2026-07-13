@@ -102,12 +102,27 @@ describe('logoutNaApi — best-effort', () => {
 });
 
 describe('fetchOrgAtual — o backend é a autoridade', () => {
-  it('200 com id ⇒ Organização ativa', async () => {
+  it('200 com id + name + papel ⇒ Organização ativa (contrato da casca, 1.7)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        resposta({ status: 200, json: { id: 'org-a', name: 'Organização A', papel: 'ADMIN' } }),
+      ),
+    );
+    expect(await fetchOrgAtual(BASE, 'c=1')).toEqual({
+      ok: true,
+      orgId: 'org-a',
+      orgNome: 'Organização A',
+      papel: 'ADMIN',
+    });
+  });
+
+  it('200 sem name/papel ⇒ tratado como sem-organizacao (contrato incompleto)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => resposta({ status: 200, json: { id: 'org-a' } })),
     );
-    expect(await fetchOrgAtual(BASE, 'c=1')).toEqual({ ok: true, orgId: 'org-a' });
+    expect(await fetchOrgAtual(BASE, 'c=1')).toEqual({ ok: false, motivo: 'sem-organizacao' });
   });
 
   it('401 ⇒ sem-sessao (volta ao Login)', async () => {

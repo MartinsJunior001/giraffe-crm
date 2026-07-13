@@ -1,1 +1,80 @@
 @import 'tailwindcss';
+
+/*
+ * Design tokens do Giraffe CRM (Story 1.7). Fonte autoritativa: DESIGN.md do UX.
+ * Convenção shadcn/ui em Tailwind 4: variáveis semânticas em :root e mapeamento para utilitários
+ * via @theme inline (gera bg-*, text-*, border-*, ring-*). O laranja ORIENTA, não domina
+ * (85–90% neutros). Texto sobre laranja é sempre Ink (#111111).
+ */
+:root {
+  --background: #ffffff; /* Canvas */
+  --surface-soft: #fafafa;
+  --muted: #f5f5f5; /* Soft Cloud */
+  --muted-foreground: #707072; /* Mute */
+  --foreground: #111111; /* Ink — texto principal e texto sobre laranja */
+  --foreground-soft: #39393b; /* Charcoal */
+  --disabled: #9e9ea0; /* Stone */
+  --border: #e5e5e5; /* Hairline */
+
+  --primary: #ff7200; /* Primary Orange */
+  --primary-foreground: #111111;
+  --primary-hover: #f26a00;
+  --primary-pressed: #cc5b00;
+  --accent: #fff3e8; /* Orange Soft — fundo de item ativo */
+  --accent-foreground: #111111;
+  --accent-border: #ffd0a8;
+
+  --ring: #cc5b00; /* foco — contraste forte */
+  --ring-soft: #ffb066;
+
+  --destructive: #d92d20; /* Erro */
+  --destructive-foreground: #ffffff;
+  --success: #157a52;
+  --info: #2563eb;
+  --warning: #a15c00; /* Atenção (atraso/risco) */
+
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-modal: 16px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface-soft: var(--surface-soft);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-foreground: var(--foreground);
+  --color-foreground-soft: var(--foreground-soft);
+  --color-disabled: var(--disabled);
+  --color-border: var(--border);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-border: var(--accent-border);
+
+  --color-ring: var(--ring);
+  --color-ring-soft: var(--ring-soft);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+
+  --radius-button: var(--radius-button);
+  --radius-card: var(--radius-card);
+  --radius-modal: var(--radius-modal);
+
+  /* Inter é carregada via next/font e exposta como --font-inter no layout. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
