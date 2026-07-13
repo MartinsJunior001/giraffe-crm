@@ -76,7 +76,7 @@ Se a seção não gerar uma entrega versionável, não crie commit e registre ap
 
 - **Branch por Story** (`story/<n>-<slug>`) ou por tarefa técnica (`tech/<slug>`). Nunca se trabalha direto em `main`.
 - **Integração por Pull Request**, com o CI verde. O PR é o ponto em que a verificação deixa de ser local.
-- **Merge commit (`--no-ff`), não squash.** Os commits desta base são atômicos e cada um carrega o *porquê* no corpo — o commit que corrige um vazamento cross-tenant explica como ele foi reproduzido. Squash funde tudo numa mensagem só e joga fora exatamente a informação que um `git bisect` ou uma investigação de incidente vai procurar. Rebase reescreveria história já publicada.
+- **Merge commit (`--no-ff`), não squash.** Os commits desta base são atômicos e cada um carrega o _porquê_ no corpo — o commit que corrige um vazamento cross-tenant explica como ele foi reproduzido. Squash funde tudo numa mensagem só e joga fora exatamente a informação que um `git bisect` ou uma investigação de incidente vai procurar. Rebase reescreveria história já publicada.
 - **Nunca `--force`** em história compartilhada, e nunca `--no-verify`.
 
 ## Invariantes conceituais (nunca erodir)
