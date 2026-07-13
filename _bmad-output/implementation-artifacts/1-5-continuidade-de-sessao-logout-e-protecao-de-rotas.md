@@ -1,7 +1,7 @@
 ---
 story_key: 1-5-continuidade-de-sessao-logout-e-protecao-de-rotas
 epic: 1
-status: ready-for-dev
+status: done
 release: CORE (Lote 1)
 risco: CRITICAL-FOCUSED
 gate_arquitetura: RESOLVIDO em 2026-07-13 — expiração por INATIVIDADE (não absoluta): expiresIn=7d, updateAge=1d (deslize por atividade), cookieCache DESABILITADO. Baseline confirmada pela documentação oficial do Better Auth (context7) e ratificada pelo gate arquitetural.
@@ -13,10 +13,12 @@ gate_arquitetura: RESOLVIDO em 2026-07-13 — expiração por INATIVIDADE (não 
 **I want** sessão persistente vinculada ao meu contexto e logout imediato,
 **So that** eu opere com continuidade e saia com segurança.
 
-**Status: ready-for-dev.** Classificada **CORE** (Lote 1), risco **CRITICAL-FOCUSED** — altera o ciclo
+**Status: done** (encerrada em 2026-07-13; integrada ao `main` pelo PR #5, merge `c329cfa`, CI verde
+nos 4 jobs). Classificada **CORE** (Lote 1), risco **CRITICAL-FOCUSED** — altera o ciclo
 de vida da sessão e os cookies de autenticação, superfície de segurança direta. Primeira Story após a
 1.4; conecta a sessão do Better Auth (já emitida no login da 1.4) à continuidade, ao logout e à
-proteção de rota — **sem reinventar** o caminho de identidade/autorização.
+proteção de rota — **sem reinventar** o caminho de identidade/autorização. Os débitos que seguem para o
+gate de staging estão catalogados em `gates/1-5/summary.md` (D-06 e o refinamento LOW do painel).
 
 > **Por que CRITICAL-FOCUSED (e não NORMAL):** mexer em `expiresIn`/`updateAge`/`cookieCache` e nas
 > flags de cookie é decidir, na prática, por quanto tempo uma credencial vale e se uma sessão revogada
@@ -335,9 +337,13 @@ acaso):
 
 ### Débitos encaminhados
 
-- **D-06** — rate limiter transacional pode 500 sob rajada direta a `/api/auth/*` (pré-1.4; não é falha
-  de segurança) → alerta no staging.
-- Robustez da reconstrução do header de cookie no painel (LOW) → refinamento.
+Catalogados com atributos completos (responsável, impacto, Story-alvo, teste de reprodução, critério
+objetivo de correção e gate de staging) em **`gates/1-5/summary.md`**:
+
+- **D-06** — rate limiter transacional pode 500 sob rajada direta a `/api/auth/*` (pré-1.4; falha
+  **fechada**, não é bypass de segurança) → **bloqueia STAGING APPROVED** enquanto não houver mitigação
+  e teste que prove ausência de 500 sob rajada.
+- **D-07 (LOW)** — robustez da reconstrução do header de cookie no painel → refinamento, não bloqueia.
 
 ---
 
@@ -348,3 +354,4 @@ acaso):
 | 2026-07-13 | Story criada (create-story). Classificada CORE/Lote 1, risco NORMAL, gate de Arquitetura PENDENTE. |
 | 2026-07-13 | Ajuste de checkpoint (11 pontos): reclassificada **CRITICAL-FOCUSED**; gate de Arquitetura **RESOLVIDO** com baseline confirmada no context7 (expiresIn=7d/updateAge=1d, inatividade sem teto absoluto, sessão ativa renova indefinidamente); adicionado o **gate de `cookieCache`** (desabilitado, prova de revogação imediata); substituída a lista de tarefas/testes pela **bateria de 11 testes** obrigatórios + teste de Membership; adicionada a **mutação M1–M4** dos invariantes críticos; processo elevado para revisão adversarial em três agentes com escritor único. |
 | 2026-07-13 | Implementação concluída: config de sessão explícita, seed da conta Iris, 13 testes de sessão (API), camada Web BFF (login/logout/proteção de rota + deslize de cookie). Mutação M1–M4 comprovada. Revisão adversarial (3 agentes): 2 HIGH corrigidos e cobertos — **login CSRF no BFF** (checagem de mesma origem) e **teto absoluto de 7 dias** (deslize do cookie no proxy) — MEDIUM/LOW tratados ou como débito. Gates locais verdes (API 207/207, Web 33/33). security-check e observability-check APROVADOS. Pendente: PR → CI (containers/smoke) → merge. |
+| 2026-07-13 | **Story encerrada como `done`.** PR #5 integrado ao `main` (`--no-ff`, merge `c329cfa`) com CI verde nos 4 jobs (Qualidade, Testes PostgreSQL real, Containers boot+smoke, Segurança). Encerramento administrativo pela branch `tech/encerra-story-1-5`. Débito **D-06 formalizado** com os 6 atributos em `gates/1-5/summary.md` e marcado como **bloqueador de STAGING APPROVED**. `sprint-status.yaml`: `1-5 → done`. Próxima: preparação da Story 1.6 (substrato de autorização efetiva). |
