@@ -1,7 +1,7 @@
 ---
 story_key: 1-6-substrato-de-autorizacao-efetiva
 epic: 1
-status: review
+status: done
 release: CORE (Lote 1)
 risco: CRITICAL
 baseline_commit: 687311b76525ec940dc366c2e7a46abde01a1a65
@@ -271,3 +271,4 @@ claude-opus-4-8 (Claude Code)
 | 2026-07-13 | Gate de Arquitetura **RESOLVIDO** (pre-implementation-check APROVADO): autorização como 2º `CanActivate` após o `TenantContextGuard` global; papel efetivo derivado da Membership (banco); ability amarrada a `{ id: orgId }`; sem bypass de ability. `@casl/ability` 7.0.1 fixada; context7-check APROVADO. Status → in-progress. |
 | 2026-07-13 | **Implementação concluída.** Substrato `kernel/authz/` (factory deny-by-default, `AuthzGuard` global, `@Requer`, `AbilityCache` com invalidação); `papel` propagado pelo contexto (1.3) a partir da Membership; `GET /organizations/current` protegido por `@Requer('ler','Organizacao')` (prova HTTP sem regressão). Mutação M1–M4 comprovada. security-check e observability-check **APROVADOS**. Gates verdes: typecheck, format, lint, **API 218/218**, **Web 33/33**, build. Status → review. Pendente: PR → CI → merge. |
 | 2026-07-13 | **PR #7 aberto, CI verde nos 4 jobs. Code Review adversarial APROVADO** (`gates/1-6/code-review.md`): 1 finding MEDIO — `AbilityCache` crescia sem teto (vazamento de memória lento, não bypass) — **corrigido** com teto FIFO `MAX_ENTRADAS=10_000` + teste de regressão que prova que a evicção não corrompe a correção. Nenhum CRITICAL/HIGH. Gates reverdes: **API 219/219**. Pronto para merge. |
+| 2026-07-13 | **Story encerrada como `done`.** PR #7 integrado ao `main` (`--no-ff`, merge `a11276b`) com CI verde nos 4 jobs. Encerramento administrativo pela branch `tech/encerra-story-1-6`. `sprint-status.yaml`: `1-6 → done`. Contrato congelado para o Épico 8: porta `AbilityCache.invalidar(accountId, orgId)` e decorator `@Requer(acao, sujeito)`. Próxima no L1: Story 1.7 (casca navegável e design system). |

@@ -56,7 +56,7 @@ development_status:
   1-3-propagacao-segura-do-contexto-de-organizacao: done
   1-4-login-e-resolucao-inicial-da-organizacao: done
   1-5-continuidade-de-sessao-logout-e-protecao-de-rotas: done
-  1-6-substrato-de-autorizacao-efetiva: review
+  1-6-substrato-de-autorizacao-efetiva: done
   1-7-casca-navegavel-e-design-system: backlog
   1-8-estados-honestos-e-acessibilidade-transversal: backlog
   1-9-troca-explicita-de-organizacao: backlog
