@@ -56,25 +56,62 @@ function arquivoDeRollback(nomeExplicito) {
   return `${DIR_ROLLBACK}/${maisRecente}`;
 }
 
+/** O nome da migration (o diretório) a partir do arquivo de rollback. */
+function nomeDaMigration(caminhoDown) {
+  return caminhoDown
+    .split('/')
+    .pop()
+    .replace(/\.down\.sql$/, '');
+}
+
+/**
+ * Devolve os PASSOS de uma ação — cada passo é uma invocação do CLI do Prisma.
+ *
+ * `rollback` tem dois, e o segundo não é opcional: ver abaixo.
+ */
 function comandos(action, alvo) {
   switch (action) {
     case 'deploy':
-      return ['migrate', 'deploy'];
+      return [{ args: ['migrate', 'deploy'] }];
     case 'status':
-      return ['migrate', 'status'];
+      return [{ args: ['migrate', 'status'] }];
     case 'seed':
-      return ['db', 'execute', '--schema', 'prisma/schema.prisma', '--file', 'prisma/seed.sql'];
+      return [
+        {
+          args: ['db', 'execute', '--schema', 'prisma/schema.prisma', '--file', 'prisma/seed.sql'],
+        },
+      ];
+
     // ⚠️ DESTRUTIVO. Existe para que o rollback seja uma capacidade EXERCITADA, e não uma
     // frase no documento — a hora de descobrir que ele não funciona não é durante o incidente.
-    case 'rollback':
+    case 'rollback': {
+      const arquivo = arquivoDeRollback(alvo);
+      const nome = nomeDaMigration(arquivo);
+
       return [
-        'db',
-        'execute',
-        '--schema',
-        'prisma/schema.prisma',
-        '--file',
-        arquivoDeRollback(alvo),
+        // 1. Desfaz o schema.
+        { args: ['db', 'execute', '--schema', 'prisma/schema.prisma', '--file', arquivo] },
+
+        // 2. Remove a migration do HISTÓRICO.
+        //
+        // Sem este passo, o rollback é uma armadilha: o `down.sql` derruba as tabelas, mas a linha em
+        // `_prisma_migrations` continua dizendo "aplicada". O `deploy` seguinte responde "No pending
+        // migrations to apply", com **exit 0** — e o banco fica sem as tabelas enquanto a ferramenta
+        // afirma que está tudo certo. Reproduzido em banco descartável, e é o tipo de defeito que só
+        // aparece com DUAS migrations: descobre-se no incidente em que se recorreu ao rollback.
+        //
+        // Não dá para usar `migrate resolve --rolled-back`: ele só aceita migration em estado
+        // FAILED (`P3012`). O Prisma não oferece comando para des-aplicar uma migration que deu
+        // certo, então a linha sai por SQL.
+        //
+        // Isto vive AQUI, e não dentro de cada `down.sql`, porque num arquivo escrito à mão alguém
+        // esqueceria — e a armadilha voltaria calada.
+        {
+          args: ['db', 'execute', '--schema', 'prisma/schema.prisma', '--stdin'],
+          stdin: `DELETE FROM "_prisma_migrations" WHERE migration_name = '${nome}';`,
+        },
       ];
+    }
     default:
       return undefined;
   }
@@ -96,9 +133,9 @@ for (const envFile of [`${process.cwd()}/.env`, repoEnv]) {
 }
 
 const action = process.argv[2] ?? 'deploy';
-const args = comandos(action, process.argv[3]);
+const passos = comandos(action, process.argv[3]);
 
-if (!args) {
+if (!passos) {
   console.error(`[db] ação desconhecida: "${action}". Use: ${ACOES.join(' | ')}`);
   process.exit(1);
 }
@@ -126,17 +163,28 @@ try {
   process.exit(1);
 }
 
-const result = spawnSync(process.execPath, [prismaCli, ...args], {
-  // O CLI do Prisma lê DATABASE_URL; aqui ela é o MIGRATOR, só neste subprocesso.
-  env: { ...process.env, DATABASE_URL: migrationUrl },
-  stdio: 'inherit',
-});
+// Os passos rodam em SEQUÊNCIA e o primeiro que falhar aborta os seguintes. No rollback isso
+// importa: se o `down.sql` falhar, marcar a migration como revertida no histórico seria mentir
+// sobre o estado do banco.
+for (const passo of passos) {
+  const result = spawnSync(process.execPath, [prismaCli, ...passo.args], {
+    // O CLI do Prisma lê DATABASE_URL; aqui ela é o MIGRATOR, só neste subprocesso.
+    env: { ...process.env, DATABASE_URL: migrationUrl },
+    input: passo.stdin,
+    // Com `input`, o stdin não pode ser herdado — os demais fluxos continuam visíveis.
+    stdio: passo.stdin === undefined ? 'inherit' : ['pipe', 'inherit', 'inherit'],
+  });
 
-// Falha ao SPAWNAR (ENOENT, EACCES) não produz `status`: sem isto, o processo saía 1 sem
-// imprimir nada. Migration que falha em silêncio é a pior classe de falha que existe aqui.
-if (result.error) {
-  console.error(`[db] não foi possível executar o CLI do Prisma: ${result.error.message}`);
-  process.exit(1);
+  // Falha ao SPAWNAR (ENOENT, EACCES) não produz `status`: sem isto, o processo saía 1 sem
+  // imprimir nada. Migration que falha em silêncio é a pior classe de falha que existe aqui.
+  if (result.error) {
+    console.error(`[db] não foi possível executar o CLI do Prisma: ${result.error.message}`);
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
 }
 
-process.exitCode = result.status ?? 1;
+process.exitCode = 0;
