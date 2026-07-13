@@ -52,6 +52,7 @@ development_status:
   epic-1: in-progress
   1-1-esqueleto-executavel-e-ambiente-base: done
   1-2-modelo-multi-tenant-e-isolamento-por-rls: done
+  tech-1-ci-github-actions: done
   1-3-propagacao-segura-do-contexto-de-organizacao: backlog
   1-4-login-e-resolucao-inicial-da-organizacao: backlog
   1-5-continuidade-de-sessao-logout-e-protecao-de-rotas: backlog

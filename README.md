@@ -204,9 +204,39 @@ pnpm compose:down   # derruba
 Imagens: multi-stage, usuário **não-root**, **sem** cópia de `.env`/segredos, com
 `HEALTHCHECK`. A Web usa saída `standalone` do Next.
 
+## Integração contínua (GitHub Actions)
+
+`.github/workflows/ci.yml` — roda em `pull_request` para `main` e em `push` nas branches de
+Story. Quatro jobs, separados por **natureza do sinal**: um job monolítico diria apenas
+"vermelho"; quatro dizem **onde**.
+
+| Job          | O que prova                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| `qualidade`  | instalação imutável, `format`, `lint`, `typecheck`, `build`, e que `dist/` não carrega teste         |
+| `testes`     | suíte contra **PostgreSQL real**, com papéis provisionados e **migrations aplicadas em banco vazio** |
+| `containers` | imagens sobem de verdade, ficam `healthy`, `smoke` passa, e a imagem **não carrega `.env`**          |
+| `seguranca`  | Trivy: dependências, misconfiguração e segredos — `CRITICAL`/`HIGH` **reprova**                      |
+
+O banco do CI sobe pelo **Docker Compose**, não por `services:`. O `services:` inicia os
+containers antes do checkout, então não conseguiria montar o `prisma/bootstrap/00-roles.sql` — e
+a saída seria reescrever o provisionamento de papéis dentro do YAML, criando uma **segunda
+definição** de quem são `giraffe_app` e `giraffe_migrator`. A que vale em produção seria a que
+ninguém testa. Uma definição só, exercitada pelo CI.
+
+As senhas do banco de CI são **geradas por execução** (`openssl rand`) e mascaradas no log.
+Nenhuma credencial vive no workflow.
+
+Actions de terceiros são **fixadas por SHA**, não por tag: tag é mutável, e um `@v4` pode passar
+a apontar para código diferente do que foi revisado.
+
+**Pendente de configuração na plataforma** (exige acesso administrativo ao GitHub, não é código):
+branch protection com o CI como check obrigatório, CodeQL, secret scanning com push protection e
+Dependabot.
+
 ## Deploy manual (alvo Coolify)
 
-> Sem CI/CD nesta Story (decisão posterior). Procedimento **manual reproduzível**:
+> Procedimento **manual reproduzível**. O CI verifica; ele ainda **não publica** — não há
+> destino de deploy configurado.
 
 1. Build das imagens a partir dos `Dockerfile` de `apps/api` e `apps/web`.
 2. Configurar variáveis/segredos **no cofre/painel do ambiente** (nunca no repo/imagem).
@@ -261,7 +291,8 @@ Imagens: multi-stage, usuário **não-root**, **sem** cópia de `.env`/segredos,
 ## Limitações e itens diferidos
 
 Fora do escopo (Stories posteriores): Redis/BullMQ, Socket.IO, autenticação/sessão/CASL,
-MinIO, IA, e-mail, Notificações, Relatórios, CI/CD, E2E.
+MinIO, IA, e-mail, Notificações, Relatórios, E2E (Playwright — entra quando houver fluxo de
+interface completo), e o **CD** (o CI existe e verifica; publicar é outra etapa).
 
 A matriz de permissões de papéis (`ADMIN`/`MEMBER`/`GUEST`) existe no schema, mas **não é
 aplicada** nesta Story — quem decide o que cada papel pode fazer é a Story 1.6. O isolamento
