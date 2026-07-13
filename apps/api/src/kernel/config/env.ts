@@ -77,15 +77,18 @@ const EnvSchema = z.object({
   LOGIN_HMAC_KEY_VERSION: z.coerce.number().int().positive().default(1),
 
   /**
-   * IPs/CIDRs dos PROXIES confiáveis. **Vazio por padrão** — e isso é a decisão, não um
-   * esquecimento.
+   * IPs dos PROXIES confiáveis, separados por vírgula. **Vazio por padrão** — e isso é a decisão,
+   * não um esquecimento.
    *
-   * Confiar em `X-Forwarded-For` sem saber quem o escreveu é o mesmo que não ter limite por IP: o
-   * atacante forja o header e cada requisição chega de um "IP" novo. Sem proxy confiável
-   * configurado, o IP vem do **socket** — que ninguém pode forjar.
+   * Só o endereço de um peer listado aqui autoriza a leitura do `X-Forwarded-For`. Para todos os
+   * demais, o IP é o do **socket**, e o header é ignorado — quem fala direto com a aplicação não tem
+   * autoridade para declarar quem é. Ver `kernel/auth/client-ip.ts`, que implementa a regra (o
+   * Better Auth sozinho **não** faz isso: ele confia num `X-Forwarded-For` de valor único).
    *
-   * Nunca coloque aqui uma faixa privada ampla (`10.0.0.0/8`): isso significa que qualquer coisa
-   * dentro da rede pode forjar IP. São os endereços dos SEUS proxies, e só.
+   * Endereços **exatos**, não faixas. Nunca uma faixa privada ampla (`10.0.0.0/8`) "porque o proxy
+   * está na rede interna": isso declararia confiável qualquer contêiner da rede, inclusive um
+   * comprometido. Os endereços do proxy do Coolify entram quando forem verificados contra o ambiente
+   * real (gate de staging), não por suposição.
    */
   TRUSTED_PROXY_IPS: z.string().default(''),
 });

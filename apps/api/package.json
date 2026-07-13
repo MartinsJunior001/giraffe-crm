@@ -17,7 +17,7 @@
     "prisma:generate": "prisma generate",
     "db:migrate": "node ../../scripts/db-migrate.mjs deploy",
     "db:status": "node ../../scripts/db-migrate.mjs status",
-    "db:seed": "node ../../scripts/db-migrate.mjs seed",
+    "db:seed": "node ../../scripts/db-migrate.mjs seed && node prisma/seed-credentials.mjs",
     "db:rollback": "node ../../scripts/db-migrate.mjs rollback"
   },
   "dependencies": {

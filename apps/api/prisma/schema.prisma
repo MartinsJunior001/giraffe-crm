@@ -144,6 +144,9 @@ model AuthVerification {
 /// (b) não é compartilhada entre instâncias: com 3 réplicas, o limite efetivo TRIPLICA. Um
 /// limite assim não é uma proteção, é um enfeite.
 model RateLimit {
+  /// Sem default: quem preenche é o `generateId` do Better Auth (ver `auth.factory.ts`). Um default
+  /// aqui só mascararia uma eventual regressão daquela configuração — e o INSERT sem `id` deve
+  /// falhar alto, não ser silenciosamente remendado pelo schema.
   id          String @id
   key         String @unique
   count       Int

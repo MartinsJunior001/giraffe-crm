@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -21,25 +22,6 @@ const G2_JANELA_S = 15 * 60;
  */
 const MENSAGEM_NEUTRA = 'Credenciais inválidas.';
 const MENSAGEM_LIMITE = 'Muitas tentativas. Tente novamente mais tarde.';
-
-/**
- * Lista de proxies confiáveis, a partir do ambiente. **Vazia por padrão** — e isso é a decisão.
- *
- * Confiar em `X-Forwarded-For` sem saber quem o escreveu é o mesmo que não ter limite por IP: o
- * atacante forja o header e cada requisição chega de um "IP" novo, de modo que o G2 nunca dispara.
- * Com a lista vazia, o Better Auth cai no IP do **socket**, que ninguém pode forjar.
- *
- * O que NÃO se faz aqui: colocar uma faixa privada ampla (`10.0.0.0/8`) "porque o proxy está na rede
- * interna". Isso declararia confiável qualquer coisa dentro da rede — inclusive um contêiner
- * comprometido. São os endereços dos NOSSOS proxies, e só. Os do Coolify entram quando forem
- * verificados contra o ambiente real (gate de staging), não por suposição.
- */
-function proxiesConfiaveis(): string[] {
-  return getEnv()
-    .TRUSTED_PROXY_IPS.split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 /**
  * Constrói a instância do Better Auth.
@@ -78,8 +60,18 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
 
     emailAndPassword: {
       enabled: true,
+
+      // **Cadastro DESLIGADO.** Ligar `emailAndPassword` habilita, junto, o `/sign-up/email` — e
+      // isso é autocadastro aberto: qualquer pessoa na internet cria uma conta na plataforma.
+      //
+      // Ninguém pediu isso. Esta Story entrega LOGIN; a entrada de novas contas se dá por convite
+      // do Admin da Organização (Épico 8). Deixar o cadastro ligado "porque veio junto" seria
+      // publicar uma superfície de ataque por descuido de configuração — e ela nasceria sem rate
+      // limit próprio, sem verificação de e-mail e sem dono.
+      disableSignUp: true,
+
       // Verificação de e-mail é da Story 1.10. Exigi-la aqui anteciparia escopo (Constitution II) e
-      // deixaria a Story sem caminho positivo demonstrável.
+      // deixaria esta Story sem caminho positivo demonstrável.
       requireEmailVerification: false,
     },
 
@@ -99,12 +91,21 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
     },
 
     advanced: {
-      // Os ids gerados precisam caber em `@db.Uuid` (o `Account.id` é UUID).
-      database: { generateId: 'uuid' },
-      ipAddress: {
-        // D5. Vazio ⇒ IP do socket. Ver `proxiesConfiaveis()`.
-        trustedProxies: proxiesConfiaveis(),
-      },
+      // **Função, e não a string `'uuid'`.** Documentado: com `'uuid'` em PostgreSQL, o Better Auth
+      // NÃO envia `id` e espera que o BANCO preencha via `gen_random_uuid()`. O adapter do Prisma,
+      // porém, exige o campo no `create()` sempre que o schema não declara um default — o INSERT era
+      // recusado e o login inteiro devolvia 500. Gerar o UUID aqui mantém o id sob controle da
+      // aplicação e independe de default de coluna.
+      database: { generateId: () => randomUUID() },
+
+      // **Sem `trustedProxies` aqui — de propósito.** O `getIp()` do Better Auth só lê headers: ele
+      // nunca vê o socket, então não tem como saber se quem enviou o `X-Forwarded-For` era o nosso
+      // proxy ou o próprio atacante falando direto com o contêiner. Configurá-lo aqui daria a
+      // impressão de uma defesa que não existe.
+      //
+      // Quem resolve o IP é o `AuthController`, a partir do endereço do socket (ver `client-ip.ts`).
+      // O header que chega até aqui já vem saneado, com um único valor — e é justamente esse o
+      // caminho que o Better Auth trata como confiável.
     },
 
     hooks: {
@@ -125,11 +126,16 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
         if (typeof email !== 'string' || email === '') return;
 
         if (await falhas.estaBloqueado(email)) {
-          throw new APIError('TOO_MANY_REQUESTS', {
-            message: MENSAGEM_LIMITE,
+          // Os headers são o TERCEIRO argumento do `APIError` — não uma chave do corpo. O corpo é
+          // tipado `Record<string, any>`, então passá-los ali compila em silêncio, vira um campo do
+          // JSON e NENHUM header HTTP é emitido. É o mesmo `X-Retry-After` que o rate limiter nativo
+          // usa, para que o cliente veja um contrato só.
+          throw new APIError(
+            'TOO_MANY_REQUESTS',
+            { message: MENSAGEM_LIMITE },
             // Contrato do G3: o cliente sabe quando voltar. Nenhum bloqueio permanente.
-            headers: { 'X-Retry-After': String(G2_JANELA_S) },
-          });
+            { 'X-Retry-After': String(G2_JANELA_S) },
+          );
         }
       }),
 
