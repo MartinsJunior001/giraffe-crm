@@ -19,7 +19,8 @@
     "db:status": "node ../../scripts/db-migrate.mjs status",
     "db:seed": "node ../../scripts/db-migrate.mjs seed && node prisma/seed-credentials.mjs",
     "db:rollback": "node ../../scripts/db-migrate.mjs rollback",
-    "db:cleanup": "node ../../scripts/db-cleanup.mjs"
+    "db:cleanup": "node ../../scripts/db-cleanup.mjs",
+    "db:provision-tenant": "node prisma/provision-tenant.mjs"
   },
   "dependencies": {
     "@casl/ability": "^7.0.1",
