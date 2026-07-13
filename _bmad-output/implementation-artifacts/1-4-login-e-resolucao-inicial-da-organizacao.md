@@ -1,8 +1,8 @@
 ---
 story_key: 1-4-login-e-resolucao-inicial-da-organizacao
 epic: 1
-status: blocked-por-gate
-gate_bloqueador: 'Segurança: limite de tentativas e política de rate limit (epics.md, Story 1.4)'
+status: in-progress
+gate_seguranca: RATIFICADO em 2026-07-13 (G1–G6)
 ---
 
 # Story 1.4 — Login e resolução inicial da Organização
@@ -50,36 +50,81 @@ dependência existia justamente para que este momento fosse uma substituição, 
 
 ---
 
-## GATE BLOQUEADOR — decisão de Segurança pendente
+## GATE DE SEGURANÇA — RATIFICADO (2026-07-13)
 
-O épico exige a política **antes** da implementação. Abaixo está uma **proposta** para ratificação,
-não uma decisão tomada. Nada será implementado com estes números até que sejam confirmados.
+| # | Política ratificada |
+| - | ------------------- |
+| G1 | Máximo de **5 falhas** por **identificador de conta** em 15 min. |
+| G2 | Máximo de **20 solicitações** de login por **IP** em 15 min. |
+| G3 | Ao exceder: **429** com `X-Retry-After`, mensagem **neutra**, **sem bloqueio permanente da conta**. |
+| G4 | Login bem-sucedido limpa **somente** o contador de **falhas do identificador** — **não** limpa o antiabuso do IP. |
+| G5 | Respostas, status **e logs** não podem revelar se a conta existe. |
+| G6 | Escopo **desta** Story: apenas os endpoints de autenticação efetivamente introduzidos por ela. Recuperação de senha e verificação recebem regras próprias **nas Stories responsáveis** — sem antecipar escopo (Constitution II). |
 
-### O que precisa ser decidido
+Duas razões que mudam o desenho, e por isso ficam escritas:
 
-| # | Decisão | Proposta (a ratificar) | Por que importa |
-| - | ------- | ---------------------- | --------------- |
-| G1 | Limite de tentativas de login por **identificador** (e-mail) | 5 tentativas / 15 min | Protege uma conta específica de força bruta dirigida. |
-| G2 | Limite por **IP** | 20 tentativas / 15 min | Protege contra varredura de muitas contas a partir de uma origem. Separado de G1 de propósito: um atacante com uma lista de e-mails nunca estoura o limite *por conta*. |
-| G3 | Ação ao estourar | **429 + atraso**, sem bloqueio permanente de conta | Bloquear a conta transforma o rate limit numa **ferramenta de negação de serviço contra o usuário legítimo**: basta o atacante errar a senha 5× no e-mail da vítima. |
-| G4 | Janela e reset | Janela deslizante; reset em login bem-sucedido | — |
-| G5 | O 429 revela se a conta existe? | **Não** — resposta idêntica para conta existente e inexistente | AC2. Um rate limit que só dispara para contas reais é um **oráculo de enumeração**. |
-| G6 | Escopo do rate limit | Login, recuperação de senha e reenvio de verificação | Todas as rotas que aceitam um identificador não autenticado. |
+- **G3 — bloquear a conta seria um autogol.** Bloqueio permanente transforma o rate limit numa arma
+  de negação de serviço **contra o usuário legítimo**: basta o atacante errar a senha 5× no e-mail da
+  vítima para deixá-la de fora.
+- **G1 e G2 são separados de propósito.** Um atacante com uma lista de e-mails, testando uma senha
+  comum em cada um, **nunca estoura o limite por conta** — só o limite por IP o pega. E o G4 existe
+  porque, se o sucesso limpasse o contador de IP, bastaria ao atacante intercalar um login válido
+  próprio a cada N tentativas para zerar o antiabuso.
 
-### Decisão técnica que acompanha o gate (verificada no Context7)
+---
 
-O Better Auth traz rate limiting nativo (`rateLimit`, com `customRules` por rota). **Mas o `storage`
-padrão é `"memory"`** — e memória:
+## `context7-check` — o achado que muda a implementação
 
-1. **não sobrevive a restart** (um atacante reinicia a contagem batendo até o container reciclar);
-2. **não é compartilhada entre instâncias** (com 3 réplicas, o limite efetivo triplica).
+**Pergunta feita antes de escrever código:** o rate limiter nativo do Better Auth conta *solicitações*
+ou apenas *falhas*? E ele consegue chavear por identificador de conta?
 
-Para um limite que signifique alguma coisa em produção, o `storage` precisa ser `"database"` (ou
-Redis, quando existir). Isso implica **uma tabela nova** (`rateLimit`) e, portanto, **uma migration**
-— o que traz `migration-check` para dentro do escopo desta Story.
+**Resposta, na fonte** (`packages/core/src/utils/ip.ts` e o schema da tabela `rateLimit`):
 
-Registro isso agora porque é o tipo de detalhe que, descoberto durante a implementação, vira "ah,
-mas funciona local" — e vai para produção sendo teatro.
+```ts
+export function createRateLimitKey(ip: string, path: string): string {
+  return `${ip}|${path}`;   // ← a chave é IP + rota. Nada de identificador.
+}
+```
+
+e o campo do schema é `count: "Number of requests made in the current window"`.
+
+Portanto, **o nativo conta SOLICITAÇÕES e chaveia por IP + rota**. Consequência direta:
+
+| Regra | Quem implementa |
+| ----- | --------------- |
+| **G2** (solicitações por IP) | ✅ O rate limiter **nativo**, com `customRules` na rota de login. |
+| **G1** (**falhas** por **identificador**) | ❌ O nativo **não faz e não tem como fazer**. Exige **contador próprio**. |
+
+Se tivéssemos presumido que o `rateLimit` do Better Auth cobria o gate inteiro, G1 simplesmente **não
+existiria** — e a proteção contra força bruta dirigida a uma conta específica seria uma linha de
+configuração que não faz nada. É exatamente o tipo de segurança de fachada que passa em code review
+porque *parece* configurada.
+
+### Decisões técnicas obrigatórias (todas ratificadas)
+
+1. **`storage: "database"`** no Better Auth. O padrão é `"memory"`, e memória (a) **não sobrevive a
+   restart** — o atacante zera a contagem esperando o container reciclar — e (b) **não é compartilhada
+   entre instâncias**: com 3 réplicas, o limite efetivo triplica. Implica **tabela nova** (`rateLimit`)
+   e **migration Prisma versionada** ⇒ `migration-check` **e** `backup-check` entram no escopo.
+2. **Contador de falhas por identificador (G1), próprio**, chaveado por **HMAC** do identificador
+   **normalizado** — nunca o e-mail bruto. O e-mail é PII: guardá-lo em claro numa tabela de
+   contadores cria um segundo cadastro de e-mails, fora do controle do `Account`, e transforma um
+   dump dessa tabela numa lista de usuários. O segredo do HMAC vem do ambiente/cofre.
+3. **Nunca registrar** e-mail, senha ou a chave do contador em log.
+4. **Resolução de IP pelo proxy confiável do Coolify.** Não confiar em `X-Forwarded-For` enviado
+   direto pelo cliente — se confiarmos, o atacante forja o header e **cada requisição vem de um IP
+   novo**, e o G2 vira decoração. **Teste de spoofing obrigatório.**
+5. **Manter o antiabuso nativo por IP separado do contador de falhas por identificador** — são dois
+   mecanismos com propósitos distintos (G1/G2), e fundi-los reintroduz o furo que a separação fecha.
+
+### Testes exigidos pelo gate (nenhum deles é opcional)
+
+- spoofing de `X-Forwarded-For` **não** contorna o G2;
+- **múltiplas instâncias** compartilhando o mesmo storage respeitam o limite;
+- **reinício** da aplicação **não zera** os limites;
+- conta **inexistente** não permite enumeração (resposta, status **e** tempo);
+- um atacante **não consegue bloquear permanentemente** a conta de outro (G3);
+- **concorrência** na atualização dos contadores (duas falhas simultâneas não "perdem" contagem).
 
 ---
 
@@ -99,6 +144,12 @@ mas funciona local" — e vai para produção sendo teatro.
 ---
 
 ## Próximo passo
+
+1. ~~Ratificar G1–G6~~ — **feito** (2026-07-13).
+2. ~~`context7-check` do Better Auth~~ — **feito**: o nativo não cobre G1.
+3. `pre-implementation-check` → Spec Kit (`specify → clarify → plan → checklist → tasks → analyze`).
+
+### Antigo (superado)
 
 1. Ratificar G1–G6 (ou substituí-los).
 2. `context7-check` da versão fixada do Better Auth.
