@@ -37,7 +37,9 @@ describe('leitura fora de contexto LANÇA (e não devolve undefined)', () => {
   it('definir() fora de um escopo lança — ninguém escreve contexto no vácuo', () => {
     const ctx = new RequestContext();
 
-    expect(() => ctx.definir({ orgId: ORG_A, accountId: ANA })).toThrow(ContextoIndisponivelError);
+    expect(() => ctx.definir({ orgId: ORG_A, accountId: ANA, papel: 'MEMBER' })).toThrow(
+      ContextoIndisponivelError,
+    );
   });
 });
 
@@ -46,11 +48,11 @@ describe('o contexto é imutável dentro da requisição', () => {
     const ctx = new RequestContext();
 
     ctx.executarNoEscopo(() => {
-      ctx.definir({ orgId: ORG_A, accountId: ANA });
+      ctx.definir({ orgId: ORG_A, accountId: ANA, papel: 'MEMBER' });
 
       // Um contexto que pode ser trocado no meio da requisição é um contexto que pode ser trocado
       // POR UM ATACANTE no meio da requisição.
-      expect(() => ctx.definir({ orgId: ORG_B, accountId: CARLA })).toThrow(
+      expect(() => ctx.definir({ orgId: ORG_B, accountId: CARLA, papel: 'MEMBER' })).toThrow(
         /já foi definido nesta requisição/i,
       );
 
@@ -64,7 +66,7 @@ describe('o contexto não sobrevive nem vaza', () => {
     const ctx = new RequestContext();
 
     ctx.executarNoEscopo(() => {
-      ctx.definir({ orgId: ORG_A, accountId: ANA });
+      ctx.definir({ orgId: ORG_A, accountId: ANA, papel: 'MEMBER' });
       expect(ctx.obter().orgId).toBe(ORG_A);
     });
 
@@ -75,7 +77,7 @@ describe('o contexto não sobrevive nem vaza', () => {
   it('não vaza entre escopos SEQUENCIAIS (o caso do worker/conexão reutilizada)', () => {
     const ctx = new RequestContext();
 
-    ctx.executarNoEscopo(() => ctx.definir({ orgId: ORG_A, accountId: ANA }));
+    ctx.executarNoEscopo(() => ctx.definir({ orgId: ORG_A, accountId: ANA, papel: 'MEMBER' }));
 
     ctx.executarNoEscopo(() => {
       // Se o escopo anterior tivesse deixado resíduo, o contexto da Org A apareceria aqui — e a
@@ -93,7 +95,7 @@ describe('o contexto não sobrevive nem vaza', () => {
     // vazasse, é aqui que apareceria.
     const requisicao = async (orgId: string, accountId: string, atraso: number) =>
       ctx.executarNoEscopo(async () => {
-        ctx.definir({ orgId, accountId });
+        ctx.definir({ orgId, accountId, papel: 'MEMBER' });
         await espera(atraso);
         const meio = ctx.obter();
         await espera(atraso);
@@ -119,7 +121,7 @@ describe('o contexto não sobrevive nem vaza', () => {
       Array.from({ length: 50 }, (_, i) =>
         ctx.executarNoEscopo(async () => {
           const orgId = `org-${i}`;
-          ctx.definir({ orgId, accountId: `conta-${i}` });
+          ctx.definir({ orgId, accountId: `conta-${i}`, papel: 'MEMBER' });
           await espera(i % 7);
           return ctx.obter().orgId === orgId;
         }),

@@ -1,15 +1,19 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable } from '@nestjs/common';
+import type { MembershipRole } from '../../../generated/prisma';
 
 /**
  * O contexto organizacional de UMA requisição, resolvido no SERVIDOR.
  *
- * `orgId` não é o que o cliente pediu — é o que a Membership permitiu. A distinção é a Story
- * inteira.
+ * `orgId` não é o que o cliente pediu — é o que a Membership permitiu. A distinção é a Story 1.3
+ * inteira. `papel` é o `MembershipRole` efetivo dessa mesma Membership ativa: a Story 1.6 o adiciona
+ * aqui para que a autorização (CASL) o derive do BANCO, nunca de um token (AD-9). Ele existe porque
+ * um contexto de Organização só nasce de uma Membership ativa — e toda Membership tem um papel.
  */
 export interface ContextoOrganizacional {
   readonly orgId: string;
   readonly accountId: string;
+  readonly papel: MembershipRole;
 }
 
 /** Escopo mutável de uma requisição. Nasce vazio; o guard o preenche. */

@@ -73,7 +73,8 @@ describe('o contexto vem da Membership, não do cliente', () => {
 
     const contexto = await resolver.resolver(ANA);
 
-    expect(contexto).toEqual({ orgId: ORG_A, accountId: ANA });
+    // Ana é ADMIN na Org A: o contexto carrega o papel efetivo (Story 1.6), fonte do teto de authz.
+    expect(contexto).toEqual({ orgId: ORG_A, accountId: ANA, papel: 'ADMIN' });
     expect(eventos).toContainEqual(
       expect.objectContaining({
         nivel: 'info',
@@ -85,7 +86,8 @@ describe('o contexto vem da Membership, não do cliente', () => {
   it('honra o pedido quando ele CASA com uma Membership ativa', async () => {
     const contexto = await resolver.resolver(EVA, ORG_B);
 
-    expect(contexto).toEqual({ orgId: ORG_B, accountId: EVA });
+    // Eva é MEMBER na Org B — o papel resolvido é o daquela Membership, não o de outra Organização.
+    expect(contexto).toEqual({ orgId: ORG_B, accountId: EVA, papel: 'MEMBER' });
   });
 });
 
