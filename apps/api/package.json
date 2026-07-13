@@ -25,6 +25,7 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@prisma/client": "6.19.3",
+    "better-auth": "^1.6.23",
     "nestjs-pino": "^4.1.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
