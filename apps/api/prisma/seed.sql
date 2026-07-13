@@ -22,6 +22,10 @@ BEGIN;
 --     · Fabio  → rls.test.ts
 --     · Gil    → rls-observability.test.ts
 --     · Heitor → org-context.test.ts (cria/apaga um vínculo REMOVED na Org C — SC-414)
+--     · Iris   → sessao.test.ts (Story 1.5 — sessão real: loga, envelhece/loga-out a própria sessão
+--                e cria/altera o próprio vínculo na Org C: ACTIVE→SUSPENDED→REMOVED). Precisa de
+--                CREDENCIAL (ver seed-credentials.mjs), diferente de Fabio/Gil/Heitor, que só o
+--                resolvedor usa e nunca fazem login.
 --
 --   Dani é o caso "conta SEM Membership nenhuma" e por isso NÃO pode ser usada para criar
 --   vínculos: bastaria um arquivo paralelo criar um para ela e o teste de "conta sem vínculo"
@@ -37,7 +41,8 @@ INSERT INTO "Account" ("id", "email", "name", "createdAt", "updatedAt") VALUES
   ('55555555-5555-5555-5555-555555555555', 'eva@exemplo.test',   'Eva',   now(), now()),
   ('66666666-6666-6666-6666-666666666666', 'fabio@exemplo.test',  'Fabio',  now(), now()),
   ('77777777-7777-7777-7777-777777777777', 'gil@exemplo.test',    'Gil',    now(), now()),
-  ('88888888-8888-8888-8888-888888888888', 'heitor@exemplo.test', 'Heitor', now(), now())
+  ('88888888-8888-8888-8888-888888888888', 'heitor@exemplo.test', 'Heitor', now(), now()),
+  ('99999999-9999-9999-9999-999999999999', 'iris@exemplo.test',   'Iris',   now(), now())
 ON CONFLICT ("id") DO NOTHING;
 
 -- ── Organização A ──
