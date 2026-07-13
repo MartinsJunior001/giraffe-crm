@@ -1,7 +1,17 @@
 import { Controller, Get, HttpCode, ServiceUnavailableException } from '@nestjs/common';
+import { SemContextoOrganizacional } from '../kernel/context/sem-contexto.decorator';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { livenessPayload, readinessPayload, type HealthStatus } from './health.payload';
 
+/**
+ * As ÚNICAS rotas dispensadas de contexto organizacional, e é preciso que continue assim.
+ *
+ * Um probe não tem Organização: exigir contexto dele faria o healthcheck do orquestrador receber
+ * 401, o container nunca ficaria healthy e o serviço não entraria em rotação — o guard mataria o
+ * deploy. A dispensa é explícita e visível justamente para que qualquer nova dispensa passe pelo
+ * code review.
+ */
+@SemContextoOrganizacional()
 @Controller()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
