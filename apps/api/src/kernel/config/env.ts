@@ -50,6 +50,44 @@ const EnvSchema = z.object({
     .refine(isPostgresUrl, {
       message: 'DATABASE_URL deve ser uma URL PostgreSQL válida',
     }),
+
+  // ── Story 1.4 — autenticação e antiabuso ────────────────────────────────────────────────
+
+  /** Segredo do Better Auth (assinatura de sessão). Obrigatório, sem default. */
+  BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET deve ter ao menos 32 caracteres'),
+
+  /** URL pública da API, usada pelo Better Auth para cookies e callbacks. */
+  BETTER_AUTH_URL: z.string().url('BETTER_AUTH_URL deve ser uma URL válida'),
+
+  /**
+   * Segredo do HMAC que deriva a chave do contador de falhas (G1).
+   *
+   * Existe para que o e-mail NUNCA seja gravado em claro na tabela de contadores: em claro, ele
+   * criaria um segundo cadastro de e-mails fora do `Account`, e um dump dessa tabela seria uma
+   * lista de usuários. Separado do `BETTER_AUTH_SECRET` de propósito — comprometer um não deve
+   * entregar o outro, e eles têm ciclos de rotação diferentes.
+   */
+  LOGIN_HMAC_SECRET: z.string().min(32, 'LOGIN_HMAC_SECRET deve ter ao menos 32 caracteres'),
+
+  /**
+   * Versão do segredo do HMAC (D6). Rotacionar o segredo muda TODAS as chaves derivadas — e um
+   * atacante em curso teria o contador zerado exatamente no momento da rotação, sem que ninguém
+   * percebesse. Versionar torna a queda de contadores explicável em vez de silenciosa.
+   */
+  LOGIN_HMAC_KEY_VERSION: z.coerce.number().int().positive().default(1),
+
+  /**
+   * IPs/CIDRs dos PROXIES confiáveis. **Vazio por padrão** — e isso é a decisão, não um
+   * esquecimento.
+   *
+   * Confiar em `X-Forwarded-For` sem saber quem o escreveu é o mesmo que não ter limite por IP: o
+   * atacante forja o header e cada requisição chega de um "IP" novo. Sem proxy confiável
+   * configurado, o IP vem do **socket** — que ninguém pode forjar.
+   *
+   * Nunca coloque aqui uma faixa privada ampla (`10.0.0.0/8`): isso significa que qualquer coisa
+   * dentro da rede pode forjar IP. São os endereços dos SEUS proxies, e só.
+   */
+  TRUSTED_PROXY_IPS: z.string().default(''),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

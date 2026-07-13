@@ -3,23 +3,41 @@ import { ConfigValidationError, getEnv, loadEnv, parseCorsOrigins } from '../src
 
 const DB_URL = 'postgresql://giraffe_app:pw@localhost:5434/giraffe?schema=public';
 
+/** Segredos FICTÍCIOS, no comprimento mínimo que o schema exige. Não são credenciais. */
+const SEGREDO = 'a'.repeat(64);
+
+/**
+ * O mínimo OBRIGATÓRIO para o ambiente ser válido.
+ *
+ * A Story 1.4 acrescentou os segredos de sessão e do HMAC do contador de falhas. Eles entram aqui
+ * — e não ganham um default — porque um default para segredo é a pior espécie de conveniência: a
+ * aplicação sobe, parece funcionar, e todo mundo em produção compartilha a mesma chave.
+ */
+const obrigatorias = {
+  CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
+  DATABASE_URL: DB_URL,
+  BETTER_AUTH_SECRET: SEGREDO,
+  BETTER_AUTH_URL: 'http://localhost:3001',
+  LOGIN_HMAC_SECRET: SEGREDO,
+} as NodeJS.ProcessEnv;
+
 const validBase = {
+  ...obrigatorias,
   NODE_ENV: 'test',
   API_PORT: '3001',
-  CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
   LOG_LEVEL: 'info',
-  DATABASE_URL: DB_URL,
 } as NodeJS.ProcessEnv;
 
 describe('loadEnv (validação server-side / fail-fast)', () => {
   it('aceita configuração válida e aplica defaults', () => {
-    const env = loadEnv({
-      CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
-      DATABASE_URL: DB_URL,
-    } as NodeJS.ProcessEnv);
+    const env = loadEnv({ ...obrigatorias } as NodeJS.ProcessEnv);
     expect(env.NODE_ENV).toBe('development');
     expect(env.API_PORT).toBe(3001);
     expect(env.LOG_LEVEL).toBe('info');
+    // Sem proxy confiável declarado, o IP vem do socket — o default SEGURO (D5). Um default
+    // permissivo aqui (confiar em X-Forwarded-For) faria o limite por IP nascer contornável.
+    expect(env.TRUSTED_PROXY_IPS).toBe('');
+    expect(env.LOGIN_HMAC_KEY_VERSION).toBe(1);
   });
 
   it('falha honestamente quando CORS_ALLOWED_ORIGINS está ausente', () => {
