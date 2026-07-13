@@ -1,6 +1,6 @@
 # Story 1.2: Modelo multi-tenant e isolamento por RLS
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -330,3 +330,126 @@ suíte reagia):**
 |---|---|
 | 2026-07-12 | Story criada a partir de `epics.md` (Story 1.2), Architecture Spine (AD-6/7/10/11), Constitution e aprendizados da Story 1.1. Registradas 5 armadilhas conhecidas (2 delas presentes no exemplo oficial do Prisma) e o risco herdado CR2-09. Status → ready-for-dev. |
 | 2026-07-12 | Implementação das 55 tasks. Isolamento provado contra PostgreSQL real (47 testes na API, 8 na Web, smoke 4/4). Dois bugs de segurança encontrados por teste de mutação e corrigidos (ver Debug Log). Ciclo Docker completo verde com boot real do container de produção. Status → review. |
+
+## Senior Developer Review (AI)
+
+**Data:** 2026-07-12 · **Resultado:** Changes Requested → **todas as correções aplicadas** →
+**Approve**
+
+Revisão adversarial em três camadas paralelas: **Blind Hunter** e **Edge Case Hunter** (ambos
+sem contexto prévio da implementação, deliberadamente — quem escreveu o código é a pior pessoa
+para revisá-lo) e **Acceptance Auditor** (contra Story, Spec Kit, Constitution, Spine e
+épicos). Diff revisado: `c874663..HEAD`, 2.546 linhas.
+
+### O que a revisão encontrou que os 50 testes anteriores não pegavam
+
+Dois achados **CRITICAL**, ambos **reproduzidos materialmente em psql antes de qualquer
+correção** — não deduzidos:
+
+**CR3-01 — vazamento cross-tenant na leitura de `Membership`.** A policy era
+`USING ("orgId" = current_org_id() OR "accountId" = current_account_id())`. Como
+`withTenantContext` define **os dois** contextos na mesma transação (é o caminho de produção),
+o ramo da conta casava com o vínculo dela em **outra** Organização:
+
+```
+contexto: org = Org A, account = Bruno (membro de A e B)
+SELECT id, "orgId" FROM "Membership";
+ a1a1a1a1-…-0001 | aaaa… (Org A)
+ a1a1a1a1-…-0002 | aaaa… (Org A)
+ b1b1b1b1-…-0002 | bbbb… (Org B)   ← LINHA DE OUTRA ORGANIZAÇÃO
+```
+
+Violação direta do AC1. A suíte não pegava porque **nunca combinava os dois contextos**: testava
+`orgId` sozinho, depois `accountId` sozinho. As bordas reais estavam na combinação — que era
+justamente o modo de uso real.
+
+**CR3-02 — escrita cross-tenant por baixo da RLS, via cascata de FK.** `Account` é global e
+sem RLS (AD-10), e o papel de runtime tinha `GRANT DELETE` nela. Ações referenciais do
+PostgreSQL (`ON DELETE CASCADE`) rodam com **bypass de row security** — comportamento
+documentado. Um `DELETE FROM "Account"` **sem contexto organizacional nenhum** destruía
+vínculos em todas as Organizações:
+
+```
+antes:  Org A = 2 memberships | Org B = 2 memberships
+DELETE FROM "Account" WHERE id = <bruno>;   → DELETE 1
+depois: Org A = 1 membership  | Org B = 1 membership
+```
+
+A afirmação "não existe caminho de bypass" era falsa. O caminho não era uma policy — era um
+**GRANT**. Onde a RLS não alcança, quem isola é o privilégio.
+
+### Findings e resolução
+
+| ID | Sev. | Finding | Resolução |
+|---|---|---|---|
+| CR3-01 | CRITICAL | `membership_select` vazava vínculos de outra Org quando havia contexto de Org **e** de conta | Policy com exclusão mútua (`current_org_id() IS NULL AND …`) + teste de regressão (T056) |
+| CR3-02 | CRITICAL | `GRANT DELETE ON "Account"` ⇒ destruição cross-tenant via cascata | `GRANT SELECT` apenas + 2 testes de negação (T057) |
+| CR3-03 | HIGH | Runtime criava/apagava `Organization` (o `WITH CHECK` é auto-satisfazível) | `GRANT SELECT, UPDATE` + 2 testes (T058) |
+| CR3-04 | HIGH | Tentativa cruzada filtrada pelo `USING` auditada como `allowed`; `P2025` sumia da trilha | 3 formas de negação cobertas + 3 testes (T059) |
+| CR3-05 | HIGH | Papéis só no init do Docker; migration concedia a papéis que não criava | `prisma/bootstrap/00-roles.sql` idempotente + runbook (T060) |
+| CR3-06 | HIGH | `logger` opcional com default no-op ⇒ trilha de auditoria sumia em silêncio | `logger` obrigatório (T061) |
+| CR3-07 | HIGH | `$transaction` corrompia o contexto silenciosamente | Caminho fechado: erro de compilação **e** de runtime (T062) |
+| CR3-08 | HIGH | Teste "não é dono das tabelas" nunca olhava `relowner` — passava pelo motivo errado | `pg_get_userbyid(relowner)` + filtros de schema/`relkind` (T011) |
+| CR3-09 | HIGH | `CLAUDE.md` descrevia estado inexistente ("sem banco", "`/ready` ≡ `/health`") | Atualizado (T070) |
+| CR3-10 | MEDIUM | `/ready` provava só o socket: schema ausente ⇒ `200 ok` | Sonda lê tabela do schema, com deadline e log sanitizado (T063) |
+| CR3-11 | MEDIUM | Senhas do Compose com default (`${VAR:-senha}`) | `${VAR:?}` — falha honesta (T064) |
+| CR3-12 | MEDIUM | `EXCEPTION WHEN others` engolia falha de infra ⇒ negação silenciosa | `WHEN invalid_text_representation` (T065) |
+| CR3-13 | MEDIUM | Caminho **positivo** do AC2 (update, remoção lógica) sem asserção | Teste adicionado (T066) |
+| CR3-14 | MEDIUM | Corrida entre arquivos de teste paralelos (contagem da Org A) | Org C, vazia, como área de escrita (T067) |
+| CR3-15 | MEDIUM | 6 gates marcados `[x]` **sem nenhum relatório** no repositório | `gates/1-2/` com evidência real (T071) |
+| CR3-16 | LOW | `db:rollback` inexistente; caminho fixo; falha de spawn muda | Corrigidos (T068) |
+| CR3-17 | LOW | `toThrow()` sem padrão; `pg_class` sem filtro; env não restaurado | Corrigidos (T069) |
+
+Um achado do deadline foi **introduzido pela própria correção** e pego pelo teste: a sonda de
+readiness com deadline de 2 s reprovava um banco saudável, porque a **primeira** query de um
+client Prisma custa ~2.038 ms (subida do engine). Corrigido para 5 s, com o `--timeout` do
+HEALTHCHECK ajustado para 6 s. Aquecimento não é sinal de saúde.
+
+### Divergências registradas (não silenciosas)
+
+D1 (`MIGRATION_DATABASE_URL` fora do kernel), D2 (papéis fora da migration), D3 (`GRANT` menor
+que o pedido) — todas em `specs/…/tasks.md`, seção "Divergências do plano".
+
+### Itens conscientemente NÃO corrigidos
+
+Registrados no README ("Riscos conhecidos e aceitos") e no `checklist.md`, com o dono:
+
+- `MembershipState` ainda não governa acesso → requisito da **Story 1.4**.
+- `withTenantContext` confia no `orgId` recebido → contrato da **Story 1.3**.
+- Constraints únicas atravessam a RLS (oráculo de existência) → Story do cadastro.
+- Custo do isolamento não medido (sem carga para medir) → `performance-check` N/A justificado.
+
+### Gates após as correções
+
+`install --frozen-lockfile` · `format:check` · `lint` (0) · `typecheck` (0) · **API 62/62**
+(eram 50) · **Web 8/8** · suíte estável em 3 execuções · `build` · ciclo Docker (db+api+web
+healthy) · `smoke` 4/4 · rollback exercitado · backup+restore verificados **com isolamento
+intacto no banco restaurado**.
+
+### Change Log
+
+| Data | Mudança |
+|---|---|
+| 2026-07-12 | Code Review adversarial (3 camadas). 17 findings, sendo **2 CRITICAL reproduzidos em psql**: vazamento cross-tenant na policy de `Membership` e destruição cross-tenant via `GRANT DELETE` em `Account` + cascata de FK. Todos corrigidos, com testes de regressão. Suíte 50 → 62. Gates registrados com evidência em `gates/1-2/`. `checklist.md` preenchido. Status → done. |
+
+### File List — adições e mudanças do Code Review
+
+**Novos**
+
+- `apps/api/prisma/bootstrap/00-roles.sql` (bootstrap de papéis, idempotente, versionado)
+- `_bmad-output/implementation-artifacts/gates/1-2/` (8 relatórios de gate com evidência real)
+
+**Modificados pelas correções CR3**
+
+- `apps/api/prisma/migrations/20260712000000_init_tenancy_rls/migration.sql` (policy de `Membership`; `GRANT` mínimo por tabela; `EXCEPTION` restrita)
+- `apps/api/src/kernel/db/tenant-context.ts` (`logger` obrigatório; 3 formas de negação; `$transaction` recusada)
+- `apps/api/src/kernel/db/rls-denial.ts` (`isRegistroNaoEncontrado` — P2025)
+- `apps/api/src/kernel/db/prisma.service.ts` (sonda de aptidão, deadline, log sanitizado)
+- `apps/api/prisma/seed.sql` (Org C — área de escrita dos testes paralelos)
+- `apps/api/test/rls.test.ts`, `apps/api/test/rls-observability.test.ts`, `apps/api/test/health.test.ts`
+- `apps/api/Dockerfile` (`HEALTHCHECK --timeout=6s`), `apps/api/package.json` (`db:status`, `db:rollback`)
+- `docker/db/init/01-roles.sh` (passou a apenas executar o SQL versionado)
+- `docker-compose.yml` (senhas sem default; monta `prisma/bootstrap`)
+- `scripts/db-migrate.mjs` (rollback resolve a migration mais recente; falha de spawn deixa de ser muda)
+- `CLAUDE.md`, `README.md`, `.env.example`
+- `specs/1-2-…/tasks.md` (fase 11 + divergências D1/D2/D3), `specs/1-2-…/checklist.md`

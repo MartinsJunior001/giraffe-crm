@@ -47,9 +47,14 @@ Variáveis (todas em `.env.example`, sem valores sensíveis):
 | `LOG_LEVEL`              | api     | privada  | nível de log Pino                                                  |
 | `DATABASE_URL`           | api     | privada  | **obrigatória**; papel `giraffe_app` (runtime)                     |
 | `MIGRATION_DATABASE_URL` | scripts | privada  | papel `giraffe_migrator` (dono do schema) — **só migrations**      |
+| `POSTGRES_PASSWORD`      | compose | privada  | **obrigatória**; superusuário do container de banco                |
+| `MIGRATOR_PASSWORD`      | compose | privada  | **obrigatória**; senha de `giraffe_migrator`                       |
+| `APP_PASSWORD`           | compose | privada  | **obrigatória**; senha de `giraffe_app`                            |
 | `API_BASE_URL`           | web     | servidor | URL base da API interna, lida server-side (não exposta ao browser) |
 
 Segredos **nunca** são versionados: `.env` está no `.gitignore`; só `.env.example` é rastreado.
+
+As três senhas **não têm valor padrão** no Compose: sem elas, `docker compose up` falha dizendo qual falta. Um default silencioso é uma credencial insegura — o ambiente que esquece a variável não quebra, ele sobe com uma senha conhecida e publicada no Git.
 
 ### Por que duas URLs de banco
 
@@ -67,13 +72,34 @@ garante isso.
 ## Banco de dados
 
 ```bash
-docker compose up -d db     # sobe o PostgreSQL (porta 5434 no host, só em 127.0.0.1)
+docker compose up -d db                 # PostgreSQL (porta 5434 no host, só em 127.0.0.1)
 pnpm --filter @giraffe/api db:migrate   # aplica as migrations (papel migrator)
-pnpm --filter @giraffe/api db:seed      # fixture de duas Organizações (desenvolvimento)
+pnpm --filter @giraffe/api db:seed      # fixture: Organizações A, B e C (desenvolvimento)
+pnpm --filter @giraffe/api db:status    # estado das migrations
 ```
 
 O client do Prisma é gerado no `pnpm install` (via `postinstall`) em `apps/api/generated/` —
 artefato de build, não versionado.
+
+### Papéis (bootstrap) — precede as migrations
+
+Criar papel exige privilégio administrativo, que nem o `giraffe_migrator` tem. Por isso o
+bootstrap **não** é uma migration do Prisma: ele vive em
+`apps/api/prisma/bootstrap/00-roles.sql`, é **idempotente** e é o **mesmo arquivo em todos os
+ambientes** — no `compose up` quem o executa é o entrypoint do container; num PostgreSQL
+gerenciado, quem o executa é você.
+
+```bash
+psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  --set=migrator_password="$MIGRATOR_PASSWORD" \
+  --set=app_password="$APP_PASSWORD" \
+  --set=db_name=giraffe \
+  -f apps/api/prisma/bootstrap/00-roles.sql
+```
+
+Sem este passo, a migration morre em `role "giraffe_app" does not exist` — ela **concede**
+privilégios aos papéis, não os cria. Rodar o script de novo **rotaciona a senha** dos papéis;
+não há procedimento separado para isso.
 
 ### Isolamento (RLS)
 
@@ -88,13 +114,31 @@ O `true` não é detalhe: com `false`, o contexto gruda na **conexão**, que vol
 requisição seguinte, de outra Organização, herdaria o contexto. Sem contexto, nenhuma policy
 casa e o banco nega (_deny-by-default_). Não existe caminho de bypass.
 
+Havendo Organização ativa, **ela é a única fronteira**: a policy de leitura de `Membership`
+só considera a conta quando **não** há contexto de Organização (o caso do login, que pergunta
+"a quais Orgs pertenço?" antes de existir uma ativa). Sem essa exclusão mútua, uma conta que
+pertence a duas Organizações arrastaria o vínculo da outra para dentro de uma consulta
+escopada — e isso não é hipótese: era o comportamento real, e existe teste de regressão.
+
 `Account` é **global e sem RLS** (a identidade não pertence a um tenant); `Account.email` é
 PII e nunca vai para log.
+
+### O GRANT também isola
+
+Onde a RLS não alcança, quem nega é o privilégio. O papel de runtime tem **DML mínima**:
+
+| Tabela         | `giraffe_app` pode            | Por quê                                                                                                                                                                   |
+| -------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Account`      | `SELECT`                      | sem RLS ⇒ sem policy que a proteja; com `DELETE`, a cascata da FK apagaria Memberships de **todas** as Organizações — ações referenciais rodam com bypass de row security |
+| `Organization` | `SELECT`, `UPDATE`            | criar/apagar Organização não é operação de runtime (é da Story 1.4). A policy sozinha não bastava: `WITH CHECK (id = current_org_id())` é auto-satisfazível               |
+| `Membership`   | `SELECT/INSERT/UPDATE/DELETE` | CRUD dentro da Organização do contexto — as policies dizem qual                                                                                                           |
+
+Ao conceder um privilégio novo, escreva junto o teste que prova o escopo dele.
 
 ### Rollback da migration
 
 ```bash
-pnpm --filter @giraffe/api exec node ../../scripts/db-migrate.mjs rollback   # ⚠️ destrutivo
+pnpm --filter @giraffe/api db:rollback   # ⚠️ DESTRUTIVO — reverte a migration mais recente
 ```
 
 O Prisma não gera migration reversa — o SQL de rollback está em `apps/api/prisma/rollback/` e
@@ -166,14 +210,38 @@ Imagens: multi-stage, usuário **não-root**, **sem** cópia de `.env`/segredos,
 
 1. Build das imagens a partir dos `Dockerfile` de `apps/api` e `apps/web`.
 2. Configurar variáveis/segredos **no cofre/painel do ambiente** (nunca no repo/imagem).
-3. **Backup do banco, com restore verificado** — backup concluído não prova recuperabilidade
+3. **Provisionar os papéis** (`00-roles.sql`, seção "Papéis (bootstrap)"), com um papel
+   administrativo. É idempotente e precede tudo. Num banco gerenciado não existe
+   `docker-entrypoint-initdb.d`: se este passo for pulado, a migration falha em
+   `role "giraffe_app" does not exist`.
+4. **Backup do banco, com restore verificado** — backup concluído não prova recuperabilidade
    (AD-33).
-4. Aplicar as migrations como **etapa controlada**, com o papel `giraffe_migrator`
+5. Aplicar as migrations como **etapa controlada**, com o papel `giraffe_migrator`
    (`db:migrate`). Migration **não** roda no boot do container: um container que migra ao
    subir transforma cada réplica e cada restart numa tentativa concorrente de DDL.
-5. Publicar cada serviço (api e web) como container separado.
-6. Configurar o healthcheck do orquestrador para `/ready` (api) e `/healthz` (web).
-7. Verificar `/health` e `/ready` pós-publicação.
+
+   Rode a partir de um **checkout do repositório** (CI job, task de release ou shell de
+   operação), **não de dentro da imagem de produção**: a imagem é enxuta de propósito — não
+   carrega o CLI do Prisma (`devDependency`), nem `scripts/`, nem `prisma/migrations/`. O
+   papel `giraffe_migrator` também não está no ambiente do container de runtime, e é essa
+   ausência que garante que o processo que atende requisição não consegue contornar o RLS.
+
+6. Publicar cada serviço (api e web) como container separado.
+7. Configurar as sondas do orquestrador — e **não** cabear `/ready` como liveness:
+
+   | Sonda         | api       | web        |
+   | ------------- | --------- | ---------- |
+   | **liveness**  | `/health` | `/healthz` |
+   | **readiness** | `/ready`  | `/healthz` |
+
+   A distinção é a razão de as duas rotas existirem. `/ready` reprova quando o banco está
+   fora; usado como **liveness**, um blip de 40s no PostgreSQL reprovaria **todas** as
+   réplicas da API, que seriam mortas e reiniciadas em cascata — e a recuperação automática
+   (a conexão do Prisma é preguiçosa justamente para isso) nunca aconteceria. Liveness
+   pergunta "o processo travou?"; readiness pergunta "posso mandar tráfego?". Só a segunda
+   depende do banco.
+
+8. Verificar `/health` e `/ready` pós-publicação.
 
 ### Rollback manual
 
@@ -199,6 +267,29 @@ A matriz de permissões de papéis (`ADMIN`/`MEMBER`/`GUEST`) existe no schema, 
 aplicada** nesta Story — quem decide o que cada papel pode fazer é a Story 1.6. O isolamento
 entregue aqui é **entre Organizações**, não entre papéis.
 
+### Riscos conhecidos e aceitos (registrados, não escondidos)
+
+- **`MembershipState` ainda não governa acesso.** `SUSPENDED`/`REMOVED` são gravados e lidos,
+  mas nenhuma policy os consulta. Quem transforma uma Membership em contexto de sessão é a
+  Story 1.4 — e é lá que `state != 'ACTIVE'` precisa deixar de conceder contexto. Enquanto
+  isso não existir, não há sessão para conceder: o risco é de projeto, não de exposição.
+- **`withTenantContext` confia no `orgId` que recebe.** Ele não verifica que a conta tem
+  Membership naquela Organização — a RLS impõe o isolamento _entre_ Organizações, ela não
+  decide _a qual_ o requisitante pertence. Derivar o contexto de uma Membership validada no
+  servidor (nunca de algo que o cliente enviou) é contrato da Story 1.3.
+- **Constraints únicas atravessam a RLS.** É comportamento documentado do PostgreSQL: a
+  verificação de unicidade não passa por policy. Logo `Organization.slug` e `Account.email`,
+  sendo únicos globais, funcionam como oráculo de existência — um `P2002` confirma que
+  aquele slug/e-mail existe em algum lugar da plataforma, sem revelar onde. Fechar isso exige
+  unicidade por Organização (ou hashing), decisão que pertence à Story que introduzir o
+  cadastro.
+- **`$queryRaw` não passa pela extensão de contexto.** Falha **fechada** (sem contexto,
+  nenhuma linha organizacional é visível — há teste), mas quem usar SQL cru não ganha
+  contexto de graça.
+- **Custo do isolamento não foi medido.** Cada operação de modelo virou uma transação com
+  dois `set_config`. É a decisão certa em segurança, e não há consumidor de domínio ainda
+  para medir contra — o `performance-check` fica para a Story que introduzir carga real.
+
 ## Troubleshooting mínimo
 
 - **`pnpm` não encontrado:** rode `corepack enable`.
@@ -211,5 +302,11 @@ entregue aqui é **entre Organizações**, não entre papéis.
 - **Testes de RLS falham com "DATABASE_URL ausente":** suba o banco (`docker compose up -d
 db`) e rode as migrations. A suíte **não** pula quando o banco está fora: banco
   indisponível é falha, não ausência de evidência.
-- **`P1000`/autenticação falhou a partir do host:** outra instância de PostgreSQL pode estar
-  ocupando a porta. O Compose publica em **5434** exatamente por isso.
+- **`P1000`/autenticação falhou:** duas causas distintas, nesta ordem de probabilidade.
+  (1) Você mudou `APP_PASSWORD`/`MIGRATOR_PASSWORD` no `.env` **depois** do primeiro
+  `compose up`: o bootstrap só roda com o volume vazio, então o papel manteve a senha antiga.
+  Reaplique o `00-roles.sql` (ele rotaciona a senha) ou recrie o volume com
+  `docker compose down -v`. (2) A partir do host, outra instância de PostgreSQL pode estar
+  ocupando a porta — o Compose publica em **5434** exatamente por isso.
+- **`role "giraffe_app" does not exist` ao migrar:** o bootstrap de papéis não rodou. Ver
+  "Papéis (bootstrap)". A migration concede privilégios; ela não cria os papéis.
