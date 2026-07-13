@@ -45,7 +45,10 @@ confirmar ao iniciar o Lote 1.
 
 **Cross-cutting P0 (Lote 6 — recuperação/observabilidade):** backup+restore comprovados, rollback
 comprovado, observabilidade/alertas, smoke, E2E da jornada. Débitos de staging: **CR-09** (/ready na
-borda), **D-01** (IPs do proxy Coolify), **D-02** (CIDR), **D-05** (agendador do db:cleanup).
+borda), **D-01** (IPs do proxy Coolify), **D-02** (CIDR), **D-05** (agendador do db:cleanup), **D-06**
+(rate limiter transacional pode 500 sob rajada a `/api/auth/*` — Trilha A/Backend; realocado de tech-2
+em 2026-07-13, ver `gates/1-5/summary.md`). Cada débito tem responsável e critérios próprios; todos
+**bloqueiam `STAGING APPROVED`**.
 
 ## WAVE 2 (cliente opera temporariamente sem)
 
