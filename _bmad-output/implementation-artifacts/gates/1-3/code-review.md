@@ -1,6 +1,6 @@
 # Code Review adversarial — Story 1.3
 
-2026-07-12 · Resultado: **APROVADO após correções** · 10 findings, 8 corrigidos, 2 registrados
+2026-07-12 · Resultado: **APROVADO após correções** · 10 findings: **9 corrigidos**, 1 débito obrigatório antes de staging (CR-09)
 
 Método: dois revisores adversariais **cegos** em paralelo (um de segurança, um de correção/engenharia),
 sem acesso às conclusões um do outro, mais auditoria de critérios de aceite. Os dois convergiram
@@ -123,20 +123,43 @@ corresponder ao que *aquela* requisição pediu.
 
 ---
 
-## LOW — registrados, não corrigidos
+## LOW — CR-08 corrigido; CR-09 é débito obrigatório antes de staging
 
-### CR-08 · `ContextoIndisponivelError` sem filtro dedicado
+### CR-08 · `ContextoIndisponivelError` sem filtro dedicado — **CORRIGIDO**
 
-Vira 500 genérico (corpo sanitizado, sem stack). É o sintoma exato de "o middleware não cobriu esta
-rota" — o modo de falha nº 1 da arquitetura — e hoje se dissolve entre outros 500s. Um
-`ExceptionFilter` que o registre como `context.missing` custa ~10 linhas e torna a falha estrutural
-mais perigosa **contável**. Registrado como dívida; não é regressão desta Story.
+Virava um 500 genérico. É o sintoma exato de "o middleware não cobriu esta rota" — o modo de falha
+nº 1 desta arquitetura — e se dissolvia entre os outros 500s. Não se conserta o que não se consegue
+contar.
 
-### CR-09 · `/ready` é dispensado do guard **e** toca o banco
+**Correção** (`kernel/context/contexto-indisponivel.filter.ts`): emite `context.missing` em nível de
+ERRO, com método e caminho — **sem a query string**, que carrega dado do usuário. A resposta continua
+500 e continua muda: um 4xx diria ao cliente que ele errou, o que é mentira; o motivo é do operador,
+não de quem estiver sondando a aplicação.
 
-Superfície de pressão não autenticada (consome conexão do pool sem identidade). É o trade-off aceito
-de um readiness honesto, herdado da 1.2, e a resposta correta é rate limiting — não remover a
-dispensa, que quebraria o deploy. Registrado para quando houver rate limiting.
+Vale registrar o erro que cometi ao testar isto, porque é exatamente o que o code review acabara de
+punir: escrevi primeiro um teste HTTP que "provava o registro" do filtro — e ele **passava pelo
+motivo errado**. Sem o filtro, o Nest devolve um 500 com o mesmo corpo; desregistrei o `APP_FILTER`
+e a suíte continuou verde. Aquele teste provava apenas que o Nest sabe responder 500 — algo que ele
+já fazia antes de o CR-08 existir. O que o filtro acrescenta é o **evento**, que deliberadamente não
+aparece na resposta.
+
+Testes finais, com papéis separados e honestos: os de unidade provam o **comportamento** (evento
+nomeado, query string ausente do log, 500 mudo); um teste de **fiação** assere que o `ContextModule`
+declara o `APP_FILTER`, e **fica vermelho** no instante em que alguém remover a linha — verificado
+por mutação.
+
+### CR-09 · `/ready` é dispensado do guard **e** toca o banco — **DÉBITO OBRIGATÓRIO ANTES DE STAGING**
+
+Superfície de pressão **não autenticada**: qualquer um na rede do serviço martela `/ready` e consome
+conexão do pool sem identidade. É o trade-off aceito de um readiness honesto, herdado da 1.2.
+
+A resposta correta é **rate limiting na borda/proxy** — e **não** remover a dispensa: removê-la faria
+o healthcheck do orquestrador receber 401, o container nunca ficaria healthy, e o guard mataria o
+deploy que deveria proteger.
+
+**Promovido a débito rastreável obrigatório: bloqueia o `STAGING APPROVED`.** Não é regressão desta
+Story, mas expor num ambiente alcançável uma rota que abre conexão de banco, sem limite de taxa, é um
+convite à exaustão de pool.
 
 ---
 
@@ -166,7 +189,7 @@ dispensa, que quebraria o deploy. Registrado para quando houver rate limiting.
 | Gate | Resultado |
 | ---- | --------- |
 | `format:check` / `lint` / `typecheck` / `build` | exit 0 |
-| `test` | **API 102/102** (eram 95), Web 8/8 |
+| `test` | **API 108/108** (eram 95; +6 do CR-08), Web 8/8 |
 | Estabilidade | suíte executada **5×** seguidas, 102/102 em todas |
 | Ciclo Docker | db/api/web 3× healthy |
 | `smoke` | 4/4 |

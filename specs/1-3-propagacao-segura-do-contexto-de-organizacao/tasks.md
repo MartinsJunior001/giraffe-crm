@@ -102,5 +102,5 @@ silêncio é proibido — a T021 foi cumprida e depois desfeita por decisão reg
 - [x] CR-05 `tenant-envelope.ts` era abstração especulativa (ver D3)
 - [x] CR-06 Teste de SQL injection tautológico — substituído por asserção que discrimina
 - [x] CR-07 Concorrência não cobria a MESMA conta pedindo Orgs diferentes
-- [ ] CR-08 (dívida) `ContextoIndisponivelError` sem `ExceptionFilter` dedicado
-- [ ] CR-09 (dívida) `/ready` dispensado do guard e tocando o banco — resolver com rate limiting
+- [x] CR-08 CORRIGIDO — `ContextoIndisponivelFilter` emite `context.missing`; teste de fiação verificado por mutação
+- [ ] CR-09 **DÉBITO OBRIGATÓRIO ANTES DE STAGING** — `/ready` é dispensado do guard e toca o banco: superfície de pressão não autenticada. Resolver com rate limiting no proxy/borda, NÃO removendo a dispensa (removê-la faria o healthcheck do orquestrador levar 401 e mataria o deploy). Bloqueia o STAGING APPROVED.
