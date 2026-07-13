@@ -25,6 +25,7 @@
  *   nunca é lida primeiro.
  */
 
+import { isIP } from 'node:net';
 import { getEnv } from '../config/env';
 
 /**
@@ -78,7 +79,10 @@ export function resolverIpCliente(params: {
     const salto = cadeia[i];
     if (salto === undefined) continue;
     if (confiaveis.has(salto)) continue;
-    return salto;
+    // O primeiro salto não confiável é o cliente — MAS só vale se for um IP de verdade. Um proxy
+    // confiável poderia encaminhar lixo (`999.999.999.999`); usá-lo como chave de rate limit
+    // envenenaria a contagem. Lixo cai para o peer (o proxy), que é sempre um endereço real.
+    return isIP(salto) ? salto : peer;
   }
 
   // Cadeia vazia, ou só de proxies confiáveis: o melhor que sabemos é o próprio peer.

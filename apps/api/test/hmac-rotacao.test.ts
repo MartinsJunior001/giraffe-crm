@@ -55,7 +55,7 @@ async function falhasSobAChaveAntiga(identificador: string, quantas: number): Pr
   process.env.LOGIN_HMAC_SECRET = SEGREDO_ANTERIOR; // o que era "atual" quando aquelas falhas ocorreram
   semRotacao();
   try {
-    for (let i = 0; i < quantas; i++) await servico.registrarFalha(identificador);
+    for (let i = 0; i < quantas; i++) await servico.registrarTentativa(identificador);
   } finally {
     process.env.LOGIN_HMAC_SECRET = atual;
   }
@@ -105,23 +105,27 @@ describe('a rotação não pode zerar o limite', () => {
     expect(await servico.estaBloqueado(ALVO)).toBe(true);
   });
 
-  it('falhas SOMAM entre as versões: 3 antigas + 2 novas bloqueiam', async () => {
+  it('tentativas SOMAM entre as versões: 3 antigas + 3 novas excedem', async () => {
     await falhasSobAChaveAntiga(ALVO, 3);
 
     comRotacaoEmCurso();
 
-    const quarta = await servico.registrarFalha(ALVO);
-    expect(quarta.bloqueado).toBe(false);
+    const quarta = await servico.registrarTentativa(ALVO);
     expect(quarta.count).toBe(4); // 3 antigas + 1 nova
+    expect(quarta.excedido).toBe(false);
 
-    const quinta = await servico.registrarFalha(ALVO);
-    expect(quinta.count).toBe(MAX_FALHAS);
-    expect(quinta.bloqueado).toBe(true);
+    const quinta = await servico.registrarTentativa(ALVO);
+    expect(quinta.count).toBe(MAX_FALHAS); // 5 — ainda é uma chance legítima
+    expect(quinta.excedido).toBe(false);
+
+    const sexta = await servico.registrarTentativa(ALVO);
+    expect(sexta.count).toBe(MAX_FALHAS + 1); // 6 — soma das duas versões
+    expect(sexta.excedido).toBe(true);
   });
 
   it('a falha NOVA é gravada na versão ATUAL, não na antiga', async () => {
     comRotacaoEmCurso();
-    await servico.registrarFalha(ALVO);
+    await servico.registrarTentativa(ALVO);
 
     const [chaveAtual, chaveAnterior] = servico.chavesDe(ALVO);
 
@@ -139,7 +143,7 @@ describe('a rotação não pode zerar o limite', () => {
   it('o sucesso limpa as DUAS versões', async () => {
     await falhasSobAChaveAntiga(ALVO, 3);
     comRotacaoEmCurso();
-    await servico.registrarFalha(ALVO);
+    await servico.registrarTentativa(ALVO);
 
     await servico.limpar(ALVO);
 
@@ -180,7 +184,7 @@ describe('a rotação não pode zerar o limite', () => {
     expect(await servico.estaBloqueado(ALVO)).toBe(false);
 
     // E o contador atual começa do zero, coerente: 5 falhas novas voltam a bloquear.
-    for (let i = 0; i < MAX_FALHAS; i++) await servico.registrarFalha(ALVO);
+    for (let i = 0; i < MAX_FALHAS; i++) await servico.registrarTentativa(ALVO);
     expect(await servico.estaBloqueado(ALVO)).toBe(true);
   });
 
@@ -196,7 +200,7 @@ describe('PII: nem o e-mail, nem o segredo', () => {
   it('nenhuma das duas chaves contém o e-mail, e o log não vaza identificador', async () => {
     await falhasSobAChaveAntiga(ALVO, 1);
     comRotacaoEmCurso();
-    await servico.registrarFalha(ALVO);
+    await servico.registrarTentativa(ALVO);
 
     const linhas = await prisma.$queryRaw<{ key: string }[]>`SELECT "key" FROM "LoginFailure"`;
     const tudo = JSON.stringify(linhas);

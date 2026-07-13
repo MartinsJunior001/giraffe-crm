@@ -37,7 +37,16 @@ export class AuthController {
     const resposta = await this.auth.handler(paraRequestWeb(req, this.proxiesConfiaveis));
 
     res.status(resposta.status);
-    resposta.headers.forEach((valor, nome) => res.append(nome, valor));
+
+    // `Set-Cookie` é o único header que o `Headers` do padrão web **funde por vírgula** ao iterar —
+    // e cookie fundido é cookie corrompido (o segundo vira "atributo" do primeiro, e flags de
+    // segurança como `HttpOnly`/`Secure` se perdem). `getSetCookie()` devolve cada um inteiro.
+    // Hoje o login emite um cookie só; isto blinda contra o dia em que o Better Auth emitir mais
+    // (cache de sessão, "lembrar-me", cookies com prefixo `__Host-`).
+    for (const cookie of resposta.headers.getSetCookie()) res.append('set-cookie', cookie);
+    resposta.headers.forEach((valor, nome) => {
+      if (nome.toLowerCase() !== 'set-cookie') res.append(nome, valor);
+    });
 
     res.send(await resposta.text());
   }
@@ -59,7 +68,13 @@ function paraRequestWeb(req: ExpressRequest, proxiesConfiaveis: readonly string[
   const headers = new Headers();
   for (const [nome, valor] of Object.entries(req.headers)) {
     if (valor === undefined) continue;
-    if (nome.toLowerCase() === HEADER_IP) continue; // resolvido abaixo, a partir do socket
+    const chave = nome.toLowerCase();
+    if (chave === HEADER_IP) continue; // resolvido abaixo, a partir do socket
+    // `content-length`/`transfer-encoding` descrevem o corpo ORIGINAL; nós o reserializamos
+    // (`JSON.stringify` abaixo), então o tamanho muda. Encaminhá-los deixaria o header em desacordo
+    // com o corpo — hoje o undici recalcula e salva, mas depender disso é frágil. Deixa o `Request`
+    // recomputar a partir do corpo real.
+    if (chave === 'content-length' || chave === 'transfer-encoding') continue;
     if (Array.isArray(valor)) for (const v of valor) headers.append(nome, v);
     else headers.append(nome, valor);
   }

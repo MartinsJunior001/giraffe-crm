@@ -75,7 +75,7 @@ export class LoginFailureService {
    * órfãos. O atacante ganharia 5 tentativas novas de graça, no instante exato da rotação — e a
    * rotação é uma operação de segurança, não pode abrir uma janela de ataque.
    *
-   * A chave anterior é só de **leitura**: nada novo é escrito nela (ver `registrarFalha`).
+   * A chave anterior é só de **leitura**: nada novo é escrito nela (ver `registrarTentativa`).
    */
   private chavesAtivas(identificador: string): string[] {
     const env = getEnv();
@@ -118,14 +118,13 @@ export class LoginFailureService {
    * ser derivadas e simplesmente **expiram com a janela** — em vez de serem apagadas, o que zeraria
    * o contador de um atacante em curso no exato momento da rotação.
    */
-  async registrarFalha(identificador: string): Promise<{ bloqueado: boolean; count: number }> {
+  async registrarTentativa(identificador: string): Promise<{ excedido: boolean; count: number }> {
     const env = getEnv();
-    const chave = this.derivarChave(identificador);
+    const chaves = this.chavesAtivas(identificador);
+    const chave = chaves[0]!; // a atual — é nela que se incrementa
+    const anteriores = chaves.slice(1); // rotação em curso: somadas, nunca incrementadas
     const agora = new Date();
     const inicioValido = new Date(agora.getTime() - JANELA_MS);
-
-    // As chaves ANTERIORES (rotação em curso), que são somadas mas nunca incrementadas.
-    const anteriores = this.chavesAtivas(identificador).slice(1);
 
     // **Uma instrução só.** O incremento vem do `RETURNING` do próprio `INSERT ... ON CONFLICT`, e a
     // soma da chave anterior é calculada no mesmo comando.
@@ -162,27 +161,34 @@ export class LoginFailureService {
     const countAtual = linhas[0]?.atual ?? 1;
     const countAnterior = Number(linhas[0]?.anterior ?? 0);
 
-    // O total que decide o bloqueio soma as falhas ainda válidas da chave anterior — senão a rotação
-    // do segredo daria ao atacante um orçamento novo de 5 tentativas (D6).
+    // O total soma as falhas ainda válidas da chave anterior — senão a rotação do segredo daria ao
+    // atacante um orçamento novo de 5 tentativas (D6).
     const count = countAtual + countAnterior;
-    const bloqueado = count >= MAX_FALHAS;
+
+    // `excedido` = já passou do limite. Como o incremento inclui ESTA tentativa, o corte é `>`: as
+    // tentativas 1..5 passam (a 5ª ainda é uma chance legítima), e a 6ª é barrada. É o mesmo
+    // comportamento de "5 tentativas e bloqueia" de antes — mas agora a decisão é ATÔMICA com o
+    // incremento, não um SELECT que precede a escrita.
+    const excedido = count > MAX_FALHAS;
 
     // O identificador NUNCA vai para o log — nem em claro, nem hasheado. A chave HMAC no log seria
-    // um identificador estável de uma pessoa, o que a torna PII pseudonimizada: correlacionável, e
-    // portanto sujeita à LGPD. O que o operador precisa saber é que houve falha e quantas.
+    // um identificador estável de uma pessoa, logo PII pseudonimizada: correlacionável, sujeita à
+    // LGPD. O operador vê que houve tentativa, a contagem e se foi barrada.
     this.logger.warn(
-      { event: 'auth.login.failed', count, countAtual, bloqueado },
-      'falha de login registrada',
+      { event: 'auth.login.attempt', count, countAtual, excedido },
+      'tentativa de login registrada',
     );
 
-    return { bloqueado, count };
+    return { excedido, count };
   }
 
   /**
-   * O identificador está bloqueado agora?
+   * O identificador já está no limite (a PRÓXIMA tentativa seria barrada)?
    *
-   * Chamado ANTES de verificar a senha — senão a 6ª tentativa com a senha CERTA passaria, e o
-   * limite não limitaria nada: bastaria ao atacante acertar na tentativa seguinte à quinta.
+   * Leitura pura, para observação de estado (testes, diagnóstico). A **decisão** de bloquear no fluxo
+   * de login NÃO passa por aqui — passa por `registrarTentativa`, que é atômico. Um SELECT antes do
+   * incremento é justamente a corrida (TOCTOU) que a Story fechou: sob rajada concorrente, todas as
+   * requisições liam o contador baixo e passavam, e o hash lento da senha alargava a janela.
    */
   async estaBloqueado(identificador: string): Promise<boolean> {
     return (await this.contarValidas(identificador)) >= MAX_FALHAS;
@@ -201,6 +207,58 @@ export class LoginFailureService {
     // acertaria a senha e continuaria bloqueado até a janela da chave anterior expirar.
     const chaves = this.chavesAtivas(identificador);
     await this.prisma.$executeRaw`DELETE FROM "LoginFailure" WHERE "key" = ANY(${chaves}::text[])`;
+  }
+
+  /**
+   * `limpar`, mas que **engole** um erro transitório de banco.
+   *
+   * Chamado no pós-login bem-sucedido: a sessão já existe e o cookie já foi montado. Se o `DELETE`
+   * falhar por um blip de conexão e a exceção subisse, o Better Auth trocaria a resposta por 500 e
+   * descartaria o `Set-Cookie` — o usuário se autenticou e veria um erro. O contador, no pior caso,
+   * expira sozinho com a janela. Limpar é desejável, não crítico; não pode derrubar o login.
+   */
+  async limparBestEffort(identificador: string): Promise<void> {
+    try {
+      await this.limpar(identificador);
+    } catch {
+      this.logger.warn(
+        { event: 'auth.login.clear_failed' },
+        'falha ao limpar contador após login bem-sucedido (ignorada)',
+      );
+    }
+  }
+
+  /**
+   * Apaga os contadores JÁ EXPIRADOS — `LoginFailure` e o `RateLimit` (G2) do Better Auth.
+   *
+   * Existe porque uma linha só some, hoje, quando o dono loga com sucesso (`limpar`). Um ataque de
+   * *spray* com milhões de identificadores distintos que nunca autenticam grava uma linha por
+   * identificador que **nunca** é apagada: crescimento sem limite da tabela. Esta rotina é a coleta
+   * de lixo — determinística, idempotente (rodar duas vezes apaga 0 na segunda) e apoiada no índice
+   * `windowStart` que já existe para isso.
+   *
+   * **Só apaga o que está fora da janela** (`windowStart`/`lastRequest` mais velho que 15 min): um
+   * contador ainda válido — de um ataque em curso — jamais é tocado. Apagá-lo seria uma anistia.
+   *
+   * As duas janelas coincidem: G1 e G2 usam 15 min (`JANELA_MS` = 900 s = `G2_JANELA_S`).
+   */
+  async limparExpirados(): Promise<{ loginFailure: number; rateLimit: number }> {
+    const inicioValido = new Date(Date.now() - JANELA_MS);
+    const corteRateLimit = BigInt(Date.now() - JANELA_MS); // RateLimit.lastRequest é epoch ms (BigInt)
+
+    const loginFailure = await this.prisma.$executeRaw`
+      DELETE FROM "LoginFailure" WHERE "windowStart" < ${inicioValido}
+    `;
+    const rateLimit = await this.prisma.$executeRaw`
+      DELETE FROM "RateLimit" WHERE "lastRequest" < ${corteRateLimit}
+    `;
+
+    this.logger.info(
+      { event: 'auth.antiabuse.cleanup', loginFailure, rateLimit },
+      'contadores antiabuso expirados removidos',
+    );
+
+    return { loginFailure, rateLimit };
   }
 
   /**

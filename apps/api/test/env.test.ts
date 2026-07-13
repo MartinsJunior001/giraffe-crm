@@ -118,7 +118,14 @@ describe('loadEnv (validação server-side / fail-fast)', () => {
   it('valida múltiplas configurações distintas na mesma execução (sem estado global)', () => {
     // Um cache em variável de módulo faria a 2ª e a 3ª chamadas devolverem o resultado
     // da 1ª — os testes passariam pelo motivo errado. Cada chamada precisa ser independente.
-    const producao = loadEnv({ ...validBase, NODE_ENV: 'production', LOG_LEVEL: 'warn' });
+    // (Em produção, declarar a exposição direta: senão a lista de proxies vazia falha o boot — ver
+    // o describe do proxy confiável, abaixo.)
+    const producao = loadEnv({
+      ...validBase,
+      NODE_ENV: 'production',
+      LOG_LEVEL: 'warn',
+      ALLOW_DIRECT_EXPOSURE: 'true',
+    });
     expect(producao.NODE_ENV).toBe('production');
     expect(producao.LOG_LEVEL).toBe('warn');
 
@@ -129,6 +136,89 @@ describe('loadEnv (validação server-side / fail-fast)', () => {
     // A configuração anterior não pode ter contaminado esta.
     expect(desenvolvimento.LOG_LEVEL).toBe('info');
     expect(producao.API_PORT).toBe(3001);
+  });
+
+  it('rejeita "*" em CORS_ALLOWED_ORIGINS (alimenta CORS e CSRF)', () => {
+    // Esta variável vira o `trustedOrigins` do Better Auth (CSRF) além do CORS. Um `*` refletiria
+    // qualquer origem e afrouxaria a proteção que a Story construiu — a uma variável de distância de
+    // ser anulada. O invariante é "sem wildcard"; o wildcard falha no boot.
+    expect(() => loadEnv({ ...validBase, CORS_ALLOWED_ORIGINS: '*' })).toThrowError(
+      ConfigValidationError,
+    );
+    expect(() => loadEnv({ ...validBase, CORS_ALLOWED_ORIGINS: 'http://ok,*' })).toThrowError(
+      ConfigValidationError,
+    );
+  });
+
+  it('rejeita curingas EMBUTIDOS, não só o "*" isolado (o `wildcardMatch` do Better Auth os honra)', () => {
+    // O caso que de fato importa: `*.dominio.com` e `http://*` não são o elemento `"*"` — eles o
+    // CONTÊM. O `cors` do Express, que compara por igualdade exata, os ignoraria; mas o
+    // `trustedOrigins` do Better Auth trata QUALQUER entrada com `*`/`?` como padrão curinga e casaria
+    // qualquer subdomínio/origem, afrouxando o CSRF. A guarda que só olhasse `includes('*')` no array
+    // deixaria isto passar — e um teste que só exercitasse `'*'` puro mascararia o buraco.
+    for (const curinga of [
+      'https://*.dominio.com',
+      'http://*',
+      'https://app.exemplo.com,https://*.exemplo.com',
+      'https://app-?.exemplo.com',
+    ]) {
+      expect(() => loadEnv({ ...validBase, CORS_ALLOWED_ORIGINS: curinga })).toThrowError(
+        ConfigValidationError,
+      );
+    }
+  });
+});
+
+describe('proxy confiável (D5) — fail-fast no boot', () => {
+  it('em produção, lista vazia SEM opt-in de exposição direta falha o boot', () => {
+    // O footgun silencioso: atrás de um proxy reverso com a lista vazia, o IP de toda requisição
+    // vira o do proxy e o G2 (por IP) colapsa num balde único — DoS de login em escala de
+    // plataforma. Fail-closed: não sobe sem uma decisão explícita.
+    const semDecisao = { ...validBase, NODE_ENV: 'production' } as NodeJS.ProcessEnv;
+    delete semDecisao.TRUSTED_PROXY_IPS;
+
+    expect(() => loadEnv(semDecisao)).toThrowError(ConfigValidationError);
+  });
+
+  it('em produção, exposição direta declarada permite lista vazia', () => {
+    const env = loadEnv({
+      ...validBase,
+      NODE_ENV: 'production',
+      ALLOW_DIRECT_EXPOSURE: 'true',
+    });
+    expect(env.TRUSTED_PROXY_IPS).toBe('');
+    expect(env.ALLOW_DIRECT_EXPOSURE).toBe(true);
+  });
+
+  it('em produção, proxy configurado dispensa o opt-in', () => {
+    const env = loadEnv({
+      ...validBase,
+      NODE_ENV: 'production',
+      TRUSTED_PROXY_IPS: '10.0.0.5',
+    });
+    expect(env.TRUSTED_PROXY_IPS).toBe('10.0.0.5');
+  });
+
+  it('fora de produção, lista vazia é o default seguro (sem opt-in)', () => {
+    expect(loadEnv({ ...validBase, NODE_ENV: 'development' }).TRUSTED_PROXY_IPS).toBe('');
+  });
+
+  it('rejeita "*" e faixas CIDR (D-02), aceita IPs exatos v4 e v6', () => {
+    expect(() => loadEnv({ ...validBase, TRUSTED_PROXY_IPS: '*' })).toThrowError(
+      ConfigValidationError,
+    );
+    // CIDR fica para D-02: recusado em vez de aceito-e-ignorado (uma faixa que não funciona parece
+    // uma defesa e não é).
+    expect(() => loadEnv({ ...validBase, TRUSTED_PROXY_IPS: '10.0.0.0/8' })).toThrowError(
+      ConfigValidationError,
+    );
+    expect(() => loadEnv({ ...validBase, TRUSTED_PROXY_IPS: 'não-é-ip' })).toThrowError(
+      ConfigValidationError,
+    );
+
+    // IPs exatos, v4 e v6, passam.
+    const ok = loadEnv({ ...validBase, TRUSTED_PROXY_IPS: '203.0.113.7, 2001:db8::5' });
+    expect(ok.TRUSTED_PROXY_IPS).toContain('203.0.113.7');
   });
 });
 

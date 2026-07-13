@@ -19,8 +19,9 @@ BEGIN;
 --   vínculo para elas no meio do caminho.
 --
 --   ESCRITA (uma conta por arquivo que escreve, para não colidir na única (accountId, orgId)):
---     · Fabio → rls.test.ts
---     · Gil   → rls-observability.test.ts
+--     · Fabio  → rls.test.ts
+--     · Gil    → rls-observability.test.ts
+--     · Heitor → org-context.test.ts (cria/apaga um vínculo REMOVED na Org C — SC-414)
 --
 --   Dani é o caso "conta SEM Membership nenhuma" e por isso NÃO pode ser usada para criar
 --   vínculos: bastaria um arquivo paralelo criar um para ela e o teste de "conta sem vínculo"
@@ -34,8 +35,9 @@ INSERT INTO "Account" ("id", "email", "name", "createdAt", "updatedAt") VALUES
   ('33333333-3333-3333-3333-333333333333', 'carla@exemplo.test', 'Carla', now(), now()),
   ('44444444-4444-4444-4444-444444444444', 'dani@exemplo.test',  'Dani',  now(), now()),
   ('55555555-5555-5555-5555-555555555555', 'eva@exemplo.test',   'Eva',   now(), now()),
-  ('66666666-6666-6666-6666-666666666666', 'fabio@exemplo.test', 'Fabio', now(), now()),
-  ('77777777-7777-7777-7777-777777777777', 'gil@exemplo.test',   'Gil',   now(), now())
+  ('66666666-6666-6666-6666-666666666666', 'fabio@exemplo.test',  'Fabio',  now(), now()),
+  ('77777777-7777-7777-7777-777777777777', 'gil@exemplo.test',    'Gil',    now(), now()),
+  ('88888888-8888-8888-8888-888888888888', 'heitor@exemplo.test', 'Heitor', now(), now())
 ON CONFLICT ("id") DO NOTHING;
 
 -- ── Organização A ──

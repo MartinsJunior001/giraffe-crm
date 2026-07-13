@@ -14,13 +14,16 @@ const G2_MAX = 20;
 const G2_JANELA_S = 15 * 60;
 
 /**
- * Mensagem única para TODA falha de autenticação e para o 429.
+ * Mensagem do 429 (limite excedido).
  *
- * Uma mensagem diferente para "conta não existe" e "senha errada" é um oráculo de enumeração: o
- * atacante descobre quais e-mails existem sem nunca acertar uma senha. E um 429 que só dispara para
- * contas reais é o mesmo oráculo, com passos extras.
+ * A neutralidade contra ENUMERAÇÃO — "conta não existe" indistinguível de "senha errada" — não é
+ * imposta aqui: ela é herdada do Better Auth, que devolve um único `INVALID_EMAIL_OR_PASSWORD` para
+ * os dois casos **e** roda um hash dummy no caminho de conta inexistente, igualando o tempo. Uma
+ * constante nossa que fingisse impor isso seria pior que inútil: daria falsa sensação de defesa sem
+ * estar ligada a nada. Quem guarda a neutralidade é o teste de enumeração em `login-http.test.ts`,
+ * que compara corpo, status e tempo dos dois caminhos — se uma atualização do Better Auth os
+ * separasse, ele ficaria vermelho.
  */
-const MENSAGEM_NEUTRA = 'Credenciais inválidas.';
 const MENSAGEM_LIMITE = 'Muitas tentativas. Tente novamente mais tarde.';
 
 /**
@@ -124,11 +127,17 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
 
     hooks: {
       /**
-       * G1 — bloqueio ANTES de verificar a senha.
+       * G1 — conta a tentativa e bloqueia, ATOMICAMENTE, ANTES de verificar a senha.
        *
-       * A ordem é a regra inteira. Se checássemos depois, a 6ª tentativa com a senha CERTA passaria
-       * — e o limite não limitaria coisa alguma: bastaria ao atacante acertar na tentativa seguinte
-       * à quinta.
+       * A ordem é a regra inteira. Se checássemos depois, a 6ª tentativa com a senha CERTA passaria —
+       * e o limite não limitaria coisa alguma.
+       *
+       * **Por que contar aqui, e não no `after`.** A versão anterior lia o contador aqui (um SELECT)
+       * e só incrementava no `after`, depois da verificação de senha. Isso era um TOCTOU: uma rajada
+       * concorrente contra UMA conta lia toda o contador baixo, passava toda, e só então incrementava
+       * — dezenas de senhas verificadas contra uma conta cujo limite é 5. E o hash lento da senha, no
+       * meio, ALARGAVA a janela. `registrarTentativa` faz o incremento e a decisão numa instrução só:
+       * numa rajada de N, exatamente 5 passam e as demais são barradas antes de tocar a senha.
        *
        * O 429 é idêntico para conta existente e inexistente: um limite que só dispara para contas
        * reais é um oráculo de enumeração com passos extras.
@@ -139,7 +148,8 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
         const email = (ctx.body as { email?: unknown } | undefined)?.email;
         if (typeof email !== 'string' || email === '') return;
 
-        if (await falhas.estaBloqueado(email)) {
+        const { excedido } = await falhas.registrarTentativa(email);
+        if (excedido) {
           // Os headers são o TERCEIRO argumento do `APIError` — não uma chave do corpo. O corpo é
           // tipado `Record<string, any>`, então passá-los ali compila em silêncio, vira um campo do
           // JSON e NENHUM header HTTP é emitido. É o mesmo `X-Retry-After` que o rate limiter nativo
@@ -154,9 +164,9 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
       }),
 
       /**
-       * G1 — contabiliza a falha, ou limpa o contador no sucesso (G4).
+       * G4 — o sucesso limpa o contador do IDENTIFICADOR. A falha já foi contada no `before`.
        *
-       * Só o contador do IDENTIFICADOR é limpo. O de IP (G2) **não** — se fosse, o atacante
+       * Só o contador do identificador é limpo. O de IP (G2) **não** — se fosse, o atacante
        * intercalaria um login válido da própria conta a cada N tentativas e zeraria o antiabuso de
        * origem para sempre.
        */
@@ -166,15 +176,13 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
         const email = (ctx.body as { email?: unknown } | undefined)?.email;
         if (typeof email !== 'string' || email === '') return;
 
-        const devolvido = ctx.context.returned;
-        const falhou = devolvido instanceof APIError;
+        const sucesso = !(ctx.context.returned instanceof APIError);
+        if (!sucesso) return; // a tentativa falha já está contada; nada a fazer
 
-        if (falhou) {
-          await falhas.registrarFalha(email);
-          return;
-        }
-
-        await falhas.limpar(email);
+        // Best-effort: a sessão JÁ foi criada. Um blip de banco no DELETE não pode transformar um
+        // login bem-sucedido num 500 sem cookie — o antiabuso é pós-processamento, não derruba uma
+        // autenticação concluída. O contador expira sozinho com a janela, no pior caso.
+        await falhas.limparBestEffort(email);
       }),
     },
   } satisfies BetterAuthOptions;
@@ -183,4 +191,4 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
 }
 
 export type Auth = ReturnType<typeof criarAuth>;
-export { MENSAGEM_NEUTRA, MENSAGEM_LIMITE, G2_MAX, G2_JANELA_S };
+export { MENSAGEM_LIMITE, G2_MAX, G2_JANELA_S };

@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 /**
@@ -52,6 +53,17 @@ const EnvSchema = z
       .min(1, 'CORS_ALLOWED_ORIGINS é obrigatória (sem wildcard em produção)')
       .refine((v) => parseCorsOrigins(v).length > 0, {
         message: 'CORS_ALLOWED_ORIGINS deve conter ao menos uma origem válida',
+      })
+      // Curingas são recusados — e não só o `*` isolado. Esta variável alimenta o CORS **e** o
+      // `trustedOrigins` do Better Auth (CSRF), e o `wildcardMatch` dele trata QUALQUER entrada com
+      // `*` ou `?` como padrão: `*.dominio.com` e `http://*` casariam qualquer subdomínio/origem. O
+      // `cors` do Express compara por igualdade exata (lá o curinga é inócuo), mas o CSRF do Better
+      // Auth o honra — a proteção ficaria a uma variável de ambiente de ser anulada, sem alarme.
+      // O invariante é "sem wildcard"; qualquer curinga (não apenas `*` puro) falha no boot.
+      // Um origin legítimo (`esquema://host[:porta]`) nunca contém `*` nem `?`.
+      .refine((v) => !parseCorsOrigins(v).some((o) => o.includes('*') || o.includes('?')), {
+        message:
+          'CORS_ALLOWED_ORIGINS não pode conter curingas ("*"/"?") — alimenta o CORS e o trustedOrigins/CSRF do Better Auth',
       }),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -123,8 +135,66 @@ const EnvSchema = z
      * está na rede interna": isso declararia confiável qualquer contêiner da rede, inclusive um
      * comprometido. Os endereços do proxy do Coolify entram quando forem verificados contra o ambiente
      * real (gate de staging), não por suposição.
+     *
+     * Faixas CIDR **não** são suportadas nesta Story (débito D-02): entradas com `/` são recusadas no
+     * boot, para não dar a impressão de que uma faixa funciona quando a comparação é por igualdade.
      */
     TRUSTED_PROXY_IPS: z.string().default(''),
+
+    /**
+     * Opt-in para rodar em produção **sem** proxy confiável (exposição direta). Fail-closed.
+     *
+     * Em produção, `TRUSTED_PROXY_IPS` vazio ATRÁS de um proxy reverso faz o IP de toda requisição
+     * virar o do proxy — e o G2 (por IP) colapsa num balde único: um DoS de login em escala de
+     * plataforma. Por isso, em produção, a lista vazia **falha no boot** — a menos que o operador
+     * declare explicitamente que a exposição é direta (sem proxy), assumindo que o IP virá do socket.
+     * Sem este opt-in, ninguém sobe em produção com o footgun ligado por esquecimento.
+     */
+    ALLOW_DIRECT_EXPOSURE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+  })
+  /**
+   * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em
+   * silêncio — sob tráfego real.
+   */
+  .superRefine((env, ctx) => {
+    const entradas = env.TRUSTED_PROXY_IPS.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    for (const entrada of entradas) {
+      if (entrada === '*') {
+        ctx.addIssue({ code: 'custom', message: 'TRUSTED_PROXY_IPS não pode conter "*"' });
+        continue;
+      }
+      // CIDR (`/`) fica para D-02. Recusar em vez de aceitar-e-ignorar: uma faixa que não funciona é
+      // pior que um erro, porque parece uma defesa.
+      if (entrada.includes('/')) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `TRUSTED_PROXY_IPS não suporta CIDR nesta versão ("${entrada}") — use IPs exatos (débito D-02)`,
+        });
+        continue;
+      }
+      if (isIP(entrada) === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `TRUSTED_PROXY_IPS contém entrada que não é um IP válido: "${entrada}"`,
+        });
+      }
+    }
+
+    // Fail-closed em produção: sem proxy confiável E sem declarar exposição direta = não sobe.
+    if (env.NODE_ENV === 'production' && entradas.length === 0 && !env.ALLOW_DIRECT_EXPOSURE) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'em produção, defina TRUSTED_PROXY_IPS (IPs do proxy) ou ALLOW_DIRECT_EXPOSURE=true ' +
+          '(exposição direta, sem proxy) — a lista vazia atrás de um proxy colapsa o G2 num balde único',
+      });
+    }
   })
   /**
    * Coerência da rotação do HMAC (D6). Uma rotação mal configurada falha **no boot**, não em silêncio

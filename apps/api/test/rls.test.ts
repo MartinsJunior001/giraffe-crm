@@ -319,6 +319,21 @@ describe('privilégio mínimo — o que a RLS não alcança, o GRANT nega', () =
     );
   });
 
+  it('o runtime NÃO pode apagar uma AuthCredential (nem uma AuthSession por DELETE nesta Story… mas essa é 1.5)', async () => {
+    // `AuthCredential` guarda o hash de senha. Ela NÃO tem RLS (é global, como `Account`), então
+    // quem nega o `DELETE` é só o GRANT — e a migration deliberadamente não o concede. Um `DELETE`
+    // aqui apagaria a credencial de uma conta sem contexto organizacional nenhum, deixando a pessoa
+    // sem como logar. O `summary.md` afirmava isto "verificado em psql"; aqui vira teste versionado,
+    // para que um `GRANT DELETE` acidental numa migration futura fique VERMELHO.
+    //
+    // `deleteMany` com filtro que não casa nada: o Postgres checa o privilégio ANTES de olhar as
+    // linhas, então falha com "permission denied" sem tocar em dado real.
+    const inexistente = '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
+    await expect(
+      prisma.authCredential.deleteMany({ where: { userId: inexistente } }),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
   it('mas PODE atualizar a própria Organização (o caminho positivo continua de pé)', async () => {
     const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
 

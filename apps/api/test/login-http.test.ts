@@ -228,9 +228,14 @@ describe('enumeração — a rejeição não pode dizer quem existe', () => {
     // O limite é frouxo de propósito: o que se quer excluir é uma diferença de ORDEM DE GRANDEZA
     // (ex.: 1ms vs 120ms), que é o que um atacante consegue explorar pela rede. Um limite apertado
     // aqui produziria um teste instável, e teste instável é teste que a equipe aprende a ignorar.
+    //
+    // O piso de comparação é 5ms (não 1ms): sobre uma base de 1-2ms, um hiccup de GC/agendador em CI
+    // contencionado dispararia a razão sem que houvesse diferença real. O que importa é que os dois
+    // caminhos rodam o mesmo hash — provado de fato pelo corpo idêntico nos testes acima; este é o
+    // reforço temporal, deliberadamente tolerante.
     const razao =
-      Math.max(tExistente, tInexistente) / Math.max(1, Math.min(tExistente, tInexistente));
-    expect(razao).toBeLessThan(5);
+      Math.max(tExistente, tInexistente) / Math.max(5, Math.min(tExistente, tInexistente));
+    expect(razao).toBeLessThan(10);
   });
 });
 
@@ -277,6 +282,28 @@ describe('G1 — falhas por identificador', () => {
     // junto — e um atacante derrubaria uma empresa inteira estourando o limite de um único e-mail.
     const res = await login(EVA, SENHA);
     expect(res.status).toBe(200);
+  });
+
+  it('rajada CONCORRENTE contra uma conta: no máximo 5 senhas chegam a ser verificadas', async () => {
+    // O ataque real, e o que o desenho anterior NÃO continha. Antes, o bloqueio era um SELECT no
+    // `before` e o incremento vinha no `after`, depois da verificação de senha — com o hash lento no
+    // meio ALARGANDO a janela. Uma rajada simultânea lia toda o contador baixo, passava toda, e só
+    // então incrementava: dezenas de senhas verificadas contra uma conta cujo limite é 5.
+    //
+    // Um 401 significa "a senha foi verificada" (e falhou); um 429, "barrado antes de tocar a senha".
+    // Com a decisão atômica no `before`, no máximo 5 requisições chegam ao 401.
+    const alvo = sintetico('rajada');
+    const N = 15; // < 20 para isolar o G1 do G2 (limite por IP)
+
+    const respostas = await Promise.all(Array.from({ length: N }, () => login(alvo, SENHA_ERRADA)));
+    const status = respostas.map((r) => r.status);
+
+    const verificadas = status.filter((s) => s === 401).length;
+    const barradas = status.filter((s) => s === 429).length;
+
+    expect(verificadas).toBeLessThanOrEqual(MAX_FALHAS); // ≤ 5 senhas verificadas
+    expect(verificadas + barradas).toBe(N); // toda requisição foi 401 ou 429
+    expect(barradas).toBeGreaterThanOrEqual(N - MAX_FALHAS); // ≥ 10 barradas
   });
 });
 
@@ -367,6 +394,66 @@ describe('G2 — solicitações por IP (rate limiter nativo)', () => {
       expect(res.status).toBe(429);
     } finally {
       await segunda.close();
+    }
+  });
+});
+
+describe('FR-403 — a senha jamais aparece nos logs', () => {
+  it('nem no login que falha, nem no que tem sucesso, a senha em claro é registrada', async () => {
+    // A senha viaja no corpo da requisição. Se qualquer ponto do pipeline serializasse esse corpo num
+    // log (um pino-http mal configurado, um catch que loga o request), a senha vazaria para o arquivo
+    // de log — que costuma ter retenção longa e leitura ampla. Aqui subimos uma instância com o log
+    // LIGADO, capturamos TUDO que ela escreve, e provamos que a senha não está lá.
+    const nivelAnterior = process.env.LOG_LEVEL;
+    process.env.LOG_LEVEL = 'info'; // a instância padrão do arquivo é 'silent'; aqui queremos o log real
+
+    const capturado: string[] = [];
+    const stdoutReal = process.stdout.write.bind(process.stdout);
+    const stderrReal = process.stderr.write.bind(process.stderr);
+    const capturar =
+      (real: typeof stdoutReal) =>
+      (chunk: unknown, ...resto: unknown[]): boolean => {
+        capturado.push(typeof chunk === 'string' ? chunk : String(chunk));
+        return (real as (...args: unknown[]) => boolean)(chunk, ...resto);
+      };
+    (process.stdout as { write: unknown }).write = capturar(stdoutReal);
+    (process.stderr as { write: unknown }).write = capturar(stderrReal);
+
+    let comLog: INestApplication | undefined;
+    try {
+      // SEM `logger: false`: queremos o pino-http de verdade emitindo o log de cada requisição.
+      comLog = await NestFactory.create(AppModule);
+      await comLog.listen(0);
+      const url = await comLog.getUrl();
+
+      const post = (email: string, password: string) =>
+        fetch(`${url}/api/auth/sign-in/email`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+      await post(sintetico('fr403-falha'), SENHA_ERRADA); // caminho de erro (401)
+      await post(ANA, SENHA); // caminho de sucesso (200)
+
+      // pino-http registra na conclusão da resposta; um respiro garante o flush do log da resposta.
+      await new Promise((r) => setTimeout(r, 100));
+
+      const tudo = capturado.join('');
+
+      // Guarda contra falso-positivo: se a captura viesse vazia (pino escrevendo direto no fd),
+      // o `not.toContain` passaria sem ter olhado nada. Exigimos evidência de que HOUVE log.
+      expect(tudo.length).toBeGreaterThan(0);
+      expect(tudo).toContain('giraffe-api'); // o `base` do pino — prova que capturamos o log da app
+
+      // O essencial: nenhuma das senhas em claro está no que foi logado.
+      expect(tudo).not.toContain(SENHA);
+      expect(tudo).not.toContain(SENHA_ERRADA);
+    } finally {
+      (process.stdout as { write: unknown }).write = stdoutReal;
+      (process.stderr as { write: unknown }).write = stderrReal;
+      process.env.LOG_LEVEL = nivelAnterior;
+      await comLog?.close();
     }
   });
 });

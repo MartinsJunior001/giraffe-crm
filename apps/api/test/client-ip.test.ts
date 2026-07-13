@@ -79,6 +79,31 @@ describe('com proxy confiável', () => {
     expect(ip).toBe(PROXY);
   });
 
+  it('salto não-confiável que não é IP válido cai no peer (não envenena o contador)', () => {
+    // Um proxy confiável pode encaminhar lixo no lugar do IP do cliente (`999.999.999.999`, um nome,
+    // vazio). Se esse lixo virasse a chave do rate limit, o atacante escolheria em qual balde cair —
+    // um por string forjada — e o G2 nunca acumularia. A regra: salto que não é IP de verdade é
+    // descartado e vale o peer (o proxy), que é sempre um endereço real.
+    const ip = resolverIpCliente({
+      peer: PROXY,
+      forwarded: `${CLIENTE}, 999.999.999.999`,
+      proxiesConfiaveis: [PROXY],
+    });
+
+    expect(ip).toBe(PROXY);
+  });
+
+  it('lixo não-IP na ponta direita não é aceito nem quando há um cliente válido antes', () => {
+    // Variação com string arbitrária (não numérica): mesmo tratamento — não é IP, cai no peer.
+    const ip = resolverIpCliente({
+      peer: PROXY,
+      forwarded: `${CLIENTE}, não-é-um-ip`,
+      proxiesConfiaveis: [PROXY],
+    });
+
+    expect(ip).toBe(PROXY);
+  });
+
   it('o proxy confiável NÃO autoriza um peer qualquer a forjar', () => {
     // Configurar o proxy não abre o header para todo mundo: quem chega direto no contêiner (peer =
     // atacante) continua sem autoridade nenhuma sobre o próprio IP. É exatamente o caso que o
