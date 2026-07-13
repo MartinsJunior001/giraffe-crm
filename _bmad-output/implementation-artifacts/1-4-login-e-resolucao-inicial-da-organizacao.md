@@ -1,7 +1,7 @@
 ---
 story_key: 1-4-login-e-resolucao-inicial-da-organizacao
 epic: 1
-status: in-progress
+status: done
 gate_seguranca: RATIFICADO em 2026-07-13 (G1–G6)
 ---
 
@@ -11,11 +11,18 @@ gate_seguranca: RATIFICADO em 2026-07-13 (G1–G6)
 **I want** autenticar-me e ser colocado numa Organização válida (ou num estado honesto sem Organização),
 **So that** eu opere somente num contexto válido, sem troca silenciosa.
 
-**Status: em implementação.** O épico exigia que *"limite de tentativas e política de rate limit"*
-fossem **definidos por Segurança antes da implementação**. Esse gate foi **ratificado em 2026-07-13**
-(G1–G6, abaixo). Até lá o documento parou na fronteira, de propósito: escolher os números por conta
-própria seria decidir política de segurança em nome de quem tem a autoridade — e alterar requisito em
-silêncio.
+**Status: done** (encerrada em 2026-07-13). O gate de Segurança (G1–G6) foi **ratificado em
+2026-07-13**; a implementação passou por duas rodadas de Code Review e por re-revisão com três
+agentes adversariais, e foi integrada à `main` pelo **PR #3** (merge commit `2fd7185`, `--no-ff`),
+com o **CI da `main` verde** (Qualidade, Testes contra PostgreSQL real, Containers, Segurança). Débitos
+que seguem para o gate de staging estão registrados em `gates/1-4/summary.md` (CR-09, D-01, D-02,
+D-03, D-05). O parágrafo abaixo preserva o registro histórico do porquê o documento parou na fronteira
+até o gate ser ratificado.
+
+O épico exigia que *"limite de tentativas e política de rate limit"* fossem **definidos por Segurança
+antes da implementação**. Até a ratificação o documento parou na fronteira, de propósito: escolher os
+números por conta própria seria decidir política de segurança em nome de quem tem a autoridade — e
+alterar requisito em silêncio.
 
 ---
 
