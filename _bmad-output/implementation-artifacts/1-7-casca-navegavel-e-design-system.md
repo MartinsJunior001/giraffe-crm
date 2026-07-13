@@ -1,7 +1,7 @@
 ---
 story_key: 1-7-casca-navegavel-e-design-system
 epic: 1
-status: review
+status: done
 release: CORE (Lote 1)
 risco: NORMAL
 baseline_commit: 549f18745a148642ba061faa426af7d1193402a5
@@ -228,3 +228,4 @@ claude-opus-4-8 (Claude Code)
 |---|---|
 | 2026-07-13 | Story criada (create-story) a partir de `epics.md` (Story 1.7), `DESIGN.md` (tokens), `EXPERIENCE.md` (chrome/a11y/responsividade) e do estado atual do `apps/web` (casca mínima da 1.5). Classificada **CORE (Lote 1)**, risco **NORMAL** (casca/UX; sem migration; sem nova fronteira de segurança — autorização é do servidor). Único toque no backend: expor `papel` (já no contexto da 1.6) no `/organizations/current`. Dependências 1.4/1.6 `done`. Status → ready-for-dev. |
 | 2026-07-13 | Code review (`gates/1-7/code-review.md`): finding **CR-1 (MEDIUM)** — AC4 quebrado no mobile. A `Sidebar` (`max-md:hidden`) sumia abaixo de `md` sem navegação alternativa, deixando a casca inutilizável em telas estreitas. **Correção:** `Sidebar.tsx` → `Navegacao.tsx` (Client Component stateless com prop `orientacao`: `vertical` = sidebar desktop, `horizontal` = barra rolável mobile); `layout.tsx` renderiza ambas, alternadas por media query CSS. Item ativo mantém `aria-current` + fundo/peso/ícone (nunca só cor) nas duas orientações. Provado: `casca.test.tsx`, typecheck Web, 46/46 Web, build. Veredito **APROVADO** — sem CRITICAL/HIGH. |
+| 2026-07-13 | Merge do PR #9 (`--no-ff`, commit `fece034`) com CI 100% verde nos 4 jobs (Qualidade, Testes, Containers, Segurança). Encerramento administrativo: Status → **done**. |
