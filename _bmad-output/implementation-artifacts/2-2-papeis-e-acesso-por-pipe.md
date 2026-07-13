@@ -1,7 +1,7 @@
 ---
 story_key: 2-2-papeis-e-acesso-por-pipe
 epic: 2
-status: ready-for-dev
+status: in-progress
 release: CORE (Lote 2 — WAVE 2 do épico)
 risco: CRÍTICO
 baseline_commit: pendente (empilha sobre a 2.1 / PR #17)
@@ -176,13 +176,58 @@ auditar (D1.6 / AD-31 — alertar mudança de papel/Membership).
 claude-opus-4-8 (Claude Code)
 
 ### Debug Log References
-_(a preencher na implementação)_
+
+**Incremento 1 (gestão de concessões) — 2026-07-13.** Implementado em branch empilhada sobre a 2.1.
+
+Dois falsos negativos de *arranjo de teste* encontrados e corrigidos (nenhum era defeito do código):
+- **Regex de UUID no DTO** rejeitava os ids sintéticos de Membership do seed (`a1a1a1a1-0000-...`, sem
+  nibble de versão v1–5). Relaxado para o FORMATO UUID (o que a coluna `@db.Uuid` aceita) — a fronteira
+  real de existência/escopo é a RLS + validação no serviço, não o regex.
+- **Suíte "verde" que eu li como vermelha:** rodei a suíte com `set -a && . ./.env` no shell; o `.env` tem
+  `NODE_ENV=development`, que troca o transporte do Pino para o modo *pretty* (escreve no fd, fora do
+  `process.stdout.write`), quebrando os 2 testes de captura de log (`login-http`, `sessao`). Rodada do
+  jeito do projeto (`pnpm --filter @giraffe/api test`, sem sourcear `.env`): **266/266**. O código nunca
+  esteve quebrado; o defeito era a minha invocação.
+- **Colisão no índice parcial dentro do próprio teste RLS:** um teste deixava uma concessão ATIVA no par
+  `(pipe, pessoa)` e o teste do índice parcial colidia nele. Isolado com uma segunda Membership descartável.
 
 ### Completion Notes List
-_(a preencher na implementação)_
+
+**Feito neste incremento (camada de gestão de concessões — aditiva, sem tocar o comportamento de acesso a
+Pipe da 2.1):**
+- Schema: enums `PipeRole`/`PipeGrantState` + model `PipeGrant` (liga a `Membership`, não `Account`).
+- Migration `20260713130000_pipe_grants` com RLS ENABLE+FORCE, 4 policies, **índice único parcial**
+  `(pipeId, membershipId) WHERE state='ACTIVE'` (raw SQL — Prisma 6.19.3 não expressa no schema), GRANT
+  SELECT/INSERT/UPDATE **sem DELETE** (revogar é soft-delete). Rollback. **SC-228 verde** em banco
+  descartável (`gates/2-2/migration-check.md`).
+- Módulo `src/pipes/grants/` (service/controller/dto): conceder, listar, alterar papel, revogar. Só o
+  **Admin da Org** administra concessões em 2.2 (guard `@Requer('administrar','Pipe')` — MEMBER/GUEST 403).
+  Recusa 2ª concessão ativa ao mesmo par (409 pelo índice parcial); alvo de outra Org → 400; Pipe de outra
+  Org → 404 (não-enumeração).
+- `PipeGrant` em `MODELOS_AUDITADOS` (conceder/revogar auditados).
+- Testes: `pipe-grants-rls.test.ts` + `pipe-grants-http.test.ts` (13 casos, PostgreSQL real).
+- Suíte API **266/266**; typecheck/lint/format limpos.
+
+**Deliberadamente adiado para depois do merge da 2.1 (incremento 2):** a mudança do **modelo de acesso a
+Pipe** — abrir leitura a MEMBER/GUEST filtrando pela concessão (não-enumeração), 404 para Pipe não
+concedido, `VIEWER` não edita. Isso reescreve `pipes.service`/`pipes.controller` e testes da **2.1** (que
+hoje negam MEMBER/GUEST categoricamente) — arquivos **sob revisão externa no PR #17**. Fazer isso agora
+entrelaçaria com o PR #17 e geraria retrabalho no rebase. Cobre AC1/AC3 e SC-221/222/224/227, que ficam
+para o incremento 2 sobre base estável. Ver `analyze.md` RV-3.
 
 ### File List
-_(a preencher na implementação)_
+
+**Novos**
+- `apps/api/prisma/migrations/20260713130000_pipe_grants/migration.sql`
+- `apps/api/prisma/rollback/20260713130000_pipe_grants.down.sql`
+- `apps/api/src/pipes/grants/pipe-grants.{service,controller,dto}.ts`
+- `apps/api/test/pipe-grants-{rls,http}.test.ts`
+- `_bmad-output/implementation-artifacts/gates/2-2/migration-check.md`
+
+**Modificados**
+- `apps/api/prisma/schema.prisma` (enums + model `PipeGrant` + relações inversas)
+- `apps/api/src/pipes/pipes.module.ts` (registra o módulo de concessões)
+- `apps/api/src/kernel/db/tenant-context.ts` (`PipeGrant` em `MODELOS_AUDITADOS`)
 
 ---
 
