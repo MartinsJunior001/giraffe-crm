@@ -80,11 +80,16 @@ ALTER TABLE "Membership" ADD CONSTRAINT "Membership_orgId_fkey" FOREIGN KEY ("or
 
 -- Helpers: NULL quando ausente ou malformado. `''::uuid` lançaria exceção, e uma
 -- exceção não é negação — precisa ser NULL para que a policy simplesmente não case.
+--
+-- A exceção capturada é APENAS `invalid_text_representation` (uuid malformado). Um
+-- `WHEN others` engoliria também falhas reais de infraestrutura e as transformaria,
+-- indistinguivelmente, em "sem contexto" => negação silenciosa. Negar por contexto
+-- inválido é correto; negar por erro de banco escondido é um bug disfarçado de policy.
 CREATE OR REPLACE FUNCTION current_org_id() RETURNS uuid
 LANGUAGE plpgsql STABLE AS $$
 BEGIN
   RETURN NULLIF(current_setting('app.current_org_id', true), '')::uuid;
-EXCEPTION WHEN others THEN
+EXCEPTION WHEN invalid_text_representation THEN
   RETURN NULL;  -- contexto inválido (uuid malformado) => negado, não erro 500
 END;
 $$;
@@ -93,7 +98,7 @@ CREATE OR REPLACE FUNCTION current_account_id() RETURNS uuid
 LANGUAGE plpgsql STABLE AS $$
 BEGIN
   RETURN NULLIF(current_setting('app.current_account_id', true), '')::uuid;
-EXCEPTION WHEN others THEN
+EXCEPTION WHEN invalid_text_representation THEN
   RETURN NULL;
 END;
 $$;
@@ -133,15 +138,27 @@ CREATE POLICY org_delete ON "Organization"
 ALTER TABLE "Membership" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Membership" FORCE ROW LEVEL SECURITY;
 
--- LEITURA: orgId = contexto da Org  OU  accountId = contexto da conta.
+-- LEITURA. Dois modos MUTUAMENTE EXCLUSIVOS, e a exclusão é o ponto:
 --
--- O segundo ramo existe porque o login (Story 1.4) precisa responder "a quais
--- Organizações esta conta pertence?" ANTES de existir contexto de Organização.
--- Sem ele, o isolamento quebraria o próprio login. Não vaza nada: a conta vê
--- apenas os vínculos DELA. Sem NENHUM dos dois contextos, ambos são NULL => negado.
+--   1. HÁ contexto de Organização  => vê-se APENAS as linhas daquela Organização.
+--   2. NÃO há contexto de Organização => vê-se APENAS os vínculos da própria conta.
+--
+-- O modo 2 existe porque o login (Story 1.4) precisa responder "a quais Organizações
+-- esta conta pertence?" ANTES de existir Organização ativa. Sem ele, o isolamento
+-- quebraria o próprio login.
+--
+-- O `current_org_id() IS NULL` no segundo ramo NÃO é decoração. Um `OR "accountId" =
+-- current_account_id()` solto vaza: no contexto da Org A, com a conta de alguém que
+-- também pertence à Org B, o ramo da conta casa com a Membership dessa pessoa na Org B
+-- e ela aparece dentro de uma consulta escopada na Org A — violando o AC1. E é
+-- exatamente esse o caminho de produção, porque `withTenantContext` define os DOIS
+-- contextos na mesma transação. Havendo Organização ativa, ela é a única fronteira.
+--
+-- Sem NENHUM dos dois contextos, ambos são NULL => negado (deny-by-default).
 CREATE POLICY membership_select ON "Membership"
   FOR SELECT USING (
-    "orgId" = current_org_id() OR "accountId" = current_account_id()
+    "orgId" = current_org_id()
+    OR (current_org_id() IS NULL AND "accountId" = current_account_id())
   );
 
 -- ESCRITA: sempre restrita ao contexto da Organização. Uma conta NÃO cria nem
@@ -157,7 +174,38 @@ CREATE POLICY membership_delete ON "Membership"
   FOR DELETE USING ("orgId" = current_org_id());
 
 -- ---------------------------------------------------------------------------
--- Privilégios do papel de aplicação: DML apenas. Sem DDL, sem ownership.
+-- Privilégios do papel de aplicação: DML MÍNIMA. Sem DDL, sem ownership.
+--
+-- O GRANT é uma fronteira de segurança por si só, não um detalhe administrativo.
+-- Onde a RLS não alcança, é ele que nega. Cada privilégio abaixo existe porque há
+-- um uso concreto NESTA Story; nenhum foi concedido "por precaução".
 -- ---------------------------------------------------------------------------
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Account", "Organization", "Membership" TO giraffe_app;
+
+-- Account — SOMENTE LEITURA para o runtime.
+--
+-- `Account` é global e sem RLS (AD-10), então nenhuma policy a protege. Com DELETE,
+-- o papel de aplicação apagaria uma conta SEM contexto organizacional nenhum — e a
+-- cascata da FK `Membership_accountId_fkey` destruiria os vínculos dessa conta em
+-- TODAS as Organizações. Ações referenciais (cascade) rodam com bypass de row
+-- security: é comportamento documentado do PostgreSQL, não uma brecha do modelo.
+-- Ou seja, o DELETE em `Account` era uma escrita cross-tenant que passava POR BAIXO
+-- da RLS. Sem o privilégio, o caminho deixa de existir.
+--
+-- INSERT/UPDATE também ficam de fora: esta Story não escreve em `Account` em lugar
+-- nenhum. A Story que introduzir cadastro/edição de conta concede o que precisar,
+-- com o teste que prova o escopo.
+GRANT SELECT ON "Account" TO giraffe_app;
+
+-- Organization — leitura e atualização da PRÓPRIA Organização (a policy diz qual).
+--
+-- Sem INSERT e sem DELETE, por decisão: a Story documenta que o papel de runtime
+-- NÃO cria Organizações (o bootstrap do primeiro tenant é da Story 1.4). Só a policy
+-- não bastava — `org_insert` é `WITH CHECK ("id" = current_org_id())`, que é
+-- AUTO-SATISFAZÍVEL: basta definir o contexto com o UUID que a linha nova vai
+-- receber. Quem impede é o GRANT.
+GRANT SELECT, UPDATE ON "Organization" TO giraffe_app;
+
+-- Membership — CRUD completo, sempre dentro da Organização do contexto (policies).
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Membership" TO giraffe_app;
+
 GRANT EXECUTE ON FUNCTION current_org_id(), current_account_id() TO giraffe_app;

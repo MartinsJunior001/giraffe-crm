@@ -51,6 +51,10 @@ EXPOSE 3001
 # Readiness, não liveness: com o banco fora, a API não está apta a receber tráfego, e o
 # `depends_on: service_healthy` do Compose precisa refletir isso. `/health` responderia 200
 # com o banco caído e o container entraria em rotação sem conseguir atender nada.
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+#
+# `--timeout=6s` é MAIOR que o deadline interno da sonda (5s, em `prisma.service.ts`), e a
+# ordem importa: se o probe morresse antes da sonda responder, o container seria marcado
+# unhealthy sem nunca ter sido de fato consultado — um 503 fabricado pelo cronômetro errado.
+HEALTHCHECK --interval=30s --timeout=6s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.API_PORT||3001)+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/main.js"]

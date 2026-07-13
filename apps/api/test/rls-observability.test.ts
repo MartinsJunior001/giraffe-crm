@@ -12,7 +12,9 @@ import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-co
 
 const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ORG_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const ORG_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc'; // Org vazia: área de escrita dos testes
 const ANA = '11111111-1111-1111-1111-111111111111';
+const MEMBERSHIP_CARLA_EM_B = 'b1b1b1b1-0000-0000-0000-000000000001';
 
 type Nivel = 'debug' | 'info' | 'warn';
 type Entrada = { nivel: Nivel; obj: Record<string, unknown>; msg: string };
@@ -114,24 +116,23 @@ describe('log estruturado do contexto organizacional', () => {
 });
 
 describe('auditoria mínima de Organization e Membership (FR-214)', () => {
-  // Dani não tem Membership no seed. Os arquivos de teste rodam em PARALELO: usar a mesma
-  // conta que `rls.test.ts` usa para criar vínculos colidiria na constraint `(accountId,
-  // orgId)` — um erro que nada tem a ver com RLS e que mascararia o que se quer provar.
+  // Dani não tem Membership no seed, e a Org C nasce vazia. Os arquivos de teste rodam em
+  // PARALELO: escrever na Org A colidiria com o arquivo que afirma quantos vínculos ela tem.
   const DANI = '44444444-4444-4444-4444-444444444444';
 
   it('registra os seis campos exigidos numa mutação permitida', async () => {
     const { logger, entradas } = loggerEspiao();
-    const db = withTenantContext(prisma, { orgId: ORG_A, accountId: ANA }, logger);
+    const db = withTenantContext(prisma, { orgId: ORG_C, accountId: ANA }, logger);
 
     const criada = await db.membership.create({
-      data: { accountId: DANI, orgId: ORG_A, role: 'GUEST' },
+      data: { accountId: DANI, orgId: ORG_C, role: 'GUEST' },
     });
 
     const trilha = entradas.find((e) => e.obj.event === 'audit');
     expect(trilha).toBeDefined();
     expect(trilha!.obj).toMatchObject({
       actor: ANA, // ator
-      orgId: ORG_A, // Organização
+      orgId: ORG_C, // Organização
       action: 'create', // ação
       resource: 'Membership', // recurso
       result: 'allowed', // resultado
@@ -160,6 +161,62 @@ describe('auditoria mínima de Organization e Membership (FR-214)', () => {
       resource: 'Membership',
       result: 'denied',
     });
+  });
+
+  it('REGRESSÃO: mutação em lote FILTRADA pelo USING é auditada como negada, não permitida', async () => {
+    // O ponto cego da auditoria. O `USING` de uma policy não LANÇA — ele FILTRA. Um
+    // `updateMany` mirando outra Organização voltava com `{ count: 0 }` e sucesso, e a
+    // trilha registrava `result: 'allowed'` para a tentativa mais óbvia de vandalismo
+    // cross-tenant. Só o `WITH CHECK` (INSERT) levantava exceção — a minoria dos caminhos.
+    const { logger, entradas } = loggerEspiao();
+    const db = withTenantContext(prisma, { orgId: ORG_A, accountId: ANA }, logger);
+
+    const afetadas = await db.membership.updateMany({
+      where: { orgId: ORG_B },
+      data: { state: 'REMOVED' },
+    });
+    expect(afetadas.count).toBe(0); // a operação "deu certo" — e é esse o problema
+
+    const filtrada = entradas.find((e) => e.obj.event === 'rls.filtered');
+    expect(filtrada).toBeDefined();
+    expect(filtrada!.nivel).toBe('warn');
+
+    const trilha = entradas.find((e) => e.obj.event === 'audit');
+    expect(trilha!.obj).toMatchObject({
+      orgId: ORG_A,
+      action: 'updateMany',
+      resource: 'Membership',
+      result: 'denied',
+    });
+    expect(entradas.some((e) => e.obj.result === 'allowed')).toBe(false);
+  });
+
+  it('REGRESSÃO: deleteMany cruzado também é auditado como negado', async () => {
+    const { logger, entradas } = loggerEspiao();
+    const db = withTenantContext(prisma, { orgId: ORG_A, accountId: ANA }, logger);
+
+    const removidas = await db.membership.deleteMany({ where: { orgId: ORG_B } });
+    expect(removidas.count).toBe(0);
+
+    const trilha = entradas.find((e) => e.obj.event === 'audit');
+    expect(trilha!.obj).toMatchObject({ action: 'deleteMany', result: 'denied' });
+  });
+
+  it('REGRESSÃO: update de um registro invisível (P2025) não some da trilha', async () => {
+    // A terceira forma de negação. `update` de uma linha que o `USING` escondeu lança
+    // P2025 — que não é `42501` nem casa com /row-level security/. Antes, este caminho não
+    // era `allowed` (lançou) nem `denied` (não reconhecido): simplesmente não gerava evento.
+    const { logger, entradas } = loggerEspiao();
+    const db = withTenantContext(prisma, { orgId: ORG_A, accountId: ANA }, logger);
+
+    await expect(
+      db.membership.update({ where: { id: MEMBERSHIP_CARLA_EM_B }, data: { role: 'MEMBER' } }),
+    ).rejects.toMatchObject({ code: 'P2025' });
+
+    expect(entradas.some((e) => e.obj.event === 'rls.denied')).toBe(true);
+
+    const trilha = entradas.find((e) => e.obj.event === 'audit');
+    expect(trilha!.obj).toMatchObject({ action: 'update', result: 'denied' });
   });
 
   it('não audita leitura — a trilha não pode afogar em ruído', async () => {

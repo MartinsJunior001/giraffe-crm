@@ -50,4 +50,17 @@ INSERT INTO "Membership" ("id", "accountId", "orgId", "role", "state", "createdA
    'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'GUEST', 'SUSPENDED', now(), now())
 ON CONFLICT ("id") DO NOTHING;
 
+-- ── Organização C — VAZIA, e é para continuar vazia ──
+-- Existe só para os testes que precisam CRIAR e APAGAR vínculos. Os arquivos de teste rodam
+-- em PARALELO: enquanto um deles criasse uma Membership na Org A, o outro — que afirma
+-- "a Org A tem exatamente 2 vínculos" — falharia por contagem, sem nada a ver com RLS.
+-- Um teste de isolamento que quebra de forma intermitente por motivo alheio ao isolamento
+-- ensina a equipe a re-rodar até ficar verde, que é o pior hábito possível aqui.
+-- Org A e Org B são fixture de LEITURA; Org C é a área de escrita.
+SELECT set_config('app.current_org_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc', true);
+
+INSERT INTO "Organization" ("id", "name", "slug", "createdAt", "updatedAt") VALUES
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Organização C', 'org-c', now(), now())
+ON CONFLICT ("id") DO NOTHING;
+
 COMMIT;

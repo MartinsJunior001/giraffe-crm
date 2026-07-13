@@ -1,6 +1,34 @@
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { PrismaClient } from '../../../generated/prisma';
 import { getEnv } from '../config/env';
+
+/**
+ * Teto para a sonda de readiness (ver `isReachable`).
+ *
+ * 5s, e não 2s, por medição: a PRIMEIRA query de um client Prisma paga a subida do engine e
+ * a conexão — 2.038 ms neste projeto; as seguintes, 0 ms. Um deadline de 2s reprovava um
+ * banco perfeitamente saudável no primeiro `/ready` depois do boot, que é justamente quando
+ * o orquestrador pergunta. Aquecimento não é sinal de saúde.
+ *
+ * O deadline existe para limitar um banco PENDURADO (pacotes descartados, não recusados), em
+ * que a sonda esperaria pelo `pool_timeout` do Prisma. O `--timeout` do HEALTHCHECK no
+ * Dockerfile é maior que este valor — do contrário o probe morreria antes de a sonda ter
+ * chance de responder, e o container seria marcado unhealthy sem nunca ter sido consultado.
+ */
+const DEADLINE_READINESS_MS = 5_000;
+
+/**
+ * Remove qualquer string de conexão da mensagem antes de ela ir para o log.
+ *
+ * O erro do driver carrega host, porta, usuário e — na forma de URL — a SENHA. Não vazar
+ * para o cliente (o payload de `/ready` é `{status}` e nada mais) não basta: o log também
+ * é um destino, e um segredo em log é um segredo vazado (NFR-1/AD-29).
+ */
+function sanitizar(err: unknown): string {
+  const bruto = err instanceof Error ? err.message : String(err);
+  return bruto.replace(/postgres(?:ql)?:\/\/\S*/gi, '[conexão omitida]');
+}
 
 /**
  * Client do PostgreSQL para o RUNTIME da aplicação.
@@ -15,7 +43,7 @@ import { getEnv } from '../config/env';
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
-  constructor() {
+  constructor(private readonly logger: Logger) {
     super({ datasourceUrl: getEnv().DATABASE_URL });
   }
 
@@ -35,15 +63,41 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   }
 
   /**
-   * Readiness do banco. Devolve booleano — o erro NUNCA sobe para o payload de
-   * `/ready`, porque a mensagem do driver pode carregar host, porta e usuário.
+   * Readiness do banco: aptidão real para atender, não apenas "o socket respondeu".
+   *
+   * A sonda lê uma tabela do schema (`LIMIT 0` — não traz linha nem depende de contexto de
+   * RLS). Com isso ela prova, de uma vez: conexão viva, schema migrado e GRANT concedido ao
+   * papel de runtime. Um `SELECT 1` provaria só a conexão — e um container com o banco de
+   * pé e as migrations NÃO aplicadas responderia `200 ok` e entraria em rotação para falhar
+   * em toda requisição de domínio. Readiness que mente é pior que readiness ausente.
+   *
+   * Há DEADLINE próprio: sem ele, um banco pendurado (pacotes descartados, não recusados)
+   * seguraria a sonda até o `pool_timeout` do Prisma — mais que o `--timeout=3s` do
+   * HEALTHCHECK, que mataria o probe sem resposta alguma.
+   *
+   * Devolve booleano, e o erro NUNCA sobe para o payload de `/ready`. Mas é REGISTRADO,
+   * sanitizado: não vazar não pode significar não saber — sem isto, o 503 era mudo e o
+   * operador não tinha o que ler.
    */
   async isReachable(): Promise<boolean> {
+    let temporizador: NodeJS.Timeout | undefined;
     try {
-      await this.$queryRaw`SELECT 1`;
+      const prazo = new Promise<never>((_, reject) => {
+        temporizador = setTimeout(
+          () => reject(new Error(`sonda excedeu ${DEADLINE_READINESS_MS}ms`)),
+          DEADLINE_READINESS_MS,
+        );
+      });
+      await Promise.race([this.$queryRaw`SELECT 1 FROM "Membership" LIMIT 0`, prazo]);
       return true;
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        { event: 'db.unreachable', reason: sanitizar(err) },
+        'banco não está apto — /ready responderá 503',
+      );
       return false;
+    } finally {
+      clearTimeout(temporizador);
     }
   }
 }

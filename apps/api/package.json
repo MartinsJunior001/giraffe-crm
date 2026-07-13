@@ -2,7 +2,7 @@
   "name": "@giraffe/api",
   "version": "0.0.0",
   "private": true,
-  "description": "Giraffe CRM — API interna (NestJS). Story 1.1: esqueleto + health/readiness.",
+  "description": "Giraffe CRM — API interna (NestJS): health/readiness e isolamento multi-tenant por RLS.",
   "main": "dist/main.js",
   "files": [
     "dist"
@@ -16,7 +16,9 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "db:migrate": "node ../../scripts/db-migrate.mjs deploy",
-    "db:seed": "node ../../scripts/db-migrate.mjs seed"
+    "db:status": "node ../../scripts/db-migrate.mjs status",
+    "db:seed": "node ../../scripts/db-migrate.mjs seed",
+    "db:rollback": "node ../../scripts/db-migrate.mjs rollback"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

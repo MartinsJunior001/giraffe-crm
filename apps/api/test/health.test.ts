@@ -42,6 +42,10 @@ describe('health/readiness (HTTP)', () => {
   });
 
   it('GET /ready responde 200 com exatamente { status: "ok" }', async () => {
+    // Esta é também a regressão do deadline da sonda: é a PRIMEIRA consulta ao banco no
+    // processo, e portanto a que paga a subida do engine do Prisma (~2s medidos). Um
+    // deadline apertado demais reprova aqui um banco perfeitamente saudável — que é
+    // exatamente o momento em que o orquestrador pergunta se pode mandar tráfego.
     const res = await fetch(`${baseUrl}/ready`);
     expect(res.status).toBe(200);
 
@@ -116,10 +120,11 @@ describe('readiness com banco indisponível (HTTP)', () => {
 describe('boot com banco inalcançável (aplicação real)', () => {
   let app: INestApplication;
   let baseUrl: string;
-  let urlOriginal: string | undefined;
+  // Restaurar SÓ a DATABASE_URL deixava CORS_ALLOWED_ORIGINS e LOG_LEVEL forçados para quem
+  // viesse depois — teste passando (ou falhando) por estado herdado, não pelo que afirma.
+  const envOriginal = { ...process.env };
 
   beforeAll(async () => {
-    urlOriginal = process.env.DATABASE_URL;
     // Porta 1: recusa a conexão de imediato, sem pagar timeout.
     process.env.DATABASE_URL = 'postgresql://ninguem:nada@127.0.0.1:1/inexistente?schema=public';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
@@ -132,7 +137,7 @@ describe('boot com banco inalcançável (aplicação real)', () => {
 
   afterAll(async () => {
     await app?.close();
-    process.env.DATABASE_URL = urlOriginal;
+    process.env = { ...envOriginal };
   });
 
   it('a aplicação sobe: banco fora é falha de dependência, não erro de configuração', () => {

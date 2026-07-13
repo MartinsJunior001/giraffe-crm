@@ -1,47 +1,27 @@
 #!/bin/bash
-# Bootstrap de papéis — executado UMA vez pelo entrypoint do PostgreSQL, como superusuário,
-# antes de qualquer migration (AD-6).
+# Bootstrap de papéis no ambiente de DESENVOLVIMENTO.
 #
-# Criar papel exige privilégio de superusuário; nem `giraffe_migrator` nem `giraffe_app`
-# podem fazê-lo. Por isso este passo vive aqui, fora da migration: é bootstrap de
-# infraestrutura, não evolução de schema.
+# Este script não contém SQL: ele apenas executa, como superusuário, o mesmo arquivo
+# versionado que o deploy usa — `apps/api/prisma/bootstrap/00-roles.sql`, montado em
+# /bootstrap pelo Compose. Uma única definição de papéis para todos os ambientes; o que
+# muda é quem a executa. Manter uma cópia do SQL aqui produziria duas verdades, e a que
+# vale em produção seria a que ninguém testa.
 #
-# É um `.sh` e não um `.sql` porque as senhas vêm do AMBIENTE. Um `.sql` não interpola
-# variáveis, e o resultado seria credencial fixa no repositório — sem caminho de override,
-# a mesma senha previsível acabaria valendo em produção. Em produção os papéis são
-# provisionados pelo cofre/infra (AD-31); os defaults abaixo servem só ao `compose up` local.
+# O entrypoint do PostgreSQL roda este diretório UMA vez, e só com o datadir vazio. É
+# suficiente para o `compose up` e insuficiente para qualquer outra coisa — daí o SQL
+# ser idempotente e executável à mão (ver README, seção de publicação).
 set -euo pipefail
 
-MIGRATOR_PASSWORD="${MIGRATOR_PASSWORD:-giraffe_migrator_pw}"
-APP_PASSWORD="${APP_PASSWORD:-giraffe_app_pw}"
+# Sem default: senha ausente deve FALHAR, não virar uma credencial previsível. O Compose
+# já exige as variáveis (`${VAR:?}`); esta é a segunda barreira, para o caso de alguém
+# executar a imagem fora do Compose.
+: "${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD}"
+: "${APP_PASSWORD:?defina APP_PASSWORD}"
 
-# `--set` passa as senhas como variáveis do psql, e `:'var'` as insere já entre aspas e
-# escapadas. Interpolar com "$VAR" direto no SQL abriria injeção via senha.
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+psql -v ON_ERROR_STOP=1 \
+  --username "$POSTGRES_USER" \
+  --dbname "$POSTGRES_DB" \
   --set=migrator_password="$MIGRATOR_PASSWORD" \
-  --set=app_password="$APP_PASSWORD" <<-'EOSQL'
-    -- Papel de MIGRATION: dono do schema. NUNCA usado em requisição.
-    CREATE ROLE giraffe_migrator LOGIN PASSWORD :'migrator_password';
-
-    -- Papel de APLICAÇÃO (runtime).
-    --   NOSUPERUSER  — não é superusuário
-    --   NOBYPASSRLS  — NÃO pode contornar Row-Level Security (AD-6)
-    --   NOCREATEDB / NOCREATEROLE — sem privilégio administrativo
-    -- Também NÃO será dono de nenhuma tabela: o dono contorna RLS por padrão, e é por isso
-    -- que `FORCE ROW LEVEL SECURITY` sozinho não bastaria.
-    CREATE ROLE giraffe_app LOGIN PASSWORD :'app_password'
-      NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
-
-    -- O migrator é dono do banco/schema; o app apenas se conecta.
-    ALTER DATABASE giraffe OWNER TO giraffe_migrator;
-    GRANT CONNECT ON DATABASE giraffe TO giraffe_app;
-EOSQL
-
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname giraffe <<-'EOSQL'
-    ALTER SCHEMA public OWNER TO giraffe_migrator;
-    GRANT USAGE ON SCHEMA public TO giraffe_app;
-
-    -- Sem privilégio de DDL para a aplicação. Os GRANTs de DML nas tabelas são concedidos
-    -- pela migration, junto com as policies de RLS.
-    REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-EOSQL
+  --set=app_password="$APP_PASSWORD" \
+  --set=db_name="$POSTGRES_DB" \
+  -f /bootstrap/00-roles.sql
