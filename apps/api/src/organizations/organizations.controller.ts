@@ -1,5 +1,6 @@
 import { Controller, Get, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import { Requer } from '../kernel/authz/requer.decorator';
 import { RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { withTenantContext } from '../kernel/db/tenant-context';
@@ -30,6 +31,11 @@ export class OrganizationsController {
     private readonly logger: PinoLogger,
   ) {}
 
+  // Primeiro consumidor concreto do substrato de autorização (Story 1.6): ler a própria Organização
+  // exige a ability `ler` sobre `Organizacao`. Toda Membership ativa a possui (piso), então nenhuma
+  // regressão — mas a rota passa a provar, sobre HTTP, que o `AuthzGuard` roda como APP_GUARD e
+  // concede corretamente. Sem `@Requer`, a autorização de AÇÃO não se aplicaria a ela.
+  @Requer('ler', 'Organizacao')
   @Get('current')
   async current(): Promise<OrganizacaoAtual> {
     // `obter()` LANÇA se não houver contexto. Não há `?.`, não há default, não há fallback — é

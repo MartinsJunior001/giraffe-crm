@@ -62,7 +62,9 @@ export class OrgContextResolver {
     const db = withAccountContext(this.prisma, accountId, this.logger);
     const ativas = await db.membership.findMany({
       where: { accountId, state: 'ACTIVE' },
-      select: { orgId: true },
+      // `role` alimenta o papel efetivo do contexto (Story 1.6): a autoridade sobre o que o
+      // principal pode fazer vem da MESMA Membership que decide a QUAL Organização ele pertence.
+      select: { orgId: true, role: true },
     });
 
     // `state != ACTIVE` NÃO concede contexto. A Story 1.2 deixou `MembershipState` sem efeito
@@ -78,18 +80,20 @@ export class OrgContextResolver {
         // decidindo errado metade das vezes, em silêncio. A escolha explícita é da Story 1.9.
         this.negar(accountId, orgIdPedido, 'múltiplas Organizações e nenhuma indicada');
       }
-      const unica = ativas[0]!.orgId;
-      this.permitir(accountId, unica);
-      return { orgId: unica, accountId };
+      const unica = ativas[0]!;
+      this.permitir(accountId, unica.orgId);
+      return { orgId: unica.orgId, accountId, papel: unica.role };
     }
 
-    const permitida = ativas.some((m) => m.orgId === orgIdPedido);
+    // `find`, não `some`: além de decidir se é permitida, precisamos do PAPEL daquela Membership —
+    // é ele que vira o teto de autorização (Story 1.6).
+    const permitida = ativas.find((m) => m.orgId === orgIdPedido);
     if (!permitida) {
       this.negar(accountId, orgIdPedido, 'sem Membership ativa na Organização pedida');
     }
 
     this.permitir(accountId, orgIdPedido);
-    return { orgId: orgIdPedido, accountId };
+    return { orgId: orgIdPedido, accountId, papel: permitida.role };
   }
 
   private permitir(accountId: string, orgId: string): void {

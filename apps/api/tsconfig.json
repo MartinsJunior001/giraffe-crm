@@ -9,7 +9,15 @@
     "noEmit": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "types": ["node"]
+    "types": ["node"],
+    // @casl/ability 7 declara seus tipos só via `exports.types` (sem `types` top-level). O
+    // `moduleResolution: Node` (node10) ignora o campo `exports`, então não acha o `.d.ts`. Este
+    // mapeamento aponta o tipo diretamente — workaround localizado, sem trocar o sistema de módulos
+    // da API (que é decisão de stack). Não afeta o runtime: o `require('@casl/ability')` emitido
+    // continua resolvendo pelo `exports.require` do pacote (build CJS do CASL).
+    "paths": {
+      "@casl/ability": ["./node_modules/@casl/ability/dist/types/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
   "exclude": ["node_modules", "dist"]

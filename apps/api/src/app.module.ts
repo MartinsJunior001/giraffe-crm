@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
 import { AuthModule } from './kernel/auth/auth.module';
+import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -72,6 +73,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     // resolve — e é assim que deve ser: uma aplicação sem autenticação registrada não deveria
     // conseguir subir fingindo que autoriza alguém.
     AuthModule,
+    // Depois do ContextModule: o AuthzGuard (global) roda APÓS o TenantContextGuard, pressupondo o
+    // contexto de Organização já resolvido. Autorização de AÇÃO deny-by-default (AD-9).
+    AuthzModule,
     HealthModule,
     OrganizationsModule,
   ],
