@@ -54,12 +54,57 @@ export class LoginFailureService {
     return identificador.trim().toLowerCase();
   }
 
-  /** HMAC-SHA256(finalidade + identificador normalizado). Nunca o e-mail. */
-  private derivarChave(identificador: string): string {
-    const env = getEnv();
-    return createHmac('sha256', env.LOGIN_HMAC_SECRET)
+  /** HMAC-SHA256(finalidade + identificador normalizado), sob um segredo. Nunca o e-mail. */
+  private derivar(identificador: string, segredo: string): string {
+    return createHmac('sha256', segredo)
       .update(FINALIDADE + this.normalizar(identificador))
       .digest('hex');
+  }
+
+  /** A chave sob o segredo ATUAL — é nela que toda falha nova é registrada. */
+  private derivarChave(identificador: string): string {
+    return this.derivar(identificador, getEnv().LOGIN_HMAC_SECRET);
+  }
+
+  /**
+   * As chaves que ainda **contam** neste momento: a atual e, durante a sobreposição da rotação (D6),
+   * a derivada do segredo anterior.
+   *
+   * É isto que impede o buraco central da rotação: trocar o segredo muda todas as chaves derivadas
+   * de uma vez, e sem consultar a anterior os contadores de quem está sob ataque **agora** ficariam
+   * órfãos. O atacante ganharia 5 tentativas novas de graça, no instante exato da rotação — e a
+   * rotação é uma operação de segurança, não pode abrir uma janela de ataque.
+   *
+   * A chave anterior é só de **leitura**: nada novo é escrito nela (ver `registrarFalha`).
+   */
+  private chavesAtivas(identificador: string): string[] {
+    const env = getEnv();
+    const chaves = [this.derivarChave(identificador)];
+
+    if (env.LOGIN_HMAC_PREVIOUS_SECRET !== undefined) {
+      chaves.push(this.derivar(identificador, env.LOGIN_HMAC_PREVIOUS_SECRET));
+    }
+
+    return chaves;
+  }
+
+  /**
+   * Soma as falhas ainda dentro da janela, considerando TODAS as chaves ativas.
+   *
+   * A soma é o que faz a rotação não zerar limite: 3 falhas sob a chave antiga + 2 sob a nova são 5,
+   * e bloqueiam. O `env` garante que os dois segredos são distintos, então as duas chaves nunca são
+   * a mesma linha contada em dobro.
+   */
+  private async contarValidas(identificador: string): Promise<number> {
+    const chaves = this.chavesAtivas(identificador);
+    const inicioValido = new Date(Date.now() - JANELA_MS);
+
+    const linhas = await this.prisma.$queryRaw<{ total: bigint | number | null }[]>`
+      SELECT COALESCE(SUM("count"), 0) AS total FROM "LoginFailure"
+      WHERE "key" = ANY(${chaves}::text[]) AND "windowStart" >= ${inicioValido}
+    `;
+
+    return Number(linhas[0]?.total ?? 0);
   }
 
   /**
@@ -79,29 +124,56 @@ export class LoginFailureService {
     const agora = new Date();
     const inicioValido = new Date(agora.getTime() - JANELA_MS);
 
-    const linhas = await this.prisma.$queryRaw<{ count: number }[]>`
-      INSERT INTO "LoginFailure" ("key", "keyVersion", "count", "windowStart")
-      VALUES (${chave}, ${env.LOGIN_HMAC_KEY_VERSION}, 1, ${agora})
-      ON CONFLICT ("key") DO UPDATE SET
-        "count" = CASE
-          WHEN "LoginFailure"."windowStart" < ${inicioValido} THEN 1
-          ELSE "LoginFailure"."count" + 1
-        END,
-        "windowStart" = CASE
-          WHEN "LoginFailure"."windowStart" < ${inicioValido} THEN ${agora}
-          ELSE "LoginFailure"."windowStart"
-        END,
-        "keyVersion" = ${env.LOGIN_HMAC_KEY_VERSION}
-      RETURNING "count"
+    // As chaves ANTERIORES (rotação em curso), que são somadas mas nunca incrementadas.
+    const anteriores = this.chavesAtivas(identificador).slice(1);
+
+    // **Uma instrução só.** O incremento vem do `RETURNING` do próprio `INSERT ... ON CONFLICT`, e a
+    // soma da chave anterior é calculada no mesmo comando.
+    //
+    // A tentação era incrementar e depois reler o total num segundo `SELECT`. Isso reintroduziria a
+    // corrida que este desenho existe para evitar: sob concorrência, as releituras acontecem todas
+    // *depois* dos incrementos e devolvem o mesmo valor — cinco chamadas simultâneas veriam
+    // `[1,2,5,5,5]` em vez de `[1,2,3,4,5]`. O contador do banco ficaria certo, mas a evidência de
+    // que nenhuma contagem se perdeu iria embora, e com ela a capacidade de detectar uma regressão.
+    const linhas = await this.prisma.$queryRaw<{ atual: number; anterior: bigint | number }[]>`
+      WITH atual AS (
+        INSERT INTO "LoginFailure" ("key", "keyVersion", "count", "windowStart")
+        VALUES (${chave}, ${env.LOGIN_HMAC_KEY_VERSION}, 1, ${agora})
+        ON CONFLICT ("key") DO UPDATE SET
+          "count" = CASE
+            WHEN "LoginFailure"."windowStart" < ${inicioValido} THEN 1
+            ELSE "LoginFailure"."count" + 1
+          END,
+          "windowStart" = CASE
+            WHEN "LoginFailure"."windowStart" < ${inicioValido} THEN ${agora}
+            ELSE "LoginFailure"."windowStart"
+          END,
+          "keyVersion" = ${env.LOGIN_HMAC_KEY_VERSION}
+        RETURNING "count"
+      )
+      SELECT
+        (SELECT "count" FROM atual) AS atual,
+        COALESCE((
+          SELECT SUM("count") FROM "LoginFailure"
+          WHERE "key" = ANY(${anteriores}::text[]) AND "windowStart" >= ${inicioValido}
+        ), 0) AS anterior
     `;
 
-    const count = linhas[0]?.count ?? 1;
+    const countAtual = linhas[0]?.atual ?? 1;
+    const countAnterior = Number(linhas[0]?.anterior ?? 0);
+
+    // O total que decide o bloqueio soma as falhas ainda válidas da chave anterior — senão a rotação
+    // do segredo daria ao atacante um orçamento novo de 5 tentativas (D6).
+    const count = countAtual + countAnterior;
     const bloqueado = count >= MAX_FALHAS;
 
     // O identificador NUNCA vai para o log — nem em claro, nem hasheado. A chave HMAC no log seria
     // um identificador estável de uma pessoa, o que a torna PII pseudonimizada: correlacionável, e
     // portanto sujeita à LGPD. O que o operador precisa saber é que houve falha e quantas.
-    this.logger.warn({ event: 'auth.login.failed', count, bloqueado }, 'falha de login registrada');
+    this.logger.warn(
+      { event: 'auth.login.failed', count, countAtual, bloqueado },
+      'falha de login registrada',
+    );
 
     return { bloqueado, count };
   }
@@ -113,15 +185,7 @@ export class LoginFailureService {
    * limite não limitaria nada: bastaria ao atacante acertar na tentativa seguinte à quinta.
    */
   async estaBloqueado(identificador: string): Promise<boolean> {
-    const chave = this.derivarChave(identificador);
-    const inicioValido = new Date(Date.now() - JANELA_MS);
-
-    const linhas = await this.prisma.$queryRaw<{ count: number }[]>`
-      SELECT "count" FROM "LoginFailure"
-      WHERE "key" = ${chave} AND "windowStart" >= ${inicioValido}
-    `;
-
-    return (linhas[0]?.count ?? 0) >= MAX_FALHAS;
+    return (await this.contarValidas(identificador)) >= MAX_FALHAS;
   }
 
   /**
@@ -133,8 +197,10 @@ export class LoginFailureService {
    * um botão de reset.
    */
   async limpar(identificador: string): Promise<void> {
-    const chave = this.derivarChave(identificador);
-    await this.prisma.$executeRaw`DELETE FROM "LoginFailure" WHERE "key" = ${chave}`;
+    // TODAS as versões ativas. Limpar só a atual deixaria a contagem antiga viva: o usuário legítimo
+    // acertaria a senha e continuaria bloqueado até a janela da chave anterior expirar.
+    const chaves = this.chavesAtivas(identificador);
+    await this.prisma.$executeRaw`DELETE FROM "LoginFailure" WHERE "key" = ANY(${chaves}::text[])`;
   }
 
   /**
@@ -145,6 +211,11 @@ export class LoginFailureService {
    */
   chaveDe(identificador: string): string {
     return this.derivarChave(identificador);
+  }
+
+  /** As chaves que contam agora (atual + anterior, se houver rotação em curso). Usado em teste. */
+  chavesDe(identificador: string): string[] {
+    return this.chavesAtivas(identificador);
   }
 
   /** Igualdade em tempo constante — a comparação de chaves não deve virar um oráculo. */

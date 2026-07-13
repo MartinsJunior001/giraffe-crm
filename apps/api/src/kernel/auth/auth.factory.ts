@@ -3,7 +3,7 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import type { PrismaClient } from '../../../generated/prisma';
-import { getEnv } from '../config/env';
+import { getEnv, parseCorsOrigins } from '../config/env';
 import type { LoginFailureService } from './login-failure.service';
 
 /** Rota do login por e-mail no Better Auth. Constante porque dois hooks dependem dela. */
@@ -38,6 +38,20 @@ export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
     basePath: '/api/auth',
 
     database: prismaAdapter(prisma, { provider: 'postgresql' }),
+
+    // ── CSRF: a allowlist de origens é a MESMA do CORS ──────────────────────────────────────
+    // O Better Auth recusa requisições cuja `Origin` não esteja aqui (e, em produção, recusa também
+    // as sem `Origin`) — é a defesa contra um site terceiro disparar login/logout no navegador de
+    // quem está logado.
+    //
+    // O default seria apenas o `baseURL` (a própria API, :3001). Só que quem faz login é o
+    // navegador, a partir da Web (:3000): com o default, TODO login vindo do front seria rejeitado.
+    // Foi o container de produção que mostrou isso — no ambiente de teste a checagem é relaxada, e a
+    // suíte passava sem nunca tocar nela.
+    //
+    // Reusar `CORS_ALLOWED_ORIGINS` mantém uma allowlist só. Duas listas divergiriam, e a que
+    // ninguém revisa é a que autoriza a origem errada.
+    trustedOrigins: parseCorsOrigins(env.CORS_ALLOWED_ORIGINS),
 
     // ── D1: o `user` do Better Auth É o nosso `Account` ────────────────────────────────────
     // Uma identidade, uma tabela. A alternativa — `user` dona da sessão e `Account` dona da
