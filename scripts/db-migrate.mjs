@@ -58,10 +58,22 @@ function arquivoDeRollback(nomeExplicito) {
 
 /** O nome da migration (o diretório) a partir do arquivo de rollback. */
 function nomeDaMigration(caminhoDown) {
-  return caminhoDown
+  const nome = caminhoDown
     .split('/')
     .pop()
     .replace(/\.down\.sql$/, '');
+
+  // O `nome` é interpolado por string no `DELETE FROM "_prisma_migrations"` (o `db execute` do
+  // Prisma não parametriza). O valor vem de um nome de arquivo no repositório, não de entrada de
+  // usuário — mas um arquivo com aspa no nome quebraria/injetaria o SQL. Validar contra o padrão de
+  // migration do Prisma (14 dígitos + `_` + minúsculas) recusa qualquer coisa fora dele antes de
+  // interpolar. Defesa em profundidade num comando administrativo destrutivo.
+  if (!/^[0-9]{14}_[a-z0-9_]+$/.test(nome)) {
+    console.error(`[db] nome de migration inválido: "${nome}". Rollback abortado.`);
+    process.exit(1);
+  }
+
+  return nome;
 }
 
 /**

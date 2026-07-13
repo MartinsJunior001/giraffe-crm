@@ -18,7 +18,8 @@
     "db:migrate": "node ../../scripts/db-migrate.mjs deploy",
     "db:status": "node ../../scripts/db-migrate.mjs status",
     "db:seed": "node ../../scripts/db-migrate.mjs seed && node prisma/seed-credentials.mjs",
-    "db:rollback": "node ../../scripts/db-migrate.mjs rollback"
+    "db:rollback": "node ../../scripts/db-migrate.mjs rollback",
+    "db:cleanup": "node ../../scripts/db-cleanup.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
