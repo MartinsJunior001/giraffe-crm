@@ -1,7 +1,7 @@
 ---
 story_key: 1-7-casca-navegavel-e-design-system
 epic: 1
-status: in-progress
+status: review
 release: CORE (Lote 1)
 risco: NORMAL
 baseline_commit: 549f18745a148642ba061faa426af7d1193402a5
