@@ -1,5 +1,6 @@
 import { Global, MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ContextoIndisponivelFilter } from './contexto-indisponivel.filter';
 import { OrgContextResolver } from './org-context.resolver';
 import { PRINCIPAL_PROVIDER, SemSessaoPrincipalProvider } from './principal.provider';
 import { RequestContext } from './request-context';
@@ -23,6 +24,9 @@ import { TenantContextGuard } from './tenant-context.guard';
     OrgContextResolver,
     { provide: PRINCIPAL_PROVIDER, useClass: SemSessaoPrincipalProvider },
     { provide: APP_GUARD, useClass: TenantContextGuard },
+    // Sem este filtro, "um handler rodou sem contexto organizacional" — a falha estrutural mais
+    // perigosa desta arquitetura — vira um 500 anônimo, indistinguível de um erro de banco.
+    { provide: APP_FILTER, useClass: ContextoIndisponivelFilter },
   ],
   exports: [RequestContext, OrgContextResolver],
 })
