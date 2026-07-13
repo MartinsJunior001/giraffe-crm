@@ -40,6 +40,13 @@ enum MembershipState {
   REMOVED
 }
 
+/// Estado do Pipe (Story 2.1). Arquivar é MUDANÇA DE ESTADO, não exclusão — não há transição
+/// para "deletado" (o runtime nem tem GRANT DELETE). `ARCHIVED` preserva todos os dados.
+enum PipeState {
+  ACTIVE
+  ARCHIVED
+}
+
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
@@ -185,8 +192,38 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   memberships Membership[]
+  pipes       Pipe[]
 
   @@map("Organization")
+}
+
+/// Pipe — processo de trabalho da Organização (Story 2.1). Dado operacional org-owned (AD-10).
+///
+/// Isolamento pelo BANCO (RLS na migration `..._pipes`), como `Organization`/`Membership`: ENABLE
+/// **e** FORCE ROW LEVEL SECURITY, policies por `orgId = current_org_id()`. O runtime recebe
+/// SELECT/INSERT/UPDATE — **sem DELETE** (o épico proíbe exclusão definitiva; arquivar é `state`).
+///
+/// **Sem unicidade de `name`**: o identificador estável é o `id` (AD-11). Nome único org-scoped
+/// colidiria no restaurar (arquiva "X", cria novo "X", restaura o antigo). RN-024 (catálogo
+/// consistente) é sobre exibição por id, não unicidade de rótulo.
+model Pipe {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @db.Uuid
+  name       String
+  state      PipeState @default(ACTIVE)
+  /// Atributos de catálogo (Story 2.1): sem semântica de bloqueio inventada — só persistidos/alternáveis.
+  locked     Boolean   @default(false)
+  starred    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  /// Momento do arquivamento (null quando ativo). Arquivar preserva os dados; só muda estado.
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
+  @@index([orgId, state])
+  @@map("Pipe")
 }
 
 /// Vínculo Account × Organization (AD-7, Forma B). É a tabela organizacional

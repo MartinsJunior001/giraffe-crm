@@ -8,6 +8,7 @@ import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { PipesModule } from './pipes/pipes.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -78,6 +79,7 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     AuthzModule,
     HealthModule,
     OrganizationsModule,
+    PipesModule,
   ],
 })
 export class AppModule {}
