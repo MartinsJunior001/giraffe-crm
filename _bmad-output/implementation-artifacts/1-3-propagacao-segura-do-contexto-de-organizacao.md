@@ -1,6 +1,6 @@
 # Story 1.3: Propagação segura do contexto de Organização
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
