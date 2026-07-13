@@ -11,10 +11,11 @@ gate_seguranca: RATIFICADO em 2026-07-13 (G1–G6)
 **I want** autenticar-me e ser colocado numa Organização válida (ou num estado honesto sem Organização),
 **So that** eu opere somente num contexto válido, sem troca silenciosa.
 
-**Status: BLOQUEADA POR GATE.** O épico é explícito: *"limite de tentativas e política de rate limit
-definidos por Segurança **antes da implementação**"*. Este documento vai até a fronteira desse gate e
-para. Escolher os números por conta própria seria decidir política de segurança em nome de quem tem
-a autoridade para isso — e alterar requisito em silêncio.
+**Status: em implementação.** O épico exigia que *"limite de tentativas e política de rate limit"*
+fossem **definidos por Segurança antes da implementação**. Esse gate foi **ratificado em 2026-07-13**
+(G1–G6, abaixo). Até lá o documento parou na fronteira, de propósito: escolher os números por conta
+própria seria decidir política de segurança em nome de quem tem a autoridade — e alterar requisito em
+silêncio.
 
 ---
 
