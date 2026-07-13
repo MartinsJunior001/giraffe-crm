@@ -1,7 +1,7 @@
 ---
 story_key: tech-2-provisionamento-de-tenant
 epic: 1
-status: review
+status: done
 release: CORE (Lote 1 — tech story)
 risco: CRÍTICO
 baseline_commit: c46c86609ce38da781add5adb0005e325e741f4d
@@ -186,3 +186,4 @@ claude-opus-4-8 (Claude Code)
 |---|---|
 | 2026-07-13 | Story criada (tech story) a partir da triagem de release (`mvp-core-triage.md` — tech-2, P0, risco C) e da pesquisa do padrão de provisionamento (seed/RLS/Better Auth). Escopo **congelado**: somente provisionamento seguro do 1º tenant (D-06/CR-09 são do L6). Risco **CRÍTICO**. Dependências 1.2/1.4 `done`. Status → ready-for-dev. |
 | 2026-07-13 | Implementação (T1–T6): `prisma/provision-tenant.mjs` (núcleo + `provisionarTenant` idempotente com contexto de RLS + CLI) e `test/provision-tenant.test.ts` (11 casos, PostgreSQL real). Gates **APROVADOS** (pre-implementation, context7, migration-check N/A, security-check reforçado, backup-check, observability-check). Qualidade verde: typecheck/lint/format/**API 230/230**. **Revisão adversarial reforçada** (agente independente): nenhum CRITICAL/HIGH/MEDIUM; notas LOW/INFO (corrida concorrente → docstring esclarecido; reuso de Account → premissa de modelo de ameaça registrada). Status → review. |
+| 2026-07-13 | Merge do PR #14 (`--no-ff`, commit `328f389`) com CI 100% verde nos 4 jobs. Encerramento administrativo: Status → **done**. **Encerra o Lote 1 (L1) do Épico 1** (1.5→1.6→1.7→1.8→tech-2) — contratos do L1 a congelar. |
