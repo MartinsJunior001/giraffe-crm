@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { PrismaClient } from '../generated/prisma/index.js';
+import { verificarDestinoSeed } from './seed-guard.mjs';
 
 // O `.env` da raiz, como faz o `db-migrate.mjs`. Ausência não é silenciada: sem `DATABASE_URL`, o
 // script falha logo abaixo — e falhar é o certo. Semear "sem banco" seria fingir que semeou.
@@ -25,18 +26,6 @@ for (const arquivo of [resolve(process.cwd(), '.env'), resolve(process.cwd(), '.
   } catch {
     /* ausente — segue com o ambiente do processo (é o caso do CI) */
   }
-}
-
-/**
- * **Trava de produção.** Este script grava uma senha CONHECIDA (está logo abaixo, no repositório) em
- * contas. Rodá-lo contra um ambiente real criaria contas com credencial pública — e o seed é um
- * comando manual, a um `pnpm db:seed` de distância de ser executado contra o banco errado.
- *
- * Falha alto e cedo, antes de abrir conexão. Não existe flag para forçar: se um dia for preciso
- * semear em produção, isso é uma decisão de arquitetura, não uma variável de ambiente.
- */
-if (process.env.NODE_ENV === 'production') {
-  throw new Error('seed de credenciais é proibido em produção: ele grava uma senha conhecida.');
 }
 
 /** A mesma para todas as contas de dev. Não é segredo: está no repositório, de propósito. */
@@ -56,6 +45,14 @@ if (!url) {
   // Cita o NOME da variável, nunca o valor: a URL carrega senha.
   throw new Error('DATABASE_URL ausente — impossível semear credenciais.');
 }
+
+// Trava dupla (NODE_ENV + host da URL), isolada em `seed-guard.mjs` para ser testável. Lança antes
+// de qualquer conexão se o destino não for um banco de desenvolvimento.
+verificarDestinoSeed({
+  nodeEnv: process.env.NODE_ENV,
+  url,
+  allowNonLocal: process.env.ALLOW_NONLOCAL_DEV_SEED === 'true',
+});
 
 const prisma = new PrismaClient({ datasourceUrl: url });
 
