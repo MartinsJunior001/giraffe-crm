@@ -32,8 +32,22 @@ function validarPapel(valor: unknown): PipeRole {
   return valor as PipeRole;
 }
 
-/** Corpo de `POST /pipes/:pipeId/grants`. Concede `role` a uma `membershipId` (o alvo da concessão). */
-export function parseConcederPapel(body: unknown): { membershipId: string; role: PipeRole } {
+/** Lê um booleano opcional; ausência → `undefined`, valor não-booleano → 400. */
+function validarBoolOpcional(valor: unknown, campo: string): boolean | undefined {
+  if (valor === undefined) return undefined;
+  if (typeof valor !== 'boolean') throw new BadRequestException(`${campo} deve ser booleano`);
+  return valor;
+}
+
+/**
+ * Corpo de `POST /pipes/:pipeId/grants`. Concede `role` a uma `membershipId` (o alvo da concessão) e,
+ * opcionalmente, a capacidade "Revisar submissões públicas" (Story 2.8; default falso — deny-by-default).
+ */
+export function parseConcederPapel(body: unknown): {
+  membershipId: string;
+  role: PipeRole;
+  reviewPublicSubmissions: boolean;
+} {
   if (typeof body !== 'object' || body === null) {
     throw new BadRequestException('corpo inválido');
   }
@@ -41,13 +55,31 @@ export function parseConcederPapel(body: unknown): { membershipId: string; role:
   if (typeof dados.membershipId !== 'string' || !UUID_RE.test(dados.membershipId)) {
     throw new BadRequestException('membershipId inválido');
   }
-  return { membershipId: dados.membershipId, role: validarPapel(dados.role) };
+  return {
+    membershipId: dados.membershipId,
+    role: validarPapel(dados.role),
+    reviewPublicSubmissions:
+      validarBoolOpcional(dados.reviewPublicSubmissions, 'reviewPublicSubmissions') ?? false,
+  };
 }
 
-/** Corpo de `PATCH /pipes/:pipeId/grants/:grantId`. Só `role` é alterável (o alvo não muda). */
-export function parseAlterarPapel(body: unknown): { role: PipeRole } {
+/**
+ * Corpo de `PATCH /pipes/:pipeId/grants/:grantId`. Altera o `role` e/ou a capacidade "Revisar submissões
+ * públicas" (o alvo não muda).
+ */
+export function parseAlterarPapel(body: unknown): {
+  role: PipeRole;
+  reviewPublicSubmissions: boolean | undefined;
+} {
   if (typeof body !== 'object' || body === null) {
     throw new BadRequestException('corpo inválido');
   }
-  return { role: validarPapel((body as Record<string, unknown>).role) };
+  const dados = body as Record<string, unknown>;
+  return {
+    role: validarPapel(dados.role),
+    reviewPublicSubmissions: validarBoolOpcional(
+      dados.reviewPublicSubmissions,
+      'reviewPublicSubmissions',
+    ),
+  };
 }

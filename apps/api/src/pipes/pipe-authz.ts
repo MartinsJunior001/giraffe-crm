@@ -84,3 +84,31 @@ export async function exigirOperarPipe(
     throw new ForbiddenException();
   }
 }
+
+/**
+ * Exige a capacidade EXPLÍCITA "Revisar submissões públicas" (Story 2.8, PRD D3.3), negada por padrão. É
+ * CAPACIDADE, não papel: o **Admin da Org** a possui implicitamente (qualquer Pipe); um não-Admin só revisa com
+ * uma concessão `PipeGrant` ACTIVE que tenha `reviewPublicSubmissions = true` (e `Membership` ACTIVE). Sem acesso
+ * ao Pipe → **404** não-enumerante; com acesso mas sem a capacidade → **403**. Reusa a mesma resolução fina das
+ * demais superfícies (não toca o guard/`ability.ts` — C3 congelado).
+ */
+export async function exigirRevisarSubmissoesPublicas(
+  db: DbComContexto,
+  principal: Principal,
+  pipeId: string,
+): Promise<void> {
+  const pipe = await db.pipe.findUnique({ where: { id: pipeId }, select: { id: true } });
+  if (!pipe) throw new NotFoundException();
+  if (principal.papel === 'ADMIN') return; // Admin da Org: capacidade implícita
+  const membership = await db.membership.findFirst({
+    where: { accountId: principal.accountId },
+    select: { id: true, state: true },
+  });
+  if (!membership || membership.state !== 'ACTIVE') throw new NotFoundException();
+  const grant = await db.pipeGrant.findFirst({
+    where: { pipeId, membershipId: membership.id, state: 'ACTIVE' },
+    select: { reviewPublicSubmissions: true },
+  });
+  if (!grant) throw new NotFoundException(); // sem acesso ao Pipe → 404 (não enumera)
+  if (!grant.reviewPublicSubmissions) throw new ForbiddenException(); // acesso, mas sem a capacidade
+}

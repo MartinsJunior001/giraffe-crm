@@ -29,8 +29,13 @@ export class PipeGrantsController {
   @Requer('administrar', 'Pipe')
   @Post()
   async conceder(@Param('pipeId') pipeId: string, @Body() body: unknown): Promise<ConcessaoVisao> {
-    const { membershipId, role } = parseConcederPapel(body);
-    return this.grants.conceder(validarIdRota(pipeId, 'pipeId'), membershipId, role);
+    const { membershipId, role, reviewPublicSubmissions } = parseConcederPapel(body);
+    return this.grants.conceder(
+      validarIdRota(pipeId, 'pipeId'),
+      membershipId,
+      role,
+      reviewPublicSubmissions,
+    );
   }
 
   @Requer('administrar', 'Pipe')
@@ -46,11 +51,12 @@ export class PipeGrantsController {
     @Param('grantId') grantId: string,
     @Body() body: unknown,
   ): Promise<ConcessaoVisao> {
-    const { role } = parseAlterarPapel(body);
+    const { role, reviewPublicSubmissions } = parseAlterarPapel(body);
     return this.grants.alterarPapel(
       validarIdRota(pipeId, 'pipeId'),
       validarIdRota(grantId, 'grantId'),
       role,
+      reviewPublicSubmissions,
     );
   }
 

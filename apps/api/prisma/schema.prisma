@@ -107,6 +107,31 @@ enum FieldState {
   ARCHIVED
 }
 
+/// Modo da submissão pública de um Formulário inicial (Story 2.8, PRD D3.3). `TRIAGE` (padrão): a submissão NÃO
+/// cria Card até ser aprovada na triagem. `DIRECT`: a submissão válida cria 1 Card imediatamente.
+enum PublicFormMode {
+  TRIAGE
+  DIRECT
+}
+
+/// Origem do Card (Story 2.8). `INTERNAL`: submissão interna (2.7). `PUBLIC`: submissão pública aprovada/direta.
+/// "Origem registrada" (PRD D3.3): atributo do Card, consultável — não metadado solto de evento.
+enum CardOrigin {
+  INTERNAL
+  PUBLIC
+}
+
+/// Ciclo da Submissão pública (Story 2.8, PRD D3.3) — DISTINTO do estado do Card (`Fase ≠ Status do Card`).
+/// `PENDING` (aguardando triagem) → `CONVERTED` (aprovada: 1 Card criado na MESMA transação) ou `REJECTED`
+/// (não cria Card; submissão preservada — LGPD). Aprovação e conversão são atômicas na 2.8, então não há estado
+/// `APPROVED` persistido separado (AD-11: sem materializar estado sem consumidor). `CONVERTED` é terminal:
+/// uma submissão convertida não reconverte (idempotência — epics.md §884).
+enum SubmissaoPublicaState {
+  PENDING
+  CONVERTED
+  REJECTED
+}
+
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
@@ -119,15 +144,15 @@ enum FieldState {
 /// que é a classe de bug que termina em "o usuário X viu os dados do usuário Y".
 /// Uma identidade, uma tabela.
 model Account {
-  id        String   @id @default(uuid()) @db.Uuid
-  email     String   @unique
-  name      String
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  name          String
   /// Exigidos pelo Better Auth. `emailVerified` não governa acesso nesta Story —
   /// quem governa é a Membership ativa (1.3). Verificação de e-mail é da Story 1.10.
-  emailVerified Boolean @default(false)
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   memberships Membership[]
   sessions    AuthSession[]
@@ -251,15 +276,17 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships  Membership[]
-  pipes        Pipe[]
-  pipeGrants   PipeGrant[]
-  phases       Phase[]
-  forms         Form[]
-  fields        Field[]
-  formVersions  FormVersion[]
-  cards         Card[]
-  cardHistories CardHistory[]
+  memberships       Membership[]
+  pipes             Pipe[]
+  pipeGrants        PipeGrant[]
+  phases            Phase[]
+  forms             Form[]
+  fields            Field[]
+  formVersions      FormVersion[]
+  cards             Card[]
+  cardHistories     CardHistory[]
+  publicSubmissions SubmissaoPublica[]
+  publicFormRoutes  PublicFormRoute[]
 
   @@map("Organization")
 }
@@ -351,16 +378,21 @@ model Phase {
 /// WHERE state = 'ACTIVE'`, criado por raw SQL na migration (o Prisma 6.19.3 não expressa índice
 /// parcial no schema — é v7.4+). Uma concessão revogada não colide com uma re-concessão.
 model PipeGrant {
-  id           String         @id @default(uuid()) @db.Uuid
-  orgId        String         @db.Uuid
-  pipeId       String         @db.Uuid
-  membershipId String         @db.Uuid
-  role         PipeRole
-  state        PipeGrantState @default(ACTIVE)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id                      String         @id @default(uuid()) @db.Uuid
+  orgId                   String         @db.Uuid
+  pipeId                  String         @db.Uuid
+  membershipId            String         @db.Uuid
+  role                    PipeRole
+  state                   PipeGrantState @default(ACTIVE)
+  /// Capacidade EXPLÍCITA "Revisar submissões públicas" (Story 2.8, PRD D3.3), negada por padrão. É uma
+  /// CAPACIDADE, não um papel: o Admin da Org a possui implicitamente (sem concessão); um não-Admin só revisa
+  /// com uma concessão ACTIVE que a tenha `true`. Não cria papel novo nem toca o CASL/guard (C3 congelado) — a
+  /// guarda fina vive em `pipe-authz` (`exigirRevisarSubmissoesPublicas`).
+  reviewPublicSubmissions Boolean        @default(false)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
   /// Momento da revogação (null quando ativa). Revogar preserva a linha; só muda estado.
-  revokedAt    DateTime?
+  revokedAt               DateTime?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
@@ -410,26 +442,34 @@ model Membership {
 /// Isolamento pelo banco (RLS na migration): ENABLE **e** FORCE ROW LEVEL SECURITY, policies por
 /// `orgId = current_org_id()`. Runtime recebe SELECT/INSERT/UPDATE — **sem DELETE**.
 model Form {
-  id        String      @id @default(uuid()) @db.Uuid
-  orgId     String      @db.Uuid
-  context   FormContext
+  id               String         @id @default(uuid()) @db.Uuid
+  orgId            String         @db.Uuid
+  context          FormContext
   /// Owner do contexto `PIPE_INITIAL` (null nos demais). CHECK na migration garante a coerência.
-  pipeId    String?     @db.Uuid
+  pipeId           String?        @db.Uuid
   /// Owner do contexto `PHASE` (null nos demais).
-  phaseId   String?     @db.Uuid
+  phaseId          String?        @db.Uuid
   /// Número da `FormVersion` publicada corrente (null = rascunho/despublicado). Story 2.6. É NÚMERO, não FK,
   /// de propósito: evita o ciclo de FK Form↔FormVersion e não há risco de ponteiro pendente (versões nunca
   /// são deletadas e o ponteiro só é gravado para uma versão recém-criada na MESMA transação de publicação).
   publishedVersion Int?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  /// Opt-in de acesso PÚBLICO (Story 2.8, PRD D3.2). Só faz sentido em `PIPE_INITIAL` — CHECK na migration impõe
+  /// (Fase/Database nunca são públicos). Habilitar cria também uma `PublicFormRoute` (URL opaca); revogar/
+  /// despublicar bloqueia novas submissões.
+  publicEnabled    Boolean        @default(false)
+  /// Modo da submissão pública (triagem padrão ou criação direta). Só relevante com `publicEnabled`.
+  publicMode       PublicFormMode @default(TRIAGE)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipe         Pipe?         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
-  phase        Phase?        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
-  fields       Field[]
-  versions     FormVersion[]
-  cards        Card[]
+  organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe              Pipe?              @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  phase             Phase?             @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  fields            Field[]
+  versions          FormVersion[]
+  cards             Card[]
+  publicSubmissions SubmissaoPublica[]
+  publicRoutes      PublicFormRoute[]
 
   // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId, context).
   @@index([orgId, pipeId])
@@ -463,9 +503,10 @@ model FormVersion {
   actorId     String?  @db.Uuid
   createdAt   DateTime @default(now())
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
-  cards        Card[]
+  organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  form              Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
+  cards             Card[]
+  publicSubmissions SubmissaoPublica[]
 
   @@unique([orgId, formId, version])
   @@index([orgId, formId])
@@ -488,25 +529,28 @@ model FormVersion {
 /// ENABLE+FORCE); na 2.7 o runtime tem **só SELECT/INSERT** — sem UPDATE (nenhum consumidor de UPDATE ainda; a
 /// 2.9/2.11 concede junto do consumidor e do teste) e **sem DELETE** (arquivar será `state` na 2.11).
 model Card {
-  id             String   @id @default(uuid()) @db.Uuid
-  orgId          String   @db.Uuid
-  pipeId         String   @db.Uuid
-  phaseId        String   @db.Uuid
-  formId         String   @db.Uuid
-  formVersionId  String   @db.Uuid
+  id             String     @id @default(uuid()) @db.Uuid
+  orgId          String     @db.Uuid
+  pipeId         String     @db.Uuid
+  phaseId        String     @db.Uuid
+  formId         String     @db.Uuid
+  formVersionId  String     @db.Uuid
   /// Chave lógica da submissão (cliente). Garante idempotência via índice único org+form.
   idempotencyKey String
   /// Valores submetidos, chaveados por `Field.id` do snapshot (opção por `id`). Validados contra a versão.
-  valores        Json     @default("{}")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  valores        Json       @default("{}")
+  /// Origem do Card (Story 2.8): submissão interna (`INTERNAL`, 2.7) ou pública (`PUBLIC`, aprovada/direta).
+  origin         CardOrigin @default(INTERNAL)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipe         Pipe          @relation(fields: [pipeId], references: [id], onDelete: Cascade)
-  phase        Phase         @relation(fields: [phaseId], references: [id], onDelete: Cascade)
-  form         Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
-  formVersion  FormVersion   @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
-  history      CardHistory[]
+  organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe             Pipe              @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  phase            Phase             @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  form             Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion      FormVersion       @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+  history          CardHistory[]
+  publicSubmission SubmissaoPublica?
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -539,6 +583,77 @@ model CardHistory {
 
   @@index([orgId, cardId, createdAt])
   @@map("CardHistory")
+}
+
+/// SubmissaoPublica — submissão de um Formulário inicial PÚBLICO por ator externo (Story 2.8). Dado operacional
+/// org-owned (AD-10). É entidade DISTINTA do Card, com ciclo PRÓPRIO (`SubmissaoPublicaState`): triagem NÃO é
+/// estado do Card (`Fase ≠ Status do Card`). Referencia o `Form` inicial e a `FormVersion` publicada no ato;
+/// `valores` em JSONB por `Field.id`, validados contra o snapshot (reusa `submission.ts` da 2.7). Em modo
+/// `TRIAGE` nasce `PENDING`; aprovar cria 1 Card (origem `PUBLIC`) e marca `CONVERTED` com `cardId` na MESMA
+/// transação (AD-13); rejeitar marca `REJECTED` (sem Card). Em modo `DIRECT` a submissão pública cria o Card
+/// direto e nasce `CONVERTED`.
+///
+/// **Sem exclusão** (preserva por Governança/LGPD — NFR-8): o runtime tem `SELECT/INSERT/UPDATE`, **sem DELETE**.
+/// Isolamento pelo banco (RLS ENABLE+FORCE, policies por `current_org_id()`, WITH CHECK). **Idempotência** da
+/// conversão: `cardId` é único (`@@unique`) e o estado terminal `CONVERTED` guarda contra reconversão — nunca 2
+/// Cards. `valores` são PII de titular externo: NUNCA em log.
+model SubmissaoPublica {
+  id             String                @id @default(uuid()) @db.Uuid
+  orgId          String                @db.Uuid
+  formId         String                @db.Uuid
+  formVersionId  String                @db.Uuid
+  state          SubmissaoPublicaState @default(PENDING)
+  valores        Json                  @default("{}")
+  /// Ponteiro do Card criado na conversão (null enquanto PENDING/REJECTED). Único: uma submissão ⇒ ≤1 Card.
+  cardId         String?               @db.Uuid
+  /// Chave de idempotência do cliente público (dedup de reenvio da mesma submissão lógica).
+  idempotencyKey String?
+  /// Ator que decidiu a triagem (aprovou/rejeitou), quando aplicável.
+  decidedBy      String?               @db.Uuid
+  decidedAt      DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion  FormVersion  @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+  card         Card?        @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  // Uma submissão convertida aponta no máximo um Card (idempotência da conversão).
+  @@unique([cardId])
+  // Dedup de reenvio público por Formulário.
+  @@unique([orgId, formId, idempotencyKey])
+  // Fila de triagem por Formulário e estado.
+  @@index([orgId, formId, state])
+  @@map("SubmissaoPublica")
+}
+
+/// PublicFormRoute — mapa GLOBAL e opaco de `publicId` → (`orgId`, `formId`) para resolver o tenant de uma
+/// submissão pública ANTES de haver contexto (Story 2.8). GLOBAL e **SEM RLS por definição** (como `Account`,
+/// AD-10): resolver o tenant não pode depender do contexto que ainda não existe. Guarda o MÍNIMO e **nenhuma
+/// PII**: só o `publicId` aleatório/opaco (a URL pública), o `orgId` e o `formId` de destino.
+///
+/// O cliente público apresenta APENAS o `publicId`; o servidor resolve `(orgId, formId)`, entra em
+/// `withTenantContext(orgId)` e RELÊ o `Form` sob RLS para validar (publicado, opt-in, versão, contexto) antes
+/// de qualquer escrita — **nunca** aceita `orgId`/`formId` do cliente. `active=false` revoga (rotação = novo
+/// `publicId`); link inválido/revogado/cross-tenant → 404 uniforme. Runtime: `SELECT` (resolver) + `INSERT`/
+/// `UPDATE` (criar/revogar pela config autenticada), **sem DELETE** (revogar é estado, preserva a trilha).
+model PublicFormRoute {
+  id        String    @id @default(uuid()) @db.Uuid
+  /// Identificador público OPACO e aleatório (a URL). Único global. Não deriva de orgId/formId.
+  publicId  String    @unique
+  orgId     String    @db.Uuid
+  formId    String    @db.Uuid
+  /// Revogação (link deixa de resolver). Rotação = revogar o antigo + criar um `publicId` novo.
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@map("PublicFormRoute")
 }
 
 /// Field — Campo de um Formulário (Story 2.4). Dado operacional org-owned (AD-10). O `id` é a IDENTIDADE

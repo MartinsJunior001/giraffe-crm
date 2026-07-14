@@ -20,6 +20,8 @@ export interface ConcessaoVisao {
   pipeId: string;
   membershipId: string;
   role: PipeRole;
+  /** Capacidade "Revisar submissões públicas" (Story 2.8), negada por padrão. */
+  reviewPublicSubmissions: boolean;
   state: 'ACTIVE' | 'REVOKED';
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +34,7 @@ const SELECT_GRANT = {
   pipeId: true,
   membershipId: true,
   role: true,
+  reviewPublicSubmissions: true,
   state: true,
   createdAt: true,
   updatedAt: true,
@@ -92,14 +95,22 @@ export class PipeGrantsService {
     }
   }
 
-  /** Concede um papel a uma Membership num Pipe. Recusa (409) se já houver concessão ATIVA ao par. */
-  async conceder(pipeId: string, membershipId: string, role: PipeRole): Promise<ConcessaoVisao> {
+  /**
+   * Concede um papel a uma Membership num Pipe. Recusa (409) se já houver concessão ATIVA ao par. A capacidade
+   * "Revisar submissões públicas" (Story 2.8) é concedida aqui, explicitamente (default falso — deny-by-default).
+   */
+  async conceder(
+    pipeId: string,
+    membershipId: string,
+    role: PipeRole,
+    reviewPublicSubmissions = false,
+  ): Promise<ConcessaoVisao> {
     const { contexto, db } = this.db();
     await this.exigirPipeDaOrg(db, pipeId);
     await this.exigirMembershipAtivaDaOrg(db, membershipId);
     try {
       return await db.pipeGrant.create({
-        data: { orgId: contexto.orgId, pipeId, membershipId, role },
+        data: { orgId: contexto.orgId, pipeId, membershipId, role, reviewPublicSubmissions },
         select: SELECT_GRANT,
       });
     } catch (e) {
@@ -147,13 +158,24 @@ export class PipeGrantsService {
     }
   }
 
-  /** Altera o papel de uma concessão ATIVA. 404 (não-enumerante) se não existe, é de outra Org ou já revogada. */
-  async alterarPapel(pipeId: string, grantId: string, role: PipeRole): Promise<ConcessaoVisao> {
+  /**
+   * Altera uma concessão ATIVA (papel e/ou a capacidade "Revisar submissões públicas"). 404 (não-enumerante) se
+   * não existe, é de outra Org ou já revogada.
+   */
+  async alterarPapel(
+    pipeId: string,
+    grantId: string,
+    role: PipeRole,
+    reviewPublicSubmissions?: boolean,
+  ): Promise<ConcessaoVisao> {
     const { db } = this.db();
     await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
     const { count } = await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
-      data: { role },
+      data: {
+        role,
+        ...(reviewPublicSubmissions !== undefined ? { reviewPublicSubmissions } : {}),
+      },
     });
     // A guarda acima e o `updateMany` são transações separadas (`withTenantContext` recusa `$transaction`).
     // Se uma revogação concorrente entrar nessa janela, o `updateMany` casa 0 linhas: honramos com 404 em vez
