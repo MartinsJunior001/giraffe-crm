@@ -7,6 +7,7 @@ import {
   type TenantContext,
   withTenantContext,
 } from '../../kernel/db/tenant-context';
+import { registrarEntradaNaFase } from '../cards/phase-entry/card-phase-entry';
 
 /**
  * Conflito de concorrência na conversão (→ caminho idempotente / 409), idêntico ao `isConflitoDeSubmissao` da 2.7:
@@ -81,6 +82,13 @@ export async function converterSubmissaoEmCard(
         },
       });
 
+      // 1ª entrada na Fase (Story 2.12) — MESMA transação: não há Card sem sua referência temporal de entrada.
+      await registrarEntradaNaFase(tx, contexto, {
+        cardId: card.id,
+        phaseId: dados.phaseId,
+        origin: 'SUBMISSION',
+      });
+
       // Guarda de estado: só converte quem ainda está PENDING. count=0 ⇒ decidida por outra transação ⇒ 409.
       const marcada = await tx.submissaoPublica.updateMany({
         where: { id: dados.submissaoId, state: 'PENDING' },
@@ -110,6 +118,7 @@ export async function converterSubmissaoEmCard(
 
   auditar(logger, contexto, 'create', 'Card');
   auditar(logger, contexto, 'create', 'CardHistory');
+  auditar(logger, contexto, 'create', 'CardPhaseEntry');
   auditar(logger, contexto, 'update', 'SubmissaoPublica');
   return { cardId };
 }

@@ -10,6 +10,7 @@ import { type ContextoOrganizacional, RequestContext } from '../../kernel/contex
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
 import { exigirOperarPipe } from '../pipe-authz';
+import { registrarEntradaNaFase } from './phase-entry/card-phase-entry';
 import { SubmissaoInvalidaError, validarSubmissao } from './submission';
 
 type Db = ReturnType<typeof withTenantContext>;
@@ -184,6 +185,13 @@ export class CardSubmissionService {
           },
         });
 
+        // 1ª entrada na Fase (Story 2.12) — MESMA transação: não há Card sem sua referência temporal de entrada.
+        await registrarEntradaNaFase(tx, contexto, {
+          cardId: novo.id,
+          phaseId: dados.phaseId,
+          origin: 'SUBMISSION',
+        });
+
         return novo;
       });
     } catch (err) {
@@ -200,6 +208,7 @@ export class CardSubmissionService {
 
     this.auditar(contexto, 'create', 'Card');
     this.auditar(contexto, 'create', 'CardHistory');
+    this.auditar(contexto, 'create', 'CardPhaseEntry');
     return card;
   }
 
