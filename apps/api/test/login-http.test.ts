@@ -74,15 +74,26 @@ function sintetico(nome: string): string {
 }
 
 /**
- * Zera o contador do G2 (rate limit nativo, por IP+rota).
+ * Zera o contador do G2 (rate limit nativo, por IP+rota) **DESTE arquivo**.
  *
- * Necessário porque TODOS os testes deste arquivo saem do mesmo `127.0.0.1`, e o G2 corta em 20
- * solicitações por 15 minutos. Sem isto, o 21º request do arquivo — qualquer um — levaria 429, e os
- * testes seguintes falhariam por um motivo que não é o que eles afirmam medir. O teste do G2 abaixo
- * é o único que o exercita de propósito.
+ * Necessário porque TODOS os testes deste arquivo saem do loopback, e o G2 corta em 20 solicitações
+ * por 15 minutos. Sem isto, o 21º request do arquivo — qualquer um — levaria 429, e os testes
+ * seguintes falhariam por um motivo que não é o que eles afirmam medir. O teste do G2 abaixo é o
+ * único que o exercita de propósito.
+ *
+ * Este arquivo NÃO usa proxy confiável (de propósito: os testes D5 provam que um X-Forwarded-For
+ * forjado é ignorado). Logo o IP do balde é o do peer loopback, cuja forma varia por ambiente
+ * (`::1`, `127.0.0.1`, ou o IPv6 expandido `0000:...:0000`). Por isso a limpeza casa pelo SUFIXO da
+ * rota — mas **exclui a faixa reservada de documentação `203.0.113.*` (TEST-NET-3, RFC 5737)**, que
+ * pertence às suítes de contagem exata (ex.: `rate-limit-native`, que usa um IP único dessa faixa via
+ * proxy confiável). Sem essa exclusão, este `beforeEach` zerava o contador do vizinho no meio de uma
+ * contagem, sob execução PARALELA no CI, e o fazia falhar de forma não-determinística.
  */
 async function limparRateLimit(): Promise<void> {
-  await prisma.$executeRaw`DELETE FROM "RateLimit" WHERE "key" LIKE ${'%' + ROTA_LOGIN}`;
+  await prisma.$executeRaw`
+    DELETE FROM "RateLimit"
+    WHERE "key" LIKE ${'%' + ROTA_LOGIN} AND "key" NOT LIKE ${'203.0.113.%'}
+  `;
 }
 
 beforeAll(async () => {
