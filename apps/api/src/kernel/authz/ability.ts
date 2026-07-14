@@ -22,8 +22,14 @@ export type PapelEfetivo = MembershipRole;
  */
 export type AcaoAutorizada = 'ler' | 'administrar';
 
-/** Nome do sujeito — o que o decorator `@Requer(...)` e a metadata carregam. */
-export type SujeitoAutorizado = 'Organizacao';
+/**
+ * Nome do sujeito — o que o decorator `@Requer(...)` e a metadata carregam.
+ *
+ * `Pipe` (Story 2.1) é o primeiro sujeito de DOMÍNIO. Adicionar um sujeito é a forma esperada de um
+ * Épico consumir este substrato (o próprio arquivo prevê "eles chegam com regra própria nos Épicos") —
+ * NÃO é uma alteração do mecanismo (C3 permanece congelado), é extensão do catálogo.
+ */
+export type SujeitoAutorizado = 'Organizacao' | 'Pipe';
 
 /**
  * Forma do sujeito `Organizacao` para as `conditions` (escopo por `id`). O CASL tipa as conditions e
@@ -34,5 +40,13 @@ export interface Organizacao {
   readonly id: string;
 }
 
-/** A ability do app: ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id: orgId }`). */
-export type AppAbility = MongoAbility<[AcaoAutorizada, SujeitoAutorizado | Organizacao]>;
+/**
+ * Forma do sujeito `Pipe` para as `conditions`. O escopo é por `orgId` (o Pipe pertence à Organização),
+ * simétrico ao isolamento da RLS — um principal recebe abilities de Pipe SÓ na Organização ativa.
+ */
+export interface Pipe {
+  readonly orgId: string;
+}
+
+/** A ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id }` para Org, `{ orgId }` para Pipe). */
+export type AppAbility = MongoAbility<[AcaoAutorizada, SujeitoAutorizado | Organizacao | Pipe]>;

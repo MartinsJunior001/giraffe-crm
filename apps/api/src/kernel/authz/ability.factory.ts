@@ -31,5 +31,14 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Organizacao', { id: orgId });
   }
 
+  // Pipe (Story 2.1): em 2.1, SÓ o Admin da Organização lê/administra Pipes (criar/renomear/arquivar/
+  // restaurar), no escopo da Org ativa. MEMBER/GUEST não têm acesso a Pipe — deny-by-default. Papéis
+  // POR Pipe (Admin do Pipe / Membro do Pipe / Somente leitura) são da Story 2.2, e concederão acesso
+  // granular a MEMBER/GUEST então; antecipá-los aqui seria escopo de outra Story (Constitution II).
+  if (papel === 'ADMIN') {
+    can('ler', 'Pipe', { orgId });
+    can('administrar', 'Pipe', { orgId });
+  }
+
   return build();
 }

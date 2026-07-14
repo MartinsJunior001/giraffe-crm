@@ -40,9 +40,13 @@ export class AuthzGuard implements CanActivate {
     const { accountId, orgId, papel } = this.requestContext.obter();
     const ability = this.abilities.obter(accountId, orgId, papel);
 
-    // `subject(...)` fixa o tipo do sujeito e carrega o escopo `{ id: orgId }` que as conditions
-    // exigem. Sem regra que case ⇒ `can` é falso ⇒ negado (deny-by-default do CASL).
-    if (ability.can(requisito.acao, subject(requisito.sujeito, { id: orgId }))) {
+    // `subject(...)` fixa o tipo do sujeito e carrega o ESCOPO da Organização do contexto. As
+    // conditions dos sujeitos usam `id` (Organizacao) OU `orgId` (sujeitos de domínio, como Pipe na
+    // Story 2.1); por isso o escopo popula os DOIS com o `orgId` resolvido — o caminho de `Organizacao`
+    // permanece idêntico (casa `{ id }`), e sujeitos org-scoped passam a casar `{ orgId }`. Esta é a
+    // guarda GROSSA (o papel pode a ação sobre o TIPO, nesta Org); a checagem fina de QUAL recurso é da
+    // RLS (o serviço só toca linhas da Org do contexto). Sem regra que case ⇒ negado (deny-by-default).
+    if (ability.can(requisito.acao, subject(requisito.sujeito, { id: orgId, orgId }))) {
       return true;
     }
 
