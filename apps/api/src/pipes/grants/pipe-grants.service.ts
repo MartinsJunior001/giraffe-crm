@@ -22,6 +22,8 @@ export interface ConcessaoVisao {
   role: PipeRole;
   /** Capacidade "Revisar submissões públicas" (Story 2.8), negada por padrão. */
   reviewPublicSubmissions: boolean;
+  /** Modificador "restrito ao próprio" do Membro (Story 2.10): só acessa Cards em que é Responsável/concedido. */
+  restritoAoProprio: boolean;
   state: 'ACTIVE' | 'REVOKED';
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +37,7 @@ const SELECT_GRANT = {
   membershipId: true,
   role: true,
   reviewPublicSubmissions: true,
+  restritoAoProprio: true,
   state: true,
   createdAt: true,
   updatedAt: true,
@@ -104,13 +107,21 @@ export class PipeGrantsService {
     membershipId: string,
     role: PipeRole,
     reviewPublicSubmissions = false,
+    restritoAoProprio = false,
   ): Promise<ConcessaoVisao> {
     const { contexto, db } = this.db();
     await this.exigirPipeDaOrg(db, pipeId);
     await this.exigirMembershipAtivaDaOrg(db, membershipId);
     try {
       return await db.pipeGrant.create({
-        data: { orgId: contexto.orgId, pipeId, membershipId, role, reviewPublicSubmissions },
+        data: {
+          orgId: contexto.orgId,
+          pipeId,
+          membershipId,
+          role,
+          reviewPublicSubmissions,
+          restritoAoProprio,
+        },
         select: SELECT_GRANT,
       });
     } catch (e) {
@@ -167,6 +178,7 @@ export class PipeGrantsService {
     grantId: string,
     role: PipeRole,
     reviewPublicSubmissions?: boolean,
+    restritoAoProprio?: boolean,
   ): Promise<ConcessaoVisao> {
     const { db } = this.db();
     await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
@@ -175,6 +187,7 @@ export class PipeGrantsService {
       data: {
         role,
         ...(reviewPublicSubmissions !== undefined ? { reviewPublicSubmissions } : {}),
+        ...(restritoAoProprio !== undefined ? { restritoAoProprio } : {}),
       },
     });
     // A guarda acima e o `updateMany` são transações separadas (`withTenantContext` recusa `$transaction`).

@@ -33,6 +33,8 @@ const MODELOS_AUDITADOS = new Set([
   'CardHistory',
   'SubmissaoPublica',
   'PublicFormRoute',
+  'CardGrant',
+  'CardResponsavel',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

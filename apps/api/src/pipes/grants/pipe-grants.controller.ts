@@ -29,12 +29,14 @@ export class PipeGrantsController {
   @Requer('administrar', 'Pipe')
   @Post()
   async conceder(@Param('pipeId') pipeId: string, @Body() body: unknown): Promise<ConcessaoVisao> {
-    const { membershipId, role, reviewPublicSubmissions } = parseConcederPapel(body);
+    const { membershipId, role, reviewPublicSubmissions, restritoAoProprio } =
+      parseConcederPapel(body);
     return this.grants.conceder(
       validarIdRota(pipeId, 'pipeId'),
       membershipId,
       role,
       reviewPublicSubmissions,
+      restritoAoProprio,
     );
   }
 
@@ -51,12 +53,13 @@ export class PipeGrantsController {
     @Param('grantId') grantId: string,
     @Body() body: unknown,
   ): Promise<ConcessaoVisao> {
-    const { role, reviewPublicSubmissions } = parseAlterarPapel(body);
+    const { role, reviewPublicSubmissions, restritoAoProprio } = parseAlterarPapel(body);
     return this.grants.alterarPapel(
       validarIdRota(pipeId, 'pipeId'),
       validarIdRota(grantId, 'grantId'),
       role,
       reviewPublicSubmissions,
+      restritoAoProprio,
     );
   }
 
