@@ -125,17 +125,36 @@ export class PipeGrantsService {
   }
 
   /**
-   * Altera o papel de uma concessão ATIVA. `updateMany` com `where` restrito para que a filtragem da RLS
-   * (e o `state: ACTIVE`) resulte em `{ count: 0 }` → 404, em vez de vazar a existência de uma concessão
-   * de outra Org ou já revogada.
+   * Exige uma concessão ATIVA daquele Pipe, na Org do contexto — ou 404 uniforme. É uma LEITURA
+   * (`findUnique`, não auditada) feita ANTES do `updateMany`, para que os casos "não existe / outra Org
+   * (RLS→null) / outro Pipe / já revogada" respondam 404 **sem** emitir um `updateMany` com `{ count: 0 }`.
+   * Um `updateMany` que casa 0 linhas é classificado pela auditoria como tentativa filtrada por RLS →
+   * falso `denied` na trilha FR-214; aqui a re-revogação/alteração de uma concessão inexistente ou já
+   * revogada é operação legítima do Admin, não sinal de acesso cruzado. (Mesma correção da 2.1 em
+   * arquivar/restaurar.)
    */
+  private async exigirConcessaoAtivaDoPipe(
+    db: ReturnType<typeof withTenantContext>,
+    pipeId: string,
+    grantId: string,
+  ): Promise<void> {
+    const grant = await db.pipeGrant.findUnique({
+      where: { id: grantId },
+      select: { pipeId: true, state: true },
+    });
+    if (!grant || grant.pipeId !== pipeId || grant.state !== 'ACTIVE') {
+      throw new NotFoundException();
+    }
+  }
+
+  /** Altera o papel de uma concessão ATIVA. 404 (não-enumerante) se não existe, é de outra Org ou já revogada. */
   async alterarPapel(pipeId: string, grantId: string, role: PipeRole): Promise<ConcessaoVisao> {
     const { db } = this.db();
-    const { count } = await db.pipeGrant.updateMany({
+    await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
+    await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
       data: { role },
     });
-    if (count === 0) throw new NotFoundException();
     const grant = await db.pipeGrant.findUnique({ where: { id: grantId }, select: SELECT_GRANT });
     if (!grant) throw new NotFoundException();
     return grant;
@@ -143,16 +162,17 @@ export class PipeGrantsService {
 
   /**
    * Revoga uma concessão (soft-delete: `state = REVOKED`, `revokedAt = now`). NUNCA apaga (o runtime nem
-   * tem GRANT de DELETE) — preserva a trilha. Idempotência: revogar uma já revogada é 404 (não existe
-   * concessão ATIVA com esse id), coerente com "revogar o que está ativo".
+   * tem GRANT de DELETE) — preserva a trilha. Revogar uma já revogada (ou inexistente/de outra Org) é 404,
+   * coerente com "revogar o que está ATIVO" — e sem gerar falso `denied` de auditoria (ver
+   * `exigirConcessaoAtivaDoPipe`).
    */
   async revogar(pipeId: string, grantId: string): Promise<ConcessaoVisao> {
     const { db } = this.db();
-    const { count } = await db.pipeGrant.updateMany({
+    await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
+    await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
       data: { state: 'REVOKED', revokedAt: new Date() },
     });
-    if (count === 0) throw new NotFoundException();
     const grant = await db.pipeGrant.findUnique({ where: { id: grantId }, select: SELECT_GRANT });
     if (!grant) throw new NotFoundException();
     return grant;

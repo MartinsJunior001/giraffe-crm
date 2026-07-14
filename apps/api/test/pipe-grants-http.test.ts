@@ -136,7 +136,7 @@ describe('autorização das concessões (SC-203 estendido)', () => {
   });
 });
 
-describe('ciclo de vida da concessão (SC-222 / SC-223 / SC-225)', () => {
+describe('CRUD da concessão: conceder, listar, alterar papel, revogar (SC-223) — incremento 1', () => {
   it('concede, lista, altera o papel e revoga — soft-delete preserva a linha', async () => {
     const pipeId = await criarPipeComoAna('Grants ciclo');
 
@@ -168,8 +168,13 @@ describe('ciclo de vida da concessão (SC-222 / SC-223 / SC-225)', () => {
     // Some do roster ativo…
     const ativos = (await (await req('GET', `/pipes/${pipeId}/grants`, ANA)).json()) as GrantResp[];
     expect(ativos.map((g) => g.id)).not.toContain(grant.id);
-    // …e revogar de novo é 404 (não há concessão ATIVA com esse id).
+    // …e revogar de novo é 404 (não há concessão ATIVA com esse id) — via o findUnique de guarda,
+    // sem emitir updateMany, para não gerar falso `denied` de auditoria.
     expect((await req('DELETE', `/pipes/${pipeId}/grants/${grant.id}`, ANA)).status).toBe(404);
+    // …e alterar o papel de uma concessão já revogada também é 404 (não há concessão ATIVA).
+    expect(
+      (await req('PATCH', `/pipes/${pipeId}/grants/${grant.id}`, ANA, { role: 'ADMIN' })).status,
+    ).toBe(404);
   });
 
   it('recusa 2ª concessão ativa ao mesmo par com 409; após revogar, re-conceder é 201', async () => {
@@ -202,7 +207,7 @@ describe('ciclo de vida da concessão (SC-222 / SC-223 / SC-225)', () => {
   });
 });
 
-describe('isolamento e validação (SC-226 / AC1)', () => {
+describe('isolamento e validação (SC-226) — incremento 1', () => {
   it('Carla (Org B) não concede num Pipe da Org A — 404 (não-enumeração)', async () => {
     const pipeId = await criarPipeComoAna('Grants só da Org A');
     const res = await req('POST', `/pipes/${pipeId}/grants`, CARLA, {
