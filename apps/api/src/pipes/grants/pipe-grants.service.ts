@@ -151,10 +151,14 @@ export class PipeGrantsService {
   async alterarPapel(pipeId: string, grantId: string, role: PipeRole): Promise<ConcessaoVisao> {
     const { db } = this.db();
     await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
-    await db.pipeGrant.updateMany({
+    const { count } = await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
       data: { role },
     });
+    // A guarda acima e o `updateMany` são transações separadas (`withTenantContext` recusa `$transaction`).
+    // Se uma revogação concorrente entrar nessa janela, o `updateMany` casa 0 linhas: honramos com 404 em vez
+    // de devolver um corpo re-lido enganoso (200 sobre uma concessão que já não está mais ativa).
+    if (count === 0) throw new NotFoundException();
     const grant = await db.pipeGrant.findUnique({ where: { id: grantId }, select: SELECT_GRANT });
     if (!grant) throw new NotFoundException();
     return grant;
@@ -169,10 +173,13 @@ export class PipeGrantsService {
   async revogar(pipeId: string, grantId: string): Promise<ConcessaoVisao> {
     const { db } = this.db();
     await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
-    await db.pipeGrant.updateMany({
+    const { count } = await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
       data: { state: 'REVOKED', revokedAt: new Date() },
     });
+    // Mesma janela de `alterarPapel`: uma revogação concorrente que vença a corrida deixa este `updateMany`
+    // com 0 linhas. 404 é a resposta honesta — a concessão já não estava mais ativa para esta operação revogar.
+    if (count === 0) throw new NotFoundException();
     const grant = await db.pipeGrant.findUnique({ where: { id: grantId }, select: SELECT_GRANT });
     if (!grant) throw new NotFoundException();
     return grant;
