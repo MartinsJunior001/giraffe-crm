@@ -7,6 +7,8 @@ import { FormPublicationController } from './forms/publication.controller';
 import { FormPublicationService } from './forms/publication.service';
 import { CardsController } from './cards/cards.controller';
 import { CardSubmissionService } from './cards/card-submission.service';
+import { KanbanController } from './cards/kanban.controller';
+import { KanbanReadService } from './cards/kanban-read.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
 import { PublicSubmissionService } from './public-submissions/public-submission.service';
 import { PublicRouteResolver } from './public-submissions/public-route.resolver';
@@ -34,7 +36,9 @@ import { PipesService } from './pipes.service';
  * imutável e versionado; despublicar/ler estado e histórico. Story 2.7: submissão interna
  * (`CardsController`/`CardSubmissionService`) — submeter o Formulário inicial publicado cria um `Card` na 1ª
  * Fase ativa + evento `CardHistory`, atomicamente; ativa o poder "Membro OPERA Cards" (`exigirOperarPipe`).
- * Depende de `PrismaService` (DbModule global) e
+ * Story 2.9: Kanban e espaço operacional do Card (`KanbanController`/`KanbanReadService`) — leitura dos Cards
+ * agrupados por Fase (colunas paginadas por cursor) e o detalhe do Card com as capacidades efetivas; SEM
+ * migration/GRANT novo (movimentação é 2.14). Depende de `PrismaService` (DbModule global) e
  * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
  * este módulo só registra os controllers e serviços.
  */
@@ -47,6 +51,7 @@ import { PipesService } from './pipes.service';
     FieldsController,
     FormPublicationController,
     CardsController,
+    KanbanController,
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
@@ -59,6 +64,7 @@ import { PipesService } from './pipes.service';
     FieldsService,
     FormPublicationService,
     CardSubmissionService,
+    KanbanReadService,
     PublicSubmissionService,
     PublicRouteResolver,
     PublicRateLimit,
