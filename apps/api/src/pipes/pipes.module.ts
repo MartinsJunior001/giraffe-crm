@@ -7,6 +7,14 @@ import { FormPublicationController } from './forms/publication.controller';
 import { FormPublicationService } from './forms/publication.service';
 import { CardsController } from './cards/cards.controller';
 import { CardSubmissionService } from './cards/card-submission.service';
+import { PublicSubmissionController } from './public-submissions/public-submission.controller';
+import { PublicSubmissionService } from './public-submissions/public-submission.service';
+import { PublicRouteResolver } from './public-submissions/public-route.resolver';
+import { PublicRateLimit } from './public-submissions/public-rate-limit';
+import { TriageController } from './public-submissions/triage.controller';
+import { TriageService } from './public-submissions/triage.service';
+import { PublicConfigController } from './public-submissions/public-config.controller';
+import { PublicConfigService } from './public-submissions/public-config.service';
 import { PipeGrantsController } from './grants/pipe-grants.controller';
 import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PhasesController } from './phases/phases.controller';
@@ -39,6 +47,9 @@ import { PipesService } from './pipes.service';
     FieldsController,
     FormPublicationController,
     CardsController,
+    PublicSubmissionController,
+    TriageController,
+    PublicConfigController,
   ],
   providers: [
     PipesService,
@@ -48,6 +59,11 @@ import { PipesService } from './pipes.service';
     FieldsService,
     FormPublicationService,
     CardSubmissionService,
+    PublicSubmissionService,
+    PublicRouteResolver,
+    PublicRateLimit,
+    TriageService,
+    PublicConfigService,
   ],
 })
 export class PipesModule {}
