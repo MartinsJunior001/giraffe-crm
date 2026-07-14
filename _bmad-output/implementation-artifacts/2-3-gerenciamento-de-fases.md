@@ -1,7 +1,7 @@
 ---
 story_key: 2-3-gerenciamento-de-fases
 epic: 2
-status: ready-for-dev
+status: done
 release: CORE (Lote 2 — WAVE 2 do épico)
 risco: CRÍTICO
 baseline_commit: pendente (empilha sobre a 2.2 / PR #20, já sobre a 2.1 / PR #17 mergeado)
@@ -273,3 +273,4 @@ _(a preencher na implementação)_
 | Data | Mudança |
 |---|---|
 | 2026-07-13 | Story criada (L2/WAVE 2, Épico 2) a partir de `epics.md` (Story 2.3), RN-030/D2.2 e do débito **DBT-2.2-ROLE-DORMENTE** (revisão independente da 2.2, incremento 2). Risco **CRÍTICO** (nova tabela `Fase` + RLS + migration **e** ativação do poder diferencial por papel de Pipe). Escopo **congelado**: só ciclo de vida e ordenação de Fases + a autorização que gerenciar Fases exige (Formulário de Fase = 2.15; movimentação = 2.14; Cards = 2.7+ fora). **AC5** ativa DBT-2.2-ROLE-DORMENTE: resolução passa a ler `role` + reconferir `Membership.state` (Admin da Org e Admin do Pipe gerenciam; MEMBER/VIEWER só leem; sem acesso → 404). **AC4:** trava por Cards ativos é contrato futuro (AD-11), como na 2.1. Decisões deixadas para o Plan: representação da chave de ordenação (recomendado esparsa/rank por causa da recusa de `$transaction`); enforcement de "≥1 Fase ativa" (recomendado no serviço); semeadura da 1ª Fase; nomes; mecanismo da autorização diferencial (filtro de serviço vs CASL estendido). Ponto crítico: guarda fina no **serviço** (DBT-AUTHZ-01), `ability.ts`/`authz.guard.ts` congelados (C3). Empilha sobre a 2.2 (PR #20). Status → ready-for-dev. |
+| 2026-07-13 | Implementada e mergeada na `main` (PR #22, merge commit 87e94a7) com CI verde, revisão independente completa (Security APPROVED, Edge Case APPROVED WITH LOW, Acceptance CHANGES REQUIRED → findings corrigidos: ordenação `[state,position,id]` e teste de Membership SUSPENDED) e **294/294** testes com PostgreSQL real. `migration-check` com evidência real de deploy/rollback/reaplicação. AC1..AC6 / SC-231..239 cobertos; **DBT-2.2-ROLE-DORMENTE fechado** (metade "Admin do Pipe administra config"). Débitos novos: DBT-2.3-POSITION-RENORM, DBT-2.3-ULTIMA-FASE-TOCTOU. Status → **done**. |
