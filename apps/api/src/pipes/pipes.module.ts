@@ -9,6 +9,8 @@ import { CardsController } from './cards/cards.controller';
 import { CardSubmissionService } from './cards/card-submission.service';
 import { KanbanController } from './cards/kanban.controller';
 import { KanbanReadService } from './cards/kanban-read.service';
+import { CardAccessController } from './cards/access/card-access.controller';
+import { CardAccessService } from './cards/access/card-access.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
 import { PublicSubmissionService } from './public-submissions/public-submission.service';
 import { PublicRouteResolver } from './public-submissions/public-route.resolver';
@@ -38,7 +40,12 @@ import { PipesService } from './pipes.service';
  * Fase ativa + evento `CardHistory`, atomicamente; ativa o poder "Membro OPERA Cards" (`exigirOperarPipe`).
  * Story 2.9: Kanban e espaço operacional do Card (`KanbanController`/`KanbanReadService`) — leitura dos Cards
  * agrupados por Fase (colunas paginadas por cursor) e o detalhe do Card com as capacidades efetivas; SEM
- * migration/GRANT novo (movimentação é 2.14). Depende de `PrismaService` (DbModule global) e
+ * migration/GRANT novo (movimentação é 2.14). Story 2.10: acesso, Responsável e concessões de Card
+ * (`CardAccessController`/`CardAccessService`) — atribuir/remover Responsável (exige OPERAR o Card; alvo já com
+ * acesso operacional) e conceder/revogar acesso direto a um Card (exige GERENCIAR o Pipe), tudo com evento
+ * `CardHistory` na mesma transação; a resolução de acesso NO CARD (`resolverAcessoNoCard`) compõe papel-de-Pipe +
+ * concessão direta + "restrito ao próprio" + Responsável-atual (`pipe-authz`). Fecha o DBT-2.2-ROLE-DORMENTE.
+ * Depende de `PrismaService` (DbModule global) e
  * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
  * este módulo só registra os controllers e serviços.
  */
@@ -52,6 +59,7 @@ import { PipesService } from './pipes.service';
     FormPublicationController,
     CardsController,
     KanbanController,
+    CardAccessController,
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
@@ -65,6 +73,7 @@ import { PipesService } from './pipes.service';
     FormPublicationService,
     CardSubmissionService,
     KanbanReadService,
+    CardAccessService,
     PublicSubmissionService,
     PublicRouteResolver,
     PublicRateLimit,

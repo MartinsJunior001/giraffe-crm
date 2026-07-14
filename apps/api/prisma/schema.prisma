@@ -287,6 +287,8 @@ model Organization {
   cardHistories     CardHistory[]
   publicSubmissions SubmissaoPublica[]
   publicFormRoutes  PublicFormRoute[]
+  cardGrants        CardGrant[]
+  cardResponsaveis  CardResponsavel[]
 
   @@map("Organization")
 }
@@ -389,6 +391,10 @@ model PipeGrant {
   /// com uma concessão ACTIVE que a tenha `true`. Não cria papel novo nem toca o CASL/guard (C3 congelado) — a
   /// guarda fina vive em `pipe-authz` (`exigirRevisarSubmissoesPublicas`).
   reviewPublicSubmissions Boolean        @default(false)
+  /// Modificador "restrito ao próprio" do Membro do Pipe (Story 2.10, PRD D1.5), deny-by-default. NÃO é papel novo
+  /// (análogo a `reviewPublicSubmissions`): quando `true`, o Membro só opera Cards onde é Responsável atual OU tem
+  /// concessão direta ativa (`creator`/histórico anterior não concedem acesso). Guarda fina em `pipe-authz`.
+  restritoAoProprio       Boolean        @default(false)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   /// Momento da revogação (null quando ativa). Revogar preserva a linha; só muda estado.
@@ -417,9 +423,11 @@ model Membership {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipeGrants   PipeGrant[]
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipeGrants       PipeGrant[]
+  cardGrants       CardGrant[]
+  cardResponsaveis CardResponsavel[]
 
   // Uma conta tem no máximo UM vínculo por Organização (papel único — AD-7).
   @@unique([accountId, orgId])
@@ -551,6 +559,8 @@ model Card {
   formVersion      FormVersion       @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
   history          CardHistory[]
   publicSubmission SubmissaoPublica?
+  grants           CardGrant[]
+  responsaveis     CardResponsavel[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -583,6 +593,76 @@ model CardHistory {
 
   @@index([orgId, cardId, createdAt])
   @@map("CardHistory")
+}
+
+/// Estado de uma concessão direta de acesso a um Card (Story 2.10). Revogar preserva a linha (sem DELETE).
+enum CardGrantState {
+  ACTIVE
+  REVOKED
+}
+
+/// Estado da atribuição de Responsável de um Card (Story 2.10). Remover preserva a linha (sem DELETE).
+enum CardResponsavelState {
+  ACTIVE
+  REMOVED
+}
+
+/// CardGrant — concessão DIRETA de acesso a UM Card específico (Story 2.10, PRD D1.5). Dado operacional org-owned.
+/// Não é papel: dá acesso SÓ àquele Card, nunca lista/config/métricas do Pipe nem outros Cards. Observador = só
+/// `podeLer`; concessão operacional direta = `podeOperar` (+ `podeMover` opt-in — a OPERAÇÃO de mover é a 2.14;
+/// aqui só o DADO da capacidade). Deny-by-default (capacidades default falsas, exceto leitura). Isolamento pelo
+/// banco (RLS ENABLE+FORCE); runtime SELECT/INSERT/UPDATE — **sem DELETE** (revogar é `state = REVOKED`).
+model CardGrant {
+  id           String         @id @default(uuid()) @db.Uuid
+  orgId        String         @db.Uuid
+  cardId       String         @db.Uuid
+  membershipId String         @db.Uuid
+  /// Observador (leitura). Default true — uma concessão sempre concede ao menos ler o Card.
+  podeLer      Boolean        @default(true)
+  /// Concessão operacional direta (agir no Card). Deny-by-default.
+  podeOperar   Boolean        @default(false)
+  /// Capacidade "Mover Card" (dado de autorização; a operação é 2.14). Deny-by-default; só se concedida.
+  podeMover    Boolean        @default(false)
+  state        CardGrantState @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  revokedAt    DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  // Consultas por Card (quem acessa) e por pessoa (quais Cards).
+  @@index([orgId, cardId])
+  @@index([orgId, membershipId])
+  // Nota: a unicidade "uma concessão ativa por (card, pessoa)" é índice PARCIAL na migration (WHERE state='ACTIVE').
+  @@map("CardGrant")
+}
+
+/// CardResponsavel — atribuição de RESPONSÁVEL de um Card (Story 2.10, PRD D5.1). Dado operacional org-owned. É
+/// ATRIBUIÇÃO operacional, **não papel**: não amplia acesso (o alvo já precisa de acesso operacional). A chave é
+/// `membershipId` (elegibilidade é por Membership — PRD §1065), não accountId. Mantém `Card` **append-only** (a
+/// 2.10 NÃO abre GRANT de UPDATE em `Card`; o 1º UPDATE de Card segue reservado à movimentação — 2.14). No máximo
+/// UMA atribuição ACTIVE por Card (índice parcial na migration). `creator` NÃO vive aqui — é o `actorId` do evento
+/// `CREATED` (2.7). Isolamento pelo banco (RLS); runtime SELECT/INSERT/UPDATE — **sem DELETE** (remover é `state`).
+model CardResponsavel {
+  id           String               @id @default(uuid()) @db.Uuid
+  orgId        String               @db.Uuid
+  cardId       String               @db.Uuid
+  membershipId String               @db.Uuid
+  state        CardResponsavelState @default(ACTIVE)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  removedAt    DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, cardId])
+  @@index([orgId, membershipId])
+  // Nota: a unicidade "um Responsável ativo por Card" é índice PARCIAL na migration (WHERE state='ACTIVE').
+  @@map("CardResponsavel")
 }
 
 /// SubmissaoPublica — submissão de um Formulário inicial PÚBLICO por ator externo (Story 2.8). Dado operacional

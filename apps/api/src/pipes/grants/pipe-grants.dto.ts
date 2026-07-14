@@ -47,6 +47,7 @@ export function parseConcederPapel(body: unknown): {
   membershipId: string;
   role: PipeRole;
   reviewPublicSubmissions: boolean;
+  restritoAoProprio: boolean;
 } {
   if (typeof body !== 'object' || body === null) {
     throw new BadRequestException('corpo inválido');
@@ -60,6 +61,7 @@ export function parseConcederPapel(body: unknown): {
     role: validarPapel(dados.role),
     reviewPublicSubmissions:
       validarBoolOpcional(dados.reviewPublicSubmissions, 'reviewPublicSubmissions') ?? false,
+    restritoAoProprio: validarBoolOpcional(dados.restritoAoProprio, 'restritoAoProprio') ?? false,
   };
 }
 
@@ -70,6 +72,7 @@ export function parseConcederPapel(body: unknown): {
 export function parseAlterarPapel(body: unknown): {
   role: PipeRole;
   reviewPublicSubmissions: boolean | undefined;
+  restritoAoProprio: boolean | undefined;
 } {
   if (typeof body !== 'object' || body === null) {
     throw new BadRequestException('corpo inválido');
@@ -81,5 +84,6 @@ export function parseAlterarPapel(body: unknown): {
       dados.reviewPublicSubmissions,
       'reviewPublicSubmissions',
     ),
+    restritoAoProprio: validarBoolOpcional(dados.restritoAoProprio, 'restritoAoProprio'),
   };
 }
