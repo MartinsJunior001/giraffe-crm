@@ -58,6 +58,7 @@ ausente das FKs de `PipeGrant`; isolamento vivo intacto por app+RLS. Sem mudanç
 
 ## Estado dos gates
 `context7-check` · `format:check` · `lint` (escopado ao código novo; o ruído de `.claude/worktrees/` é
-efêmero e fora do commit) · `typecheck` · `test` **293/293** (PostgreSQL real) · `migration-check` (deploy/
-rollback/reaplicação com evidência real) — todos verdes. Falta: **revisão independente read-only** e
-`commit-check` (a seguir).
+efêmero e fora do commit) · `typecheck` · `test` **294/294** (PostgreSQL real; inclui o teste de Membership
+SUSPENDED, adicionado após a revisão) · `migration-check` (deploy/rollback/reaplicação com evidência real) —
+todos verdes. **Revisão independente read-only concluída** (`revisao-independente.md`: Security APPROVED,
+Edge Case APPROVED WITH LOW, Acceptance CHANGES REQUIRED → findings corrigidos). Falta só o `commit-check`.

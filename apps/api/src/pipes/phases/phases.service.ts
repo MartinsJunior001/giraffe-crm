@@ -130,9 +130,10 @@ export class PhasesService {
   }
 
   /**
-   * Lista as Fases do Pipe **na ordem** (`position` asc, `id` como desempate determinístico). Default só
-   * ACTIVE; `incluirArquivadas` traz também as ARCHIVED (no fim, pela `position` preservada). Exige ao menos
-   * acesso de leitura ao Pipe (senão 404 não-enumerante).
+   * Lista as Fases do Pipe **na ordem**. Ordena por `[state, position, id]`: as ACTIVE primeiro (o enum
+   * declara `ACTIVE` antes de `ARCHIVED`), por `position` asc, com `id` como desempate determinístico; as
+   * ARCHIVED vêm **depois** (só quando `incluirArquivadas`). Sem a chave `state`, uma arquivada de `position`
+   * baixa se intercalaria entre as ativas. Exige ao menos acesso de leitura ao Pipe (senão 404 não-enumerante).
    */
   async listar(pipeId: string, incluirArquivadas: boolean): Promise<FaseVisao[]> {
     const { contexto, db } = this.db();
@@ -141,7 +142,7 @@ export class PhasesService {
     return db.phase.findMany({
       where: { pipeId, ...filtroEstado },
       select: SELECT_FASE,
-      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      orderBy: [{ state: 'asc' }, { position: 'asc' }, { id: 'asc' }],
     });
   }
 

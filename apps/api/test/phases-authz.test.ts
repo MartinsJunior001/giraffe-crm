@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { IncomingMessage } from 'node:http';
@@ -27,6 +28,12 @@ const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ANA = '11111111-1111-1111-1111-111111111111'; // ADMIN na Org A
 const BRUNO = '22222222-2222-2222-2222-222222222222'; // MEMBER na Org A
 const MEMBERSHIP_BRUNO_A = 'a1a1a1a1-0000-0000-0000-000000000002';
+
+// Conta/Membership DESCARTÁVEIS desta suíte (ids aleatórios) para o cenário de Membership suspensa —
+// NÃO se toca no Bruno, que é fixture de leitura compartilhada por suítes paralelas. Diana nasce ACTIVE
+// na Org A e é suspensa DENTRO do teste; nenhuma suíte conta o total de Memberships da Org A.
+const DIANA = randomUUID();
+const MEMBERSHIP_DIANA = randomUUID();
 
 const HEADER_CONTA = 'x-test-account';
 const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
@@ -104,12 +111,25 @@ beforeAll(async () => {
 
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
   await migrator.$connect();
+
+  // Diana: conta global + Membership ACTIVE na Org A (fixture descartável desta suíte).
+  await migrator.account.create({
+    data: { id: DIANA, email: `phases-authz-${DIANA}@exemplo.test`, name: 'Diana' },
+  });
+  const dbA = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  await dbA.membership.create({
+    data: { id: MEMBERSHIP_DIANA, accountId: DIANA, orgId: ORG_A, role: 'MEMBER', state: 'ACTIVE' },
+  });
 });
 
 afterAll(async () => {
-  if (migrator && pipesCriados.length > 0) {
-    const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
-    await db.pipe.deleteMany({ where: { id: { in: pipesCriados } } }); // cascateia Fases e concessões
+  if (migrator) {
+    if (pipesCriados.length > 0) {
+      const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+      await db.pipe.deleteMany({ where: { id: { in: pipesCriados } } }); // cascateia Fases e concessões
+    }
+    // Apagar a conta cascateia a Membership da Diana (e as concessões dela). Faxina pelo dono.
+    await migrator.account.deleteMany({ where: { id: DIANA } }).catch(() => {});
   }
   await app?.close();
   await migrator?.$disconnect();
@@ -184,5 +204,35 @@ describe('poder diferencial por papel de Pipe sobre Fases (SC-236 — fecha DBT-
     // Bruno passa a guarda grossa de `ler Pipe`, mas sem concessão o serviço responde 404.
     expect((await req('GET', `/pipes/${pipeId}/phases`, BRUNO)).status).toBe(404);
     expect((await req('POST', `/pipes/${pipeId}/phases`, BRUNO, { name: 'x' })).status).toBe(404);
+  });
+
+  it('Membership SUSPENDED com concessão ADMIN é NEGADA (reconferência de Membership.state)', async () => {
+    // Diana é ADMIN do Pipe (grant ACTIVE) enquanto sua Membership está ACTIVE — e gerencia.
+    const pipeId = await criarPipe('Fases authz — Diana suspensa');
+    expect(
+      (
+        await req('POST', `/pipes/${pipeId}/grants`, ANA, {
+          membershipId: MEMBERSHIP_DIANA,
+          role: 'ADMIN',
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await req('POST', `/pipes/${pipeId}/phases`, DIANA, { name: 'Enquanto ativa' })).status,
+    ).toBe(201);
+
+    // Suspende a Membership da Diana (pelo migrator). A concessão CONTINUA ACTIVE, mas o papel não deve
+    // mais valer: a garantia é em duas camadas — o org-context resolver só resolve contexto com Membership
+    // ACTIVE (nega antes do serviço) e o PhasesService reconfere `Membership.state`. Fase VERMELHA: se
+    // nenhuma das duas checasse o estado, Diana suspensa ainda criaria Fase.
+    const dbA = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+    await dbA.membership.updateMany({
+      where: { id: MEMBERSHIP_DIANA },
+      data: { state: 'SUSPENDED' },
+    });
+
+    const res = await req('POST', `/pipes/${pipeId}/phases`, DIANA, { name: 'Depois de suspensa' });
+    expect([403, 404]).toContain(res.status);
+    expect(res.status).not.toBe(201);
   });
 });
