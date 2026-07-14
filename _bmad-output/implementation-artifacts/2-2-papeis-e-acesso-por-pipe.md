@@ -1,7 +1,7 @@
 ---
 story_key: 2-2-papeis-e-acesso-por-pipe
 epic: 2
-status: in-progress
+status: done
 release: CORE (Lote 2 — WAVE 2 do épico)
 risco: CRÍTICO
 baseline_commit: pendente (empilha sobre a 2.1 / PR #17)
@@ -215,6 +215,36 @@ hoje negam MEMBER/GUEST categoricamente) — arquivos **sob revisão externa no 
 entrelaçaria com o PR #17 e geraria retrabalho no rebase. Cobre AC1/AC3 e SC-221/222/224/227, que ficam
 para o incremento 2 sobre base estável. Ver `analyze.md` RV-3.
 
+**Feito no incremento 2 (acesso por concessão — PR #20, `main` f3dd756) — 2026-07-13:**
+- `ability.factory.ts`: toda Membership ativa passa a poder o TIPO `ler Pipe` (guarda **grossa**);
+  `administrar Pipe` (ciclo de vida) segue **só do Admin da Org**. `authz.guard.ts`/`ability.ts` **não
+  mudam** (contrato congelado C3 intacto — confirmado por `git diff`).
+- `pipes.service.ts` (`listar`/`obter` + `membershipIdAtual`): Admin da Org vê todos sem concessão (AC3);
+  não-Admin vê **apenas** os Pipes com `PipeGrant` ACTIVE da própria Membership, com **não-enumeração**
+  (404 para não concedido). Revogar corta o acesso (volta a 404). **SC-221/224/225/227** verdes.
+- `pipe-grants.service.ts` (`alterarPapel`/`revogar`): captura o `count` do `updateMany` e responde 404
+  quando 0 — fecha a corrida check-then-update (LOW do Edge Case; 404 honesto em vez de 200 enganoso +
+  falso `denied`).
+- Testes: nova suíte `pipe-access-http.test.ts` (SC-221/224/225/227) + atualização de
+  `pipes-authz.test.ts`/`pipes-http.test.ts` para o novo contrato. Suíte API **273/273** (PostgreSQL real).
+- Revisão independente do incremento 2 (`gates/2-2/revisao-independente-incremento-2.md`): **Security
+  APPROVED**, **Edge Case APPROVED WITH LOW** (corrigido), **Acceptance CHANGES REQUIRED** → itens de
+  rastreabilidade resolvidos. Sem CRITICAL/HIGH.
+
+**DEFERIDO por decisão — `AC2`/`SC-222` (poder DIFERENCIAL por papel).** O Acceptance Auditor decidiu
+**SC-222=(B)** (armazenar o papel e preparar; diferenciação deferida), fundamentado em **PRD §7/§15 +
+non-objetivos da 2.2**: as superfícies onde o papel se diferencia — Fases (2.3), Cards (2.7+),
+Formulários (2.4+) — **não existem** nesta Story; tornar o PATCH diferencial contradiria o PRD §15
+(`locked`/`starred` **não são permissão de usuário**) e seria antecipação de escopo (Constitution II).
+Por ora `role` é armazenado mas **inerte** no caminho de acesso (toda concessão ACTIVE dá **leitura**;
+ciclo de vida/config só Admin da Org — deny-by-default, reversível). A ativação está rastreada por
+**DBT-2.2-ROLE-DORMENTE** (em `revisao-independente-incremento-2.md`): **Story 2.3** (Admin do Pipe
+administra config — fases/formulários) e **Story 2.7/2.10** (Membro do Pipe opera cards), com critério
+(a resolução de acesso passa a ler `role` e reconferir `Membership.state`) e **gate** (checklist de aceite
+de 2.3 e 2.7/2.10 inclui o teste de poder diferencial em fase vermelha). Portanto o escopo **real** da 2.2
+(acesso por concessão + isolamento + unicidade) está **concluído**; o diferencial pertence a Stories
+futuras, não é incremento pendente da 2.2.
+
 ### File List
 
 **Novos**
@@ -229,6 +259,17 @@ para o incremento 2 sobre base estável. Ver `analyze.md` RV-3.
 - `apps/api/src/pipes/pipes.module.ts` (registra o módulo de concessões)
 - `apps/api/src/kernel/db/tenant-context.ts` (`PipeGrant` em `MODELOS_AUDITADOS`)
 
+**Incremento 2 (PR #20) — novos**
+- `apps/api/test/pipe-access-http.test.ts`
+- `_bmad-output/implementation-artifacts/gates/2-2/revisao-independente-incremento-2.md`
+
+**Incremento 2 (PR #20) — modificados**
+- `apps/api/src/kernel/authz/ability.factory.ts` (`ler Pipe` para toda Membership ativa; `administrar` só ADMIN)
+- `apps/api/src/pipes/pipes.service.ts` (`listar`/`obter` cientes de concessão + `membershipIdAtual`)
+- `apps/api/src/pipes/grants/pipe-grants.service.ts` (`count===0` → 404 em `alterarPapel`/`revogar`)
+- `apps/api/test/pipes-authz.test.ts`, `apps/api/test/pipes-http.test.ts` (novo contrato de acesso)
+- `specs/2-2-papeis-e-acesso-por-pipe/tasks.md` (reconciliação T004/T006/T008/T010/T011/T012)
+
 ---
 
 ## Change Log
@@ -236,3 +277,4 @@ para o incremento 2 sobre base estável. Ver `analyze.md` RV-3.
 | Data | Mudança |
 |---|---|
 | 2026-07-13 | Story criada (L2/WAVE 2, Épico 2) a partir de `epics.md` (Story 2.2) e das decisões de Produto **D1.4 (OQ-2)** e **D1.3 (OQ-1)**, já aprovadas no PRD (não bloqueiam). Risco **CRÍTICO** (nova tabela de concessão + RLS + autorização por recurso). Escopo **congelado**: só papéis/acesso por Pipe (Card = 2.10; modos condicionais não são papéis). Decisões-chave deixadas para o Plan: concessão liga a `Membership` (recomendado) vs `Account`; revogação por soft-delete (recomendado) vs DELETE; nomes do enum `PipeRole`. Ponto crítico: autorização fina por Pipe é no **serviço** (DBT-AUTHZ-01), não no guard. Empilha sobre a 2.1 (PR #17, em review). Status → ready-for-dev. |
+| 2026-07-13 | Incremento 1 (gestão de concessões) mergeado na `main` (PR #18); incremento 2 (acesso por concessão) mergeado na `main` (PR #20, merge commit f3dd756) com CI verde, revisão independente (Security/Edge Case/Acceptance, findings tratados) e **273/273** testes. Decisão **SC-222=(B)**: poder diferencial por papel deferido a 2.3/2.7 (DBT-2.2-ROLE-DORMENTE) — escopo real da 2.2 concluído. Status → **done**. |
