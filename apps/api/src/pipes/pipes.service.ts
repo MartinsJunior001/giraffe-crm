@@ -109,13 +109,18 @@ export class PipesService {
 
   /**
    * Arquiva (ACTIVE → ARCHIVED, `archivedAt = now`). Idempotente: arquivar um já arquivado não é erro
-   * e não reescreve `archivedAt` (o `where` exige `state: ACTIVE`; sem linha ⇒ já estava arquivado).
-   * Preserva todos os dados — só muda estado. NUNCA apaga (o runtime nem tem GRANT de DELETE).
+   * e não reescreve `archivedAt`. Preserva todos os dados — só muda estado. NUNCA apaga (o runtime nem
+   * tem GRANT de DELETE).
+   *
+   * O `obter()` inicial distingue "não existe / outra Org" (404) de "já no estado-alvo". No caminho
+   * idempotente, retorna SEM emitir o `updateMany`: um `updateMany` que casasse 0 linhas seria
+   * classificado como tentativa filtrada por RLS (`{ count: 0 }`) e sujaria a trilha de auditoria com um
+   * falso `denied` — e aqui a idempotência é caminho feliz de primeira classe, não sinal de ataque.
    */
   async arquivar(id: string): Promise<PipeVisao> {
     const { db } = this.db();
-    // Distingue "não existe / outra Org" de "já arquivado": só o primeiro é 404.
-    await this.obter(id);
+    const pipe = await this.obter(id);
+    if (pipe.state === 'ARCHIVED') return pipe;
     await db.pipe.updateMany({
       where: { id, state: 'ACTIVE' },
       data: { state: 'ARCHIVED', archivedAt: new Date() },
@@ -123,10 +128,15 @@ export class PipesService {
     return this.obter(id);
   }
 
-  /** Restaura (ARCHIVED → ACTIVE, `archivedAt = null`). Idempotente e sem perda de dados. */
+  /**
+   * Restaura (ARCHIVED → ACTIVE, `archivedAt = null`). Idempotente e sem perda de dados. Como em
+   * `arquivar`, o caminho idempotente retorna sem emitir o `updateMany`, para não gerar um falso
+   * `denied` de auditoria a partir de `{ count: 0 }`.
+   */
   async restaurar(id: string): Promise<PipeVisao> {
     const { db } = this.db();
-    await this.obter(id);
+    const pipe = await this.obter(id);
+    if (pipe.state === 'ACTIVE') return pipe;
     await db.pipe.updateMany({
       where: { id, state: 'ARCHIVED' },
       data: { state: 'ACTIVE', archivedAt: null },
