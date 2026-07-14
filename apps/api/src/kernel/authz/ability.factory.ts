@@ -31,12 +31,16 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Organizacao', { id: orgId });
   }
 
-  // Pipe (Story 2.1): em 2.1, SÓ o Admin da Organização lê/administra Pipes (criar/renomear/arquivar/
-  // restaurar), no escopo da Org ativa. MEMBER/GUEST não têm acesso a Pipe — deny-by-default. Papéis
-  // POR Pipe (Admin do Pipe / Membro do Pipe / Somente leitura) são da Story 2.2, e concederão acesso
-  // granular a MEMBER/GUEST então; antecipá-los aqui seria escopo de outra Story (Constitution II).
+  // Pipe (Story 2.2): qualquer Membership ativa pode o TIPO `ler Pipe` — a guarda GROSSA só confirma
+  // que o papel pode ler *algum* Pipe na Org. QUAL Pipe cada não-Admin enxerga é a guarda FINA, decidida
+  // no `PipesService` pela concessão `PipeGrant` ACTIVE da própria Membership, com não-enumeração (404
+  // para Pipe não concedido). Isto NÃO é condition do guard (o guard não carrega o recurso — DBT-AUTHZ-01).
+  //
+  // `administrar Pipe` (ciclo de vida: criar/arquivar/restaurar e, por ora, renomear) segue SÓ do Admin
+  // da Organização (AC3/SC-224). O poder de EDIÇÃO/CONFIG por papel de Pipe (Membro/Admin do Pipe) é o
+  // próximo passo do incremento e será enforçado no serviço com a concessão carregada, não aqui.
+  can('ler', 'Pipe', { orgId });
   if (papel === 'ADMIN') {
-    can('ler', 'Pipe', { orgId });
     can('administrar', 'Pipe', { orgId });
   }
 

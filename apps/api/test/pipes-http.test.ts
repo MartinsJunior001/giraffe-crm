@@ -117,9 +117,12 @@ describe('autorização de Pipe sobre HTTP (SC-203)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('MEMBER recebe 403 ao criar e ao listar Pipe (deny-by-default em 2.1)', async () => {
+  it('MEMBER recebe 403 ao criar Pipe (ciclo de vida é do Admin da Org); listar é 200 mas filtrado por concessão', async () => {
+    // Criar/arquivar/restaurar seguem exigindo `administrar` (Admin da Org) — 403 para MEMBER.
     expect((await req('POST', '/pipes', BRUNO, { name: 'x' })).status).toBe(403);
-    expect((await req('GET', '/pipes', BRUNO)).status).toBe(403);
+    // A partir do incremento 2 da 2.2, MEMBER passa a guarda grossa de `ler` e LISTA (200); o serviço
+    // filtra por concessão (o acesso por concessão é provado em `pipe-access-http.test.ts`).
+    expect((await req('GET', '/pipes', BRUNO)).status).toBe(200);
   });
 
   it('ADMIN cria e lista Pipe (201 / 200)', async () => {
