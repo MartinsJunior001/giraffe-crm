@@ -133,6 +133,22 @@ describe('autorização de Pipe sobre HTTP (SC-203)', () => {
 });
 
 describe('ciclo de vida e catálogo (SC-201 / SC-202)', () => {
+  it('GET /pipes/:id devolve o Pipe da própria Org (200)', async () => {
+    const pipe = await criarComoAna('Obtível');
+    const res = await req('GET', `/pipes/${pipe.id}`, ANA);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: pipe.id, name: 'Obtível', state: 'ACTIVE' });
+  });
+
+  it('restaurar um Pipe já ativo é idempotente (200, sem alterar dado)', async () => {
+    const pipe = await criarComoAna('Já ativo');
+    const res = await req('POST', `/pipes/${pipe.id}/restore`, ANA);
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as PipeResp;
+    expect(corpo.state).toBe('ACTIVE');
+    expect(corpo.archivedAt).toBeNull();
+  });
+
   it('renomeia e alterna marcadores via PATCH, preservando o id', async () => {
     const pipe = await criarComoAna('Original');
     const res = await req('PATCH', `/pipes/${pipe.id}`, ANA, { name: 'Renomeado', starred: true });
@@ -161,8 +177,13 @@ describe('ciclo de vida e catálogo (SC-201 / SC-202)', () => {
     ).json()) as PipeResp[];
     expect(comArquivados.map((p) => p.id)).toContain(pipe.id);
 
-    // Arquivar de novo é idempotente (não é erro).
-    expect((await req('POST', `/pipes/${pipe.id}/archive`, ANA)).status).toBe(200);
+    // Arquivar de novo é idempotente: 200, e NÃO reescreve `archivedAt` (o caminho idempotente
+    // retorna sem emitir o updateMany — nem toca o dado, nem suja a auditoria com um falso `denied`).
+    const rearquivado = await req('POST', `/pipes/${pipe.id}/archive`, ANA);
+    expect(rearquivado.status).toBe(200);
+    const corpoRearq = (await rearquivado.json()) as PipeResp;
+    expect(corpoRearq.state).toBe('ARCHIVED');
+    expect(corpoRearq.archivedAt).toBe(corpoArq.archivedAt); // preservado, não reescrito
 
     const restaurado = await req('POST', `/pipes/${pipe.id}/restore`, ANA);
     expect(restaurado.status).toBe(200);

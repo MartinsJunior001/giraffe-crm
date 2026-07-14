@@ -115,7 +115,11 @@ describe('escrita e leitura de Pipe com contexto (SC-201 / SC-204)', () => {
     criados.push(id);
     await db.pipe.create({ data: { id, orgId: ORG_C, name: 'Não pode migrar de tenant' } });
 
-    await expect(db.pipe.update({ where: { id }, data: { orgId: ORG_A } })).rejects.toThrow(
+    // `updateMany` (sem RETURNING) faz a violação bater DIRETO no WITH CHECK do UPDATE — não passa
+    // pelo filtro de SELECT, como no teste de INSERT. Se o WITH CHECK do UPDATE fosse removido, a
+    // linha seria MOVIDA e este teste ficaria vermelho pela ausência da exceção, não por uma
+    // mensagem colateral (fase vermelha provada sem depender da policy de leitura).
+    await expect(db.pipe.updateMany({ where: { id }, data: { orgId: ORG_A } })).rejects.toThrow(
       /row-level security/i,
     );
   });
