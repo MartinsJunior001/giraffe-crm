@@ -20,7 +20,15 @@ export interface TenantLogger {
 }
 
 /** Entidades cujas mutações exigem trilha de auditoria (FR-214). */
-const MODELOS_AUDITADOS = new Set(['Organization', 'Membership', 'Pipe', 'PipeGrant', 'Phase']);
+const MODELOS_AUDITADOS = new Set([
+  'Organization',
+  'Membership',
+  'Pipe',
+  'PipeGrant',
+  'Phase',
+  'Form',
+  'Field',
+]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
 const MUTACOES = new Set([

@@ -1,14 +1,10 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { Prisma } from '../../../generated/prisma';
 import { RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
+import { exigirGerenciarPipe, resolverPoderNoPipe } from '../pipe-authz';
 
 /**
  * O que uma Fase expõe pela API interna. `orgId` NÃO sai (fronteira interna) e `position` **também não**:
@@ -36,9 +32,6 @@ const SELECT_FASE = {
   archivedAt: true,
 } as const;
 
-/** Poder efetivo do principal sobre as Fases de um Pipe. `ler` também é concedido a quem `gerenciar`. */
-type Poder = 'gerenciar' | 'ler';
-
 /**
  * Gerenciamento de Fases de um Pipe (Story 2.3). TODA query passa por `withTenantContext`: o isolamento
  * entre Organizações é do banco (RLS), não desta camada.
@@ -64,45 +57,6 @@ export class PhasesService {
   private db() {
     const contexto = this.requestContext.obter();
     return { contexto, db: withTenantContext(this.prisma, contexto, this.logger) };
-  }
-
-  /**
-   * Poder do principal sobre as Fases do Pipe, ou **404 não-enumerante** se não há acesso nenhum ao Pipe
-   * (indistinguível de "não existe"). Admin da Org gerencia qualquer Pipe. Não-Admin: precisa de uma
-   * concessão `PipeGrant` ACTIVE — `role = ADMIN` → gerencia; qualquer outro papel → só lê. **Lê `role`**
-   * e **reconfere `Membership.state = ACTIVE`** (fecha DBT-2.2-ROLE-DORMENTE e, para esta superfície,
-   * DBT-2.2-MEMBERSHIP-ADVISORY).
-   */
-  private async resolverPoder(
-    db: ReturnType<typeof withTenantContext>,
-    contexto: { orgId: string; accountId: string; papel: string },
-    pipeId: string,
-  ): Promise<Poder> {
-    const pipe = await db.pipe.findUnique({ where: { id: pipeId }, select: { id: true } });
-    if (!pipe) throw new NotFoundException();
-    if (contexto.papel === 'ADMIN') return 'gerenciar';
-    const membership = await db.membership.findFirst({
-      where: { accountId: contexto.accountId },
-      select: { id: true, state: true },
-    });
-    if (!membership || membership.state !== 'ACTIVE') throw new NotFoundException();
-    const grant = await db.pipeGrant.findFirst({
-      where: { pipeId, membershipId: membership.id, state: 'ACTIVE' },
-      select: { role: true },
-    });
-    if (!grant) throw new NotFoundException();
-    return grant.role === 'ADMIN' ? 'gerenciar' : 'ler';
-  }
-
-  /** Exige poder de gerenciar; 403 se o principal só pode ler (tem acesso, mas não é Admin do Pipe/Org). */
-  private async exigirGerenciar(
-    db: ReturnType<typeof withTenantContext>,
-    contexto: { orgId: string; accountId: string; papel: string },
-    pipeId: string,
-  ): Promise<void> {
-    if ((await this.resolverPoder(db, contexto, pipeId)) !== 'gerenciar') {
-      throw new ForbiddenException();
-    }
   }
 
   /** Lê uma Fase do Pipe (após já resolvido o acesso). 404 se não existe ou é de outro Pipe (RN-030). */
@@ -137,7 +91,7 @@ export class PhasesService {
    */
   async listar(pipeId: string, incluirArquivadas: boolean): Promise<FaseVisao[]> {
     const { contexto, db } = this.db();
-    await this.resolverPoder(db, contexto, pipeId); // lança 404 se não há acesso
+    await resolverPoderNoPipe(db, contexto, pipeId); // lança 404 se não há acesso
     const filtroEstado = incluirArquivadas ? {} : { state: 'ACTIVE' as const };
     return db.phase.findMany({
       where: { pipeId, ...filtroEstado },
@@ -149,7 +103,7 @@ export class PhasesService {
   /** Cria uma Fase ACTIVE ao final da ordem ativa do Pipe. `orgId` vem do servidor, nunca do corpo. */
   async criar(pipeId: string, name: string): Promise<FaseVisao> {
     const { contexto, db } = this.db();
-    await this.exigirGerenciar(db, contexto, pipeId);
+    await exigirGerenciarPipe(db, contexto, pipeId);
     const position = await this.proximaPosicao(db, pipeId);
     return db.phase.create({
       data: { orgId: contexto.orgId, pipeId, name, position },
@@ -160,7 +114,7 @@ export class PhasesService {
   /** Renomeia uma Fase do Pipe. 404 (não-enumerante) se não existe ou é de outro Pipe (RN-030). */
   async renomear(pipeId: string, phaseId: string, name: string): Promise<FaseVisao> {
     const { contexto, db } = this.db();
-    await this.exigirGerenciar(db, contexto, pipeId);
+    await exigirGerenciarPipe(db, contexto, pipeId);
     const { count } = await db.phase.updateMany({ where: { id: phaseId, pipeId }, data: { name } });
     if (count === 0) throw new NotFoundException();
     return this.lerFase(db, pipeId, phaseId);
@@ -173,7 +127,7 @@ export class PhasesService {
    */
   async mover(pipeId: string, phaseId: string, afterPhaseId: string | null): Promise<FaseVisao> {
     const { contexto, db } = this.db();
-    await this.exigirGerenciar(db, contexto, pipeId);
+    await exigirGerenciarPipe(db, contexto, pipeId);
     if (afterPhaseId === phaseId) {
       throw new NotFoundException(); // mover uma Fase "para depois de si mesma" não é uma posição válida
     }
@@ -238,7 +192,7 @@ export class PhasesService {
    */
   async arquivar(pipeId: string, phaseId: string): Promise<FaseVisao> {
     const { contexto, db } = this.db();
-    await this.exigirGerenciar(db, contexto, pipeId);
+    await exigirGerenciarPipe(db, contexto, pipeId);
     const fase = await this.lerFase(db, pipeId, phaseId);
     if (fase.state === 'ARCHIVED') return fase; // idempotente, sem updateMany
     const ativas = await db.phase.count({ where: { pipeId, state: 'ACTIVE' } });
@@ -258,7 +212,7 @@ export class PhasesService {
    */
   async restaurar(pipeId: string, phaseId: string): Promise<FaseVisao> {
     const { contexto, db } = this.db();
-    await this.exigirGerenciar(db, contexto, pipeId);
+    await exigirGerenciarPipe(db, contexto, pipeId);
     const fase = await this.lerFase(db, pipeId, phaseId);
     if (fase.state === 'ACTIVE') return fase; // idempotente, sem updateMany
     const position = await this.proximaPosicao(db, pipeId);

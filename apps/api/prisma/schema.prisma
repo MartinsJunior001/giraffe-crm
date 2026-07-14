@@ -71,6 +71,42 @@ enum PhaseState {
   ARCHIVED
 }
 
+/// Catálogo CANÔNICO de tipos de Campo (Story 2.4, decisão de Produto D3.1). Conjunto FECHADO de 12 tipos,
+/// o MESMO para toda Organização — é de PLATAFORMA (enum de código, como `PipeRole`), NÃO um catálogo
+/// configurável por Organização. O que é dado org-scoped são as instâncias de `Field`, não o catálogo.
+/// `FILE` existe no catálogo mas fica gated (AD-27/AD-28, fail-closed) até a capacidade de arquivos do E3.
+enum FieldType {
+  TEXT_SHORT
+  TEXT_LONG
+  NUMBER
+  SELECT_SINGLE
+  SELECT_MULTI
+  BOOLEAN
+  DATE
+  DATETIME
+  EMAIL
+  PHONE
+  URL
+  FILE
+}
+
+/// Contexto de um Formulário (Story 2.4). Os três Formulários são INDEPENDENTES (INV-FORM-01): cada contexto
+/// é uma LINHA distinta de `Form`, e alterar um não altera outro. `DATABASE` existe como CONTRATO (o E3
+/// reutiliza o mesmo builder), mas NÃO é funcional nesta Story — não há owner de Database nem rota que crie
+/// uma linha `context = DATABASE` (AD-11: nada materializado só para o futuro).
+enum FormContext {
+  PIPE_INITIAL
+  PHASE
+  DATABASE
+}
+
+/// Estado do Campo (Story 2.4). O ATRIBUTO existe desde a 2.4; a OPERAÇÃO de arquivar/restaurar com travas é
+/// da 2.5 (simétrico a `PhaseState`). O runtime não tem GRANT DELETE — "sem exclusão" é fronteira de banco.
+enum FieldState {
+  ACTIVE
+  ARCHIVED
+}
+
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
@@ -219,6 +255,8 @@ model Organization {
   pipes       Pipe[]
   pipeGrants  PipeGrant[]
   phases      Phase[]
+  forms       Form[]
+  fields      Field[]
 
   @@map("Organization")
 }
@@ -248,6 +286,7 @@ model Pipe {
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grants       PipeGrant[]
   phases       Phase[]
+  forms        Form[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -284,6 +323,7 @@ model Phase {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  forms        Form[]
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -351,4 +391,75 @@ model Membership {
   // Descoberta das próprias Organizações no login (Story 1.4), antes de haver contexto.
   @@index([accountId])
   @@map("Membership")
+}
+
+/// Form — Formulário de UM contexto (Story 2.4). Dado operacional org-owned (AD-10). Os três Formulários
+/// (inicial do Pipe, de Fase, de Database) são INDEPENDENTES (INV-FORM-01): cada contexto é uma LINHA
+/// distinta, e a não-contaminação entre eles cai como consequência de linhas separadas + RLS.
+///
+/// **Tabela única com owner por contexto** (FKs nuláveis): `pipeId` para `PIPE_INITIAL`, `phaseId` para
+/// `PHASE`. O contexto `DATABASE` existe no enum como CONTRATO do E3, mas SEM coluna de owner e SEM rota
+/// nesta Story (AD-11). A coerência contexto↔owner e a unicidade "um Form por owner+contexto" são impostas
+/// pelo BANCO (CHECK + índices únicos PARCIAIS na migration `..._forms` — não expressáveis no Prisma 6.19.3).
+///
+/// Isolamento pelo banco (RLS na migration): ENABLE **e** FORCE ROW LEVEL SECURITY, policies por
+/// `orgId = current_org_id()`. Runtime recebe SELECT/INSERT/UPDATE — **sem DELETE**.
+model Form {
+  id        String      @id @default(uuid()) @db.Uuid
+  orgId     String      @db.Uuid
+  context   FormContext
+  /// Owner do contexto `PIPE_INITIAL` (null nos demais). CHECK na migration garante a coerência.
+  pipeId    String?     @db.Uuid
+  /// Owner do contexto `PHASE` (null nos demais).
+  phaseId   String?     @db.Uuid
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe?        @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  phase        Phase?       @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  fields       Field[]
+
+  // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId, context).
+  @@index([orgId, pipeId])
+  @@index([orgId, phaseId])
+  @@map("Form")
+}
+
+/// Field — Campo de um Formulário (Story 2.4). Dado operacional org-owned (AD-10). O `id` é a IDENTIDADE
+/// ESTÁVEL do Campo (AD-12): não depende do rótulo — renomear (na 2.5) não desloca valores.
+///
+/// `typeConfig` carrega o que VARIA por tipo (ex.: `options` de Seleção, cada uma com UUID estável; formato
+/// de Número). Opções de Seleção vivem AQUI, em JSON com id estável — não em tabela própria (DBT-2.4-OPCOES-
+/// JSON): assim criar um Campo de Seleção com suas opções é UM único `create` atômico, coerente com a recusa
+/// de `$transaction` do `withTenantContext`. A validação do `typeConfig` por tipo vive no serviço.
+///
+/// `state` é ATRIBUTO desde a 2.4; arquivar/restaurar COM TRAVAS é da 2.5. Ordenação intra-Formulário por
+/// chave fracionária (`position`), como `Phase`: mover = 1 UPDATE (ponto médio dos vizinhos). Isolamento pelo
+/// banco (RLS); runtime SELECT/INSERT/UPDATE — **sem DELETE**.
+model Field {
+  id           String     @id @default(uuid()) @db.Uuid
+  orgId        String     @db.Uuid
+  formId       String     @db.Uuid
+  label        String
+  type         FieldType
+  help         String?
+  /// Config específica do tipo (ex.: `{ "options": [{ "id": uuid, "label": ..., "position": n }] }`).
+  typeConfig   Json       @default("{}")
+  /// Valor padrão do Campo (SQL NULL via `Prisma.DbNull` quando ausente).
+  defaultValue Json?
+  /// Chave de ordenação fracionária (ver nota do model). `numeric` de alta escala.
+  position     Decimal    @db.Decimal(38, 18)
+  state        FieldState @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  /// Momento do arquivamento (null quando ativo). Usado a partir da 2.5.
+  archivedAt   DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  // Acesso começa por Org; a listagem por Formulário filtra estado e ordena por position.
+  @@index([orgId, formId, state, position])
+  @@map("Field")
 }
