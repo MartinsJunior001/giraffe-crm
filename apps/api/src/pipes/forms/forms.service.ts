@@ -7,6 +7,13 @@ import { RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
 import { exigirGerenciarPipe, resolverPoderNoPipe } from '../pipe-authz';
+import {
+  type AlvoFormulario,
+  SELECT_FORM,
+  acharForm,
+  exigirFaseDoPipe,
+  resolverContexto,
+} from './form-locate';
 import type { AdicionarCampoDTO } from './forms.dto';
 
 /**
@@ -45,7 +52,7 @@ export interface FormularioVisao {
 }
 
 /** Projeção fixa do Campo — mantém `orgId` e `position` fora do payload por construção. */
-const SELECT_CAMPO = {
+export const SELECT_CAMPO = {
   id: true,
   formId: true,
   label: true,
@@ -58,20 +65,6 @@ const SELECT_CAMPO = {
   updatedAt: true,
   archivedAt: true,
 } as const;
-
-/** Projeção fixa do Formulário (sem `orgId`). */
-const SELECT_FORM = {
-  id: true,
-  context: true,
-  pipeId: true,
-  phaseId: true,
-} as const;
-
-/** Alvo de um Formulário: sempre um Pipe; opcionalmente uma Fase dele (contexto de Fase). */
-interface AlvoFormulario {
-  pipeId: string;
-  phaseId?: string | null;
-}
 
 /** Uma opção de Seleção materializada no `typeConfig` — com identidade ESTÁVEL (AD-12/SC-242). */
 interface OpcaoSelecao {
@@ -121,7 +114,7 @@ export class FormsService {
   async obterDeFase(pipeId: string, phaseId: string): Promise<FormularioVisao> {
     const { contexto, db } = this.db();
     await resolverPoderNoPipe(db, contexto, pipeId); // 404 se não há acesso ao Pipe
-    await this.exigirFaseDoPipe(db, pipeId, phaseId);
+    await exigirFaseDoPipe(db, pipeId, phaseId);
     return this.montarVisao(db, { pipeId, phaseId }, 'PHASE');
   }
 
@@ -133,7 +126,7 @@ export class FormsService {
   async adicionarCampo(alvo: AlvoFormulario, dto: AdicionarCampoDTO): Promise<CampoVisao> {
     const { contexto, db } = this.db();
     await exigirGerenciarPipe(db, contexto, alvo.pipeId);
-    const { context, owner } = await this.resolverContexto(db, alvo);
+    const { context, owner } = await resolverContexto(db, alvo);
     const form = await this.getOrCreateForm(db, contexto.orgId, context, owner);
     const position = await this.proximaPosicao(db, form.id);
     const typeConfig = this.montarTypeConfig(dto.type, dto.options);
@@ -164,8 +157,8 @@ export class FormsService {
     const { contexto, db } = this.db();
     await exigirGerenciarPipe(db, contexto, alvo.pipeId);
     if (afterFieldId === fieldId) throw new NotFoundException(); // "depois de si mesmo" não é posição válida
-    const { context, owner } = await this.resolverContexto(db, alvo);
-    const form = await this.acharForm(db, contexto.orgId, context, owner);
+    const { context, owner } = await resolverContexto(db, alvo);
+    const form = await acharForm(db, contexto.orgId, context, owner);
     if (!form) throw new NotFoundException();
 
     const alvoCampo = await db.field.findUnique({
@@ -208,44 +201,6 @@ export class FormsService {
 
   // ── Internos ───────────────────────────────────────────────────────────────────────────────
 
-  /** Deriva contexto + owner do alvo; valida que a Fase pertence ao Pipe quando é contexto de Fase. */
-  private async resolverContexto(
-    db: ReturnType<typeof withTenantContext>,
-    alvo: AlvoFormulario,
-  ): Promise<{ context: FormContext; owner: { pipeId?: string; phaseId?: string } }> {
-    if (alvo.phaseId) {
-      await this.exigirFaseDoPipe(db, alvo.pipeId, alvo.phaseId);
-      return { context: 'PHASE', owner: { phaseId: alvo.phaseId } };
-    }
-    return { context: 'PIPE_INITIAL', owner: { pipeId: alvo.pipeId } };
-  }
-
-  /** 404 (não-enumerante) se a Fase não existe ou não é deste Pipe (RN-030 — Fase não migra). */
-  private async exigirFaseDoPipe(
-    db: ReturnType<typeof withTenantContext>,
-    pipeId: string,
-    phaseId: string,
-  ): Promise<void> {
-    const fase = await db.phase.findUnique({
-      where: { id: phaseId },
-      select: { id: true, pipeId: true },
-    });
-    if (!fase || fase.pipeId !== pipeId) throw new NotFoundException();
-  }
-
-  /** Busca o Formulário do contexto (sem criar). `null` se ainda não foi materializado. */
-  private async acharForm(
-    db: ReturnType<typeof withTenantContext>,
-    orgId: string,
-    context: FormContext,
-    owner: { pipeId?: string; phaseId?: string },
-  ) {
-    return db.form.findFirst({
-      where: { orgId, context, pipeId: owner.pipeId ?? null, phaseId: owner.phaseId ?? null },
-      select: SELECT_FORM,
-    });
-  }
-
   /**
    * Materialização sob demanda do Formulário do contexto. Sem `upsert` (o alvo de unicidade é um índice
    * único PARCIAL, invisível ao Prisma): busca; se não há, cria; se uma corrida criou entre a busca e o
@@ -257,13 +212,13 @@ export class FormsService {
     context: FormContext,
     owner: { pipeId?: string; phaseId?: string },
   ) {
-    const existente = await this.acharForm(db, orgId, context, owner);
+    const existente = await acharForm(db, orgId, context, owner);
     if (existente) return existente;
     try {
       return await db.form.create({ data: { orgId, context, ...owner }, select: SELECT_FORM });
     } catch (err) {
       if (isViolacaoUnicidade(err)) {
-        const denovo = await this.acharForm(db, orgId, context, owner);
+        const denovo = await acharForm(db, orgId, context, owner);
         if (denovo) return denovo;
       }
       throw err;
@@ -278,7 +233,7 @@ export class FormsService {
   ): Promise<FormularioVisao> {
     const owner =
       context === 'PHASE' ? { phaseId: alvo.phaseId ?? undefined } : { pipeId: alvo.pipeId };
-    const form = await this.acharForm(db, this.requestContext.obter().orgId, context, owner);
+    const form = await acharForm(db, this.requestContext.obter().orgId, context, owner);
     const fields = form ? await this.listarCampos(db, form.id) : [];
     return {
       id: form?.id ?? null,
