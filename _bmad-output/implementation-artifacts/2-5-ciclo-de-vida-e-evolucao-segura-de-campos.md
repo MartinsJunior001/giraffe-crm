@@ -1,7 +1,7 @@
 ---
 story_key: 2-5-ciclo-de-vida-e-evolucao-segura-de-campos
 epic: 2
-status: ready-for-dev
+status: done
 release: CORE (bloco 2.4–2.6, paralelo a 2.1–2.3; Sprint S5 do roadmap)
 risco: ALTO
 baseline_commit: pendente (empilha sobre a 2.4 / domínio Formulário — Form/Field/FieldType/FieldState/FormContext, helper `pipes/pipe-authz.ts`, opções de Seleção em JSON no `typeConfig` com UUID estável)
