@@ -81,7 +81,7 @@ development_status:
 
   # ===== Wave 3 — Épico 2: Pipes, Fases, Formulários e Cards =====
   epic-2: in-progress
-  2-1-ciclo-de-vida-e-catalogo-de-pipes: review
+  2-1-ciclo-de-vida-e-catalogo-de-pipes: done
   2-2-papeis-e-acesso-por-pipe: backlog
   2-3-gerenciamento-de-fases: backlog
   2-4-form-builder-e-catalogo-canonico-de-campos: backlog
