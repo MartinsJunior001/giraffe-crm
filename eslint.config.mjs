@@ -31,6 +31,10 @@ export default tseslint.config(
       '.agent/**',
       '.agents/**',
       '.codex/**',
+      // Scaffolding do agente: skills, settings e WORKTREES. Os worktrees são cópias completas do
+      // repositório (inclusive o protótipo HTML legado sob `docs/`, cujo `docs/**` só casa na raiz) —
+      // sem este ignore, o ESLint lintaria essas cópias transitórias como se fossem código da aplicação.
+      '.claude/**',
     ],
   },
   js.configs.recommended,
