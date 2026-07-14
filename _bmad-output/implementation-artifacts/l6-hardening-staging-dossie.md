@@ -10,8 +10,12 @@
 > `mvp-core-triage.md` (L6 cross-cutting P0), `l1-contratos-congelados.md` §3–§4 (fila obrigatória e regra
 > de antecipação), `gates/2-1/debitos-gerados.md` (confirmação de que a 2.1 não toca nenhum deles).
 >
-> Data: 2026-07-13 · Autor: Planejador L6 (worktree isolado). Este dossiê **não** marca nenhum débito
-> como resolvido; todos seguem visíveis em todos os checkpoints até correção provada.
+> Data: 2026-07-13 · Autor: Planejador L6 (worktree isolado).
+>
+> **Atualização 2026-07-14:** débitos resolvidos são **marcados** (não apagados) e seguem visíveis com o
+> ponteiro da prova. **D-06 — RESOLVIDO** (PR #27, upgrade do Better Auth + testes reais + revisão
+> independente). Restam **quatro** bloqueadores de `STAGING APPROVED`: **D-05** (code-advanceable) e
+> **CR-09 · D-01 · D-02** (Coolify-dependentes).
 
 ---
 
@@ -38,7 +42,18 @@ Todos os cinco débitos **bloqueiam `STAGING APPROVED`**. Eles se separam por **
 
 Campos: **impacto · justificativa · responsável · lote-alvo · critério de correção · gate**.
 
-### D-06 — rate limiter transacional de autenticação pode retornar 500 sob rajada a `/api/auth/*`  · CODE-ADVANCEABLE
+### D-06 — rate limiter transacional de autenticação pode retornar 500 sob rajada a `/api/auth/*`  · ✅ RESOLVIDO (PR #27 · 2026-07-14)
+
+> **RESOLVIDO por UPGRADE + TESTES REAIS + REVISÃO INDEPENDENTE** (mantido visível, não apagado). O
+> `context7-check` contra o **better-auth 1.6.23 instalado** mostrou que o `storage: 'database'` nativo já é
+> **atômico** (`readRow` + `incrementOne` com guarda `count < max` + retry otimista); o defeito
+> (500 por transação-por-requisição) era de versão **anterior** e foi eliminado pelo upgrade. O
+> `customStorage` explorado foi **removido** (código de manutenção para ganho marginal — Constitution II);
+> `auth.factory.ts` voltou ao nativo, idêntico à `main`. Os 8 critérios estão provados contra o nativo por
+> HTTP+PostgreSQL reais: `rate-limit-concurrency.test.ts` (zero 500 sob N=24) e `rate-limit-native.test.ts`
+> (limite/429/`X-Retry-After`, contador, fail-closed, fase vermelha do não-atômico, sem PII), com a fronteira
+> limite/429 também coberta pelo G2 de `login-http.test.ts`. Histórico completo:
+> `docs/04-operacao/d-06-rate-limiter-historico.md`. **Não bloqueia mais `STAGING APPROVED`.**
 
 | Campo | Conteúdo |
 |---|---|
@@ -47,7 +62,7 @@ Campos: **impacto · justificativa · responsável · lote-alvo · critério de 
 | **Responsável** | **Trilha A / Backend** — dono de `apps/api/src/kernel/auth/*` e da configuração do rate limiter. Acompanhamento pelo Integration Agent no gate de staging. |
 | **Lote-alvo** | **L6 — Hardening de staging** (realocado de tech-2 em 2026-07-13; `gates/1-5/summary.md`). **tech-2 = só provisionamento do 1º tenant** — D-06 está fora dele. |
 | **Critério de correção** | Os **8 critérios formais** de `gates/1-5/summary.md` (seção de realocação), resumidos: (1) sob **N≥16** concorrentes a `/api/auth/*`, **zero 500** indevido; (2) todo excesso recebe **429**, sem caminho que escape da contagem; (3) contador consistente sob concorrência (sem perda/duplicação); (4) falha do backing store segue **fail-closed**; (5) sem vazamento de PII em resposta/log; (6) **teste HTTP concorrente com PostgreSQL real** (não mock); (7) **fase vermelha real** provada + mutação; (8) observabilidade separa **429 (limite)** de **500 (falha)**. |
-| **Gate** | **BLOQUEIA `STAGING APPROVED`.** Só liberado com (a) mitigação implementada e provada pelos 8 critérios, **ou** (b) decisão arquitetural explícita e registrada que aceite o risco com compensação documentada. |
+| **Gate** | ✅ **LIBERADO (2026-07-14).** Fechado pela via (a): mitigação provada pelos 8 critérios contra o store nativo (o upgrade eliminou a causa; ver banner acima e PR #27). Não bloqueia mais `STAGING APPROVED`. |
 
 ### D-05 — falta o agendador da coleta de lixo (`db:cleanup`)  · CODE-ADVANCEABLE
 
@@ -147,11 +162,11 @@ campos.
    existe a **regra** de que ele não pode aprovar com débito aberto. Falta o dono do relatório de
    prontidão (Integration Agent) abrir o documento e listar os cinco como bloqueadores vivos.
 
-**O que impede `STAGING APPROVED` hoje (resumo):** os **cinco** débitos estão **ABERTOS**. Dois
-(D-06, D-05) podem ser fechados por código+Spec Kit sem infra externa; três (CR-09, D-01, D-02) estão
-**bloqueados por decisão/configuração de Infra/Ops no Coolify e verificação no ambiente real**. Enquanto
-qualquer um seguir aberto sem mitigação provada ou decisão de aceitação de risco registrada, o relatório
-de prontidão **não pode** marcar `STAGING APPROVED`.
+**O que impede `STAGING APPROVED` hoje (resumo, atualizado 2026-07-14):** **D-06 — RESOLVIDO** (PR #27).
+Restam **quatro** débitos **ABERTOS**: **D-05** (code-advanceable, fechável por código+Spec Kit sem infra
+externa) e **CR-09, D-01, D-02** (**bloqueados por decisão/configuração de Infra/Ops no Coolify e
+verificação no ambiente real**). Enquanto qualquer um seguir aberto sem mitigação provada ou decisão de
+aceitação de risco registrada, o relatório de prontidão **não pode** marcar `STAGING APPROVED`.
 
 ---
 
