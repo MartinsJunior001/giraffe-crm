@@ -198,7 +198,9 @@ describe('sem PII na trilha (SC-D06-5)', () => {
     try {
       await fetch(`${urlLog}/api/auth/sign-in/email`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        // IP único (proxy confiável já habilitado no beforeAll): mantém este login no balde próprio,
+        // fora do balde loopback que outras suítes de login contam em paralelo.
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ipUnico() },
         body: JSON.stringify({ email: emailPii, password: senhaPii }),
       });
       // Dá tempo de a linha de log (assíncrona) ser escrita.
