@@ -35,6 +35,7 @@ const MODELOS_AUDITADOS = new Set([
   'PublicFormRoute',
   'CardGrant',
   'CardResponsavel',
+  'CardPhaseEntry',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

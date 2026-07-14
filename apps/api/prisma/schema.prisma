@@ -289,6 +289,7 @@ model Organization {
   publicFormRoutes  PublicFormRoute[]
   cardGrants        CardGrant[]
   cardResponsaveis  CardResponsavel[]
+  cardPhaseEntries  CardPhaseEntry[]
 
   @@map("Organization")
 }
@@ -354,10 +355,30 @@ model Phase {
   /// Momento do arquivamento (null quando ativa). Arquivar preserva os dados; só muda estado.
   archivedAt DateTime?
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  // ── Config de marcos por Fase (Story 2.12) — durações RELATIVAS à entrada, em MINUTOS (decisão de Arquitetura:
+  // Int, pois o Prisma 6.19.3 não tem `interval` nativo). Invariante `esperado ≤ vencimento ≤ expiração` validado
+  // no núcleo puro E por CHECK na migration (defesa em profundidade, tolerante a NULL). Ausente = marco não configurado.
+  /// Prazo esperado, em minutos após a entrada na Fase (null = não configurado).
+  expectedDurationMin   Int?
+  /// Vencimento, em minutos após a entrada (null = não configurado). `expectedDurationMin ≤ dueDurationMin`.
+  dueDurationMin        Int?
+  /// Expiração, em minutos após a entrada (null = não configurado). `dueDurationMin ≤ expirationDurationMin`.
+  expirationDurationMin Int?
+  // Override ABSOLUTO por Campo `DATE`/`DATETIME` do Card (Story 2.12, D-OA3): a config designa, por marco, um
+  // `Field.id` do Formulário inicial do Pipe. Na avaliação (2.13), valor não-nulo do Card nesse Campo prevalece
+  // sobre a duração. Não é FK (Fields nunca são deletados; validação de tipo/pertencimento vive no serviço).
+  /// Campo de override do prazo esperado (null = sem override; usa a duração).
+  expectedFieldId       String? @db.Uuid
+  /// Campo de override do vencimento (null = sem override).
+  dueFieldId            String? @db.Uuid
+  /// Campo de override da expiração (null = sem override).
+  expirationFieldId     String? @db.Uuid
+
+  organization Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe             @relation(fields: [pipeId], references: [id], onDelete: Cascade)
   forms        Form[]
   cards        Card[]
+  phaseEntries CardPhaseEntry[]
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -537,28 +558,28 @@ model FormVersion {
 /// ENABLE+FORCE); na 2.7 o runtime tem **só SELECT/INSERT** — sem UPDATE (nenhum consumidor de UPDATE ainda; a
 /// 2.9/2.11 concede junto do consumidor e do teste) e **sem DELETE** (arquivar será `state` na 2.11).
 model Card {
-  id             String     @id @default(uuid()) @db.Uuid
-  orgId          String     @db.Uuid
-  pipeId         String     @db.Uuid
-  phaseId        String     @db.Uuid
-  formId         String     @db.Uuid
-  formVersionId  String     @db.Uuid
+  id                     String              @id @default(uuid()) @db.Uuid
+  orgId                  String              @db.Uuid
+  pipeId                 String              @db.Uuid
+  phaseId                String              @db.Uuid
+  formId                 String              @db.Uuid
+  formVersionId          String              @db.Uuid
   /// Chave lógica da submissão (cliente). Garante idempotência via índice único org+form.
-  idempotencyKey String
+  idempotencyKey         String
   /// Valores submetidos, chaveados por `Field.id` do snapshot (opção por `id`). Validados contra a versão.
-  valores        Json       @default("{}")
+  valores                Json                @default("{}")
   /// Origem do Card (Story 2.8): submissão interna (`INTERNAL`, 2.7) ou pública (`PUBLIC`, aprovada/direta).
-  origin         CardOrigin @default(INTERNAL)
+  origin                 CardOrigin          @default(INTERNAL)
   /// Estado de CICLO DE VIDA (Story 2.11), eixo INDEPENDENTE da Fase (`Fase ≠ Status do Card`) e da saúde temporal
   /// (2.13). Três estados canônicos; `reaberto`/`restaurado` são TRANSIÇÕES, não estados. É a ÚNICA coluna de `Card`
   /// que o runtime pode UPDATE (GRANT column-scoped na migration da 2.11) — junto de `previousLifecycleState` e
   /// `updatedAt`; `phaseId` (movimentação, 2.14) segue **sem** GRANT de UPDATE.
-  lifecycleState CardLifecycleState @default(ATIVO)
+  lifecycleState         CardLifecycleState  @default(ATIVO)
   /// Estado ANTERIOR ao arquivamento (ATIVO ou FINALIZADO), para restaurar de forma confiável (AC 2.11). Nulo fora
   /// de ARQUIVADO. Preenchido ao arquivar, limpo ao restaurar.
   previousLifecycleState CardLifecycleState?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
   organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipe             Pipe              @relation(fields: [pipeId], references: [id], onDelete: Cascade)
@@ -569,6 +590,7 @@ model Card {
   publicSubmission SubmissaoPublica?
   grants           CardGrant[]
   responsaveis     CardResponsavel[]
+  phaseEntries     CardPhaseEntry[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -680,6 +702,51 @@ model CardResponsavel {
   @@index([orgId, membershipId])
   // Nota: a unicidade "um Responsável ativo por Card" é índice PARCIAL na migration (WHERE state='ACTIVE').
   @@map("CardResponsavel")
+}
+
+/// Origem de uma entrada efetiva do Card numa Fase (Story 2.12). `SUBMISSION` = criação do Card (2.7 interna / 2.8
+/// pública); `MOVE` = movimentação entre Fases (2.14, futura — o helper de entrada já aceita a origem, sem chamador
+/// de movimentação nesta Story).
+enum CardPhaseEntryOrigin {
+  SUBMISSION
+  MOVE
+}
+
+/// CardPhaseEntry — referência temporal de uma ENTRADA efetiva do Card numa Fase (Story 2.12, FR-10; D2.7). Dado
+/// operacional org-owned (AD-10). É a **base absoluta** dos marcos: cada entrada preserva o **instante** e a
+/// **origem**; cada reentrada (2.14) cria uma NOVA linha, preservando o histórico. "Entrada atual" = a linha mais
+/// recente por `(cardId, enteredAt desc)` — sem "linha ativa" única, logo sem índice parcial de unicidade.
+///
+/// **Append-only e IMUTÁVEL** (como `CardHistory`/`FormVersion`): o runtime recebe **só SELECT + INSERT** (sem
+/// UPDATE, sem DELETE — ver GRANT na migration). Não toca `Card` (a 2.12 não abre GRANT de UPDATE em `Card`;
+/// `phaseId`/movimentação seguem sem UPDATE até 2.14).
+///
+/// **`configSnapshot`** congela as durações/override vigentes da Fase no instante da entrada (decisão D-OA1=A:
+/// mudar a config afeta só entradas FUTURAS; "sem recálculo retroativo silencioso" cai por construção — padrão da
+/// `FormVersion` da 2.6). JSON: `{ expectedDurationMin, dueDurationMin, expirationDurationMin, expectedFieldId,
+/// dueFieldId, expirationFieldId }` (todos nuláveis). A **derivação** dos marcos a partir da base é 2.13.
+///
+/// **`enteredAt` é `@db.Timestamptz`** (instante absoluto — decisão de Arquitetura; diverge do `TIMESTAMP(3)` do
+/// restante do schema por escolha explícita, DIV-1). Isolamento pelo banco (RLS ENABLE+FORCE, WITH CHECK).
+model CardPhaseEntry {
+  id             String               @id @default(uuid()) @db.Uuid
+  orgId          String               @db.Uuid
+  cardId         String               @db.Uuid
+  phaseId        String               @db.Uuid
+  /// Instante ABSOLUTO da entrada (base dos marcos). Timestamptz — instante, não data local.
+  enteredAt      DateTime             @default(now()) @db.Timestamptz(3)
+  origin         CardPhaseEntryOrigin
+  /// Snapshot congelado da config de marcos da Fase no instante da entrada (D-OA1=A). Ver nota do model.
+  configSnapshot Json
+  createdAt      DateTime             @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  phase        Phase        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+
+  // "Entrada atual" e histórico: consulta por Card ordenada por instante de entrada.
+  @@index([orgId, cardId, enteredAt])
+  @@map("CardPhaseEntry")
 }
 
 /// SubmissaoPublica — submissão de um Formulário inicial PÚBLICO por ator externo (Story 2.8). Dado operacional

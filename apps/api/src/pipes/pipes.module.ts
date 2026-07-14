@@ -13,6 +13,8 @@ import { CardAccessController } from './cards/access/card-access.controller';
 import { CardAccessService } from './cards/access/card-access.service';
 import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.controller';
 import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
+import { CardPhaseEntryController } from './cards/phase-entry/card-phase-entry.controller';
+import { CardPhaseEntryReadService } from './cards/phase-entry/card-phase-entry-read.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
 import { PublicSubmissionService } from './public-submissions/public-submission.service';
 import { PublicRouteResolver } from './public-submissions/public-route.resolver';
@@ -25,6 +27,8 @@ import { PipeGrantsController } from './grants/pipe-grants.controller';
 import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PhasesController } from './phases/phases.controller';
 import { PhasesService } from './phases/phases.service';
+import { PhaseMilestonesController } from './phases/milestones/phase-milestones.controller';
+import { PhaseMilestonesService } from './phases/milestones/phase-milestones.service';
 import { PipesController } from './pipes.controller';
 import { PipesService } from './pipes.service';
 
@@ -50,9 +54,14 @@ import { PipesService } from './pipes.service';
  * Story 2.11: ciclo de vida do Card (`CardLifecycleController`/`CardLifecycleService`) — finalizar/reabrir/
  * arquivar/restaurar (estados ATIVO/FINALIZADO/ARQUIVADO), transições atômicas, idempotentes e auditadas em
  * `CardHistory`, com o 1º GRANT de UPDATE em `Card` **column-scoped** (só o estado; `phaseId`/movimentação segue
- * sem UPDATE — 2.14). Depende de `PrismaService` (DbModule global) e
- * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
- * este módulo só registra os controllers e serviços.
+ * sem UPDATE — 2.14). Story 2.12: marcos por Fase e override por Card
+ * (`PhaseMilestonesController`/`PhaseMilestonesService` — config de prazos por Fase, "config do Pipe";
+ * `CardPhaseEntryController`/`CardPhaseEntryReadService` — leitura da base temporal do Card). A referência de
+ * entrada (`CardPhaseEntry`, append-only imutável) é gravada na criação do Card pelo helper compartilhado
+ * `registrarEntradaNaFase`, na MESMA transação (submissão interna 2.7 e conversão pública 2.8); o snapshot da
+ * config congela os marcos na entrada (D-OA1=A — sem recálculo retroativo silencioso). Depende de `PrismaService`
+ * (DbModule global) e `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais
+ * no AppModule; este módulo só registra os controllers e serviços.
  */
 @Module({
   controllers: [
@@ -66,6 +75,8 @@ import { PipesService } from './pipes.service';
     KanbanController,
     CardAccessController,
     CardLifecycleController,
+    CardPhaseEntryController,
+    PhaseMilestonesController,
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
@@ -81,6 +92,8 @@ import { PipesService } from './pipes.service';
     KanbanReadService,
     CardAccessService,
     CardLifecycleService,
+    CardPhaseEntryReadService,
+    PhaseMilestonesService,
     PublicSubmissionService,
     PublicRouteResolver,
     PublicRateLimit,
