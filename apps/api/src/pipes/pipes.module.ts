@@ -3,6 +3,8 @@ import { FieldsController } from './forms/fields.controller';
 import { FieldsService } from './forms/fields.service';
 import { FormsController } from './forms/forms.controller';
 import { FormsService } from './forms/forms.service';
+import { FormPublicationController } from './forms/publication.controller';
+import { FormPublicationService } from './forms/publication.service';
 import { PipeGrantsController } from './grants/pipe-grants.controller';
 import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PhasesController } from './phases/phases.controller';
@@ -17,7 +19,9 @@ import { PipesService } from './pipes.service';
  * domínio Formulário (`FormsController`/`FormsService`) — catálogo canônico de Campos e montagem, reusando a
  * resolução "config do Pipe" (`pipe-authz`). Story 2.5: evolução segura de Campos
  * (`FieldsController`/`FieldsService`) — editar/arquivar/restaurar e o ciclo de opções, reusando os
- * localizadores (`form-locate`) e a mesma autorização fina. Depende de `PrismaService` (DbModule global) e
+ * localizadores (`form-locate`) e a mesma autorização fina. Story 2.6: ciclo de publicação
+ * (`FormPublicationController`/`FormPublicationService`) — publicar congela o rascunho num `FormVersion`
+ * imutável e versionado; despublicar/ler estado e histórico. Depende de `PrismaService` (DbModule global) e
  * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
  * este módulo só registra os controllers e serviços.
  */
@@ -28,7 +32,15 @@ import { PipesService } from './pipes.service';
     PhasesController,
     FormsController,
     FieldsController,
+    FormPublicationController,
   ],
-  providers: [PipesService, PipeGrantsService, PhasesService, FormsService, FieldsService],
+  providers: [
+    PipesService,
+    PipeGrantsService,
+    PhasesService,
+    FormsService,
+    FieldsService,
+    FormPublicationService,
+  ],
 })
 export class PipesModule {}

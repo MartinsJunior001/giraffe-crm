@@ -28,6 +28,7 @@ const MODELOS_AUDITADOS = new Set([
   'Phase',
   'Form',
   'Field',
+  'FormVersion',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
@@ -190,6 +191,28 @@ function recusarTransacao(): never {
 }
 
 /**
+ * Define o contexto organizacional (Org + conta) de forma **transaction-local** (`set_config(..., true)`) e
+ * devolve as duas `PrismaPromise` de escrita — para serem incluídas num `$transaction([...])` (extensão, por
+ * operação) OU aguardadas dentro de uma transação interativa (publicação, Story 2.6).
+ *
+ * É a **fonte única** das chaves de contexto (`app.current_org_id`/`app.current_account_id`) e do flag `true`.
+ * Sem isto, cada caminho que precisa de contexto (a extensão e a transação de publicação no client raiz)
+ * teria a sua própria cópia do `set_config` — e o dia em que o nome da chave ou a função `current_org_id()`
+ * mudasse, um dos caminhos ficaria para trás em silêncio, com contexto NULL e negação por RLS (ou, pior,
+ * contexto errado). O `true` é o que torna o contexto transaction-local: com `false` ele grudaria na conexão
+ * e vazaria pelo pool para a próxima requisição.
+ */
+export function definirContextoOrg(
+  client: Pick<PrismaClient, '$executeRaw'>,
+  ctx: { orgId: string; accountId?: string },
+) {
+  return [
+    client.$executeRaw`SELECT set_config('app.current_org_id', ${ctx.orgId}, true)`,
+    client.$executeRaw`SELECT set_config('app.current_account_id', ${ctx.accountId ?? ''}, true)`,
+  ];
+}
+
+/**
  * Envolve o client de modo que TODA query rode dentro de uma transação onde o
  * contexto foi definido com `set_config(..., true)`.
  *
@@ -227,8 +250,7 @@ export function withTenantContext(prisma: PrismaClient, ctx: TenantContext, logg
                 { orgId: ctx.orgId, accountId: ctx.accountId, model, operation },
                 async () => {
                   const results = await prisma.$transaction([
-                    prisma.$executeRaw`SELECT set_config('app.current_org_id', ${ctx.orgId}, true)`,
-                    prisma.$executeRaw`SELECT set_config('app.current_account_id', ${ctx.accountId ?? ''}, true)`,
+                    ...definirContextoOrg(prisma, ctx),
                     query(args),
                   ]);
                   // O resultado da query é o último item do lote.
