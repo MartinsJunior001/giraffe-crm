@@ -1,7 +1,7 @@
 ---
 story_key: 2-4-form-builder-e-catalogo-canonico-de-campos
 epic: 2
-status: ready-for-dev
+status: done
 release: CORE (bloco 2.4–2.6, paralelo a 2.1–2.3; Sprint S5 do roadmap)
 risco: CRÍTICO
 baseline_commit: pendente (empilha sobre a 2.3 / PR #22, já sobre a 2.2 / PR #20 e a 2.1 / PR #17 mergeadas)
