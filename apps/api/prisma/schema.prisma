@@ -549,6 +549,14 @@ model Card {
   valores        Json       @default("{}")
   /// Origem do Card (Story 2.8): submissão interna (`INTERNAL`, 2.7) ou pública (`PUBLIC`, aprovada/direta).
   origin         CardOrigin @default(INTERNAL)
+  /// Estado de CICLO DE VIDA (Story 2.11), eixo INDEPENDENTE da Fase (`Fase ≠ Status do Card`) e da saúde temporal
+  /// (2.13). Três estados canônicos; `reaberto`/`restaurado` são TRANSIÇÕES, não estados. É a ÚNICA coluna de `Card`
+  /// que o runtime pode UPDATE (GRANT column-scoped na migration da 2.11) — junto de `previousLifecycleState` e
+  /// `updatedAt`; `phaseId` (movimentação, 2.14) segue **sem** GRANT de UPDATE.
+  lifecycleState CardLifecycleState @default(ATIVO)
+  /// Estado ANTERIOR ao arquivamento (ATIVO ou FINALIZADO), para restaurar de forma confiável (AC 2.11). Nulo fora
+  /// de ARQUIVADO. Preenchido ao arquivar, limpo ao restaurar.
+  previousLifecycleState CardLifecycleState?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -593,6 +601,15 @@ model CardHistory {
 
   @@index([orgId, cardId, createdAt])
   @@map("CardHistory")
+}
+
+/// Estado de CICLO DE VIDA do Card (Story 2.11). Três estados canônicos e persistentes; `reaberto`/`restaurado`
+/// NÃO são estados — são transições que devolvem o Card a ATIVO/estado-anterior. Eixo independente da Fase e da
+/// saúde temporal (2.13).
+enum CardLifecycleState {
+  ATIVO
+  FINALIZADO
+  ARQUIVADO
 }
 
 /// Estado de uma concessão direta de acesso a um Card (Story 2.10). Revogar preserva a linha (sem DELETE).

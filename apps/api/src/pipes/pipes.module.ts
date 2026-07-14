@@ -11,6 +11,8 @@ import { KanbanController } from './cards/kanban.controller';
 import { KanbanReadService } from './cards/kanban-read.service';
 import { CardAccessController } from './cards/access/card-access.controller';
 import { CardAccessService } from './cards/access/card-access.service';
+import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.controller';
+import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
 import { PublicSubmissionService } from './public-submissions/public-submission.service';
 import { PublicRouteResolver } from './public-submissions/public-route.resolver';
@@ -45,7 +47,10 @@ import { PipesService } from './pipes.service';
  * acesso operacional) e conceder/revogar acesso direto a um Card (exige GERENCIAR o Pipe), tudo com evento
  * `CardHistory` na mesma transação; a resolução de acesso NO CARD (`resolverAcessoNoCard`) compõe papel-de-Pipe +
  * concessão direta + "restrito ao próprio" + Responsável-atual (`pipe-authz`). Fecha o DBT-2.2-ROLE-DORMENTE.
- * Depende de `PrismaService` (DbModule global) e
+ * Story 2.11: ciclo de vida do Card (`CardLifecycleController`/`CardLifecycleService`) — finalizar/reabrir/
+ * arquivar/restaurar (estados ATIVO/FINALIZADO/ARQUIVADO), transições atômicas, idempotentes e auditadas em
+ * `CardHistory`, com o 1º GRANT de UPDATE em `Card` **column-scoped** (só o estado; `phaseId`/movimentação segue
+ * sem UPDATE — 2.14). Depende de `PrismaService` (DbModule global) e
  * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
  * este módulo só registra os controllers e serviços.
  */
@@ -60,6 +65,7 @@ import { PipesService } from './pipes.service';
     CardsController,
     KanbanController,
     CardAccessController,
+    CardLifecycleController,
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
@@ -74,6 +80,7 @@ import { PipesService } from './pipes.service';
     CardSubmissionService,
     KanbanReadService,
     CardAccessService,
+    CardLifecycleService,
     PublicSubmissionService,
     PublicRouteResolver,
     PublicRateLimit,

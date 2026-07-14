@@ -55,6 +55,8 @@ export interface CardDetalheVisao {
     valores: Prisma.JsonValue;
     formId: string;
     formVersionId: string;
+    /** Estado de ciclo de vida (Story 2.11): ATIVO/FINALIZADO/ARQUIVADO. Eixo independente da Fase. */
+    lifecycleState: string;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -189,6 +191,7 @@ export class KanbanReadService {
         valores: true,
         formId: true,
         formVersionId: true,
+        lifecycleState: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -208,6 +211,7 @@ export class KanbanReadService {
         valores: card.valores,
         formId: card.formId,
         formVersionId: card.formVersionId,
+        lifecycleState: card.lifecycleState,
         createdAt: card.createdAt,
         updatedAt: card.updatedAt,
       },
