@@ -29,6 +29,8 @@ const MODELOS_AUDITADOS = new Set([
   'Form',
   'Field',
   'FormVersion',
+  'Card',
+  'CardHistory',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

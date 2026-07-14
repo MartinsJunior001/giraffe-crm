@@ -255,9 +255,11 @@ model Organization {
   pipes        Pipe[]
   pipeGrants   PipeGrant[]
   phases       Phase[]
-  forms        Form[]
-  fields       Field[]
-  formVersions FormVersion[]
+  forms         Form[]
+  fields        Field[]
+  formVersions  FormVersion[]
+  cards         Card[]
+  cardHistories CardHistory[]
 
   @@map("Organization")
 }
@@ -288,6 +290,7 @@ model Pipe {
   grants       PipeGrant[]
   phases       Phase[]
   forms        Form[]
+  cards        Card[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -325,6 +328,7 @@ model Phase {
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
   forms        Form[]
+  cards        Card[]
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -425,6 +429,7 @@ model Form {
   phase        Phase?        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
   fields       Field[]
   versions     FormVersion[]
+  cards        Card[]
 
   // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId, context).
   @@index([orgId, pipeId])
@@ -460,10 +465,80 @@ model FormVersion {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  cards        Card[]
 
   @@unique([orgId, formId, version])
   @@index([orgId, formId])
   @@map("FormVersion")
+}
+
+/// Card — instância de trabalho criada por uma submissão do Formulário inicial (Story 2.7). Dado operacional
+/// org-owned (AD-10). **Card ≠ Registro** (invariante conceitual): o Card é a unidade que percorre o Pipe; o
+/// Registro (dado de Database) é do E3. **Fase ≠ Status do Card**: o Card nasce numa Fase e se move entre
+/// Fases; o ciclo de vida/estado do Card (ativo/finalizado/arquivado) é da 2.11 — **não materializado aqui**.
+///
+/// A submissão interna **cria** um Card (nunca preenche um existente — D3.3). O Card nasce na **1ª Fase ativa**
+/// do Pipe e referencia a **`FormVersion` publicada** no ato (`formVersionId`, imutável — AD-12): a definição
+/// usada fica congelada, independentemente de edições futuras do rascunho. Os `valores` submetidos vivem em
+/// JSONB **chaveado por `Field.id`** (e opção por `id`, nunca rótulo — AD-11/AD-12), não em tabela de valores
+/// por Campo (normalização especulativa proibida por AD-11) — coerente com o snapshot JSON da 2.6.
+///
+/// **Idempotência**: `idempotencyKey` do cliente + `@@unique([orgId, formId, idempotencyKey])` — um retry da
+/// MESMA submissão lógica colide e devolve o Card existente (nunca duplica). Isolamento pelo banco (RLS
+/// ENABLE+FORCE); na 2.7 o runtime tem **só SELECT/INSERT** — sem UPDATE (nenhum consumidor de UPDATE ainda; a
+/// 2.9/2.11 concede junto do consumidor e do teste) e **sem DELETE** (arquivar será `state` na 2.11).
+model Card {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @db.Uuid
+  pipeId         String   @db.Uuid
+  phaseId        String   @db.Uuid
+  formId         String   @db.Uuid
+  formVersionId  String   @db.Uuid
+  /// Chave lógica da submissão (cliente). Garante idempotência via índice único org+form.
+  idempotencyKey String
+  /// Valores submetidos, chaveados por `Field.id` do snapshot (opção por `id`). Validados contra a versão.
+  valores        Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe          @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  phase        Phase         @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  form         Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion  FormVersion   @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+  history      CardHistory[]
+
+  // Um retry da mesma submissão lógica não cria um 2º Card.
+  @@unique([orgId, formId, idempotencyKey])
+  // Superfície do Kanban (2.9): Cards de um Pipe, por Fase.
+  @@index([orgId, pipeId, phaseId])
+  @@map("Card")
+}
+
+/// CardHistory — trilha de eventos do Card (Story 2.7 estabelece o contrato write-side, reusado por 2.10-2.16).
+/// Dado operacional org-owned (AD-10). É **append-only e IMUTÁVEL**: o runtime recebe **só SELECT+INSERT**
+/// (sem UPDATE/DELETE — ver GRANT na migration), como `FormVersion`. Distinta da Auditoria/Log técnico (AD-15):
+/// é histórico de negócio, legível pelo usuário.
+///
+/// Na 2.7 há um único tipo de evento: `CREATED` (criação do Card pela submissão). O evento é escrito na MESMA
+/// transação atômica do INSERT do Card (AD-13): não há Card sem evento nem evento sem Card.
+model CardHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @db.Uuid
+  cardId    String   @db.Uuid
+  /// Vocabulário do evento (2.7: apenas `CREATED`). String — a taxonomia completa é das Stories 2.10+.
+  type      String
+  /// Resumo legível do evento (sem PII desnecessária).
+  summary   String
+  /// Ator que originou o evento (quando disponível).
+  actorId   String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, cardId, createdAt])
+  @@map("CardHistory")
 }
 
 /// Field — Campo de um Formulário (Story 2.4). Dado operacional org-owned (AD-10). O `id` é a IDENTIDADE
