@@ -354,6 +354,15 @@ describe('cookie e log', () => {
     const nivelAnterior = process.env.LOG_LEVEL;
     process.env.LOG_LEVEL = 'info';
 
+    // Forçamos NODE_ENV≠development para ESTA instância. Em desenvolvimento o `AppModule` liga o
+    // transport `pino-pretty`, e um transport do pino roda num WORKER THREAD que escreve direto no
+    // descritor de arquivo 1 — fora da main thread, contornando a interceptação de
+    // `process.stdout.write` abaixo (a captura viria vazia, como acontece localmente quando o `.env`
+    // define NODE_ENV=development). Sem o transport, o pino serializa o log em JSON e o escreve de
+    // forma síncrona no `process.stdout` — que é, também, exatamente o caminho de log de PRODUÇÃO.
+    const ambienteAnterior = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+
     const capturado: string[] = [];
     const stdoutReal = process.stdout.write.bind(process.stdout);
     const stderrReal = process.stderr.write.bind(process.stderr);
@@ -403,7 +412,8 @@ describe('cookie e log', () => {
       await new Promise((r) => setTimeout(r, 100)); // deixa o pino-http descarregar o log da resposta
 
       const tudo = capturado.join('');
-      // Guarda contra falso-positivo: exigimos que HOUVE log capturado da app.
+      // Guarda contra falso-positivo: exigimos que HOUVE log capturado da app (ver o NODE_ENV
+      // forçado acima — em dev o transport de worker thread escaparia desta captura).
       expect(tudo.length).toBeGreaterThan(0);
       expect(tudo).toContain('giraffe-api');
 
@@ -414,6 +424,7 @@ describe('cookie e log', () => {
       (process.stdout as { write: unknown }).write = stdoutReal;
       (process.stderr as { write: unknown }).write = stderrReal;
       process.env.LOG_LEVEL = nivelAnterior;
+      process.env.NODE_ENV = ambienteAnterior;
       await comLog?.close();
     }
   });

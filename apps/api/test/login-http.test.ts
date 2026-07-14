@@ -418,6 +418,17 @@ describe('FR-403 — a senha jamais aparece nos logs', () => {
     const nivelAnterior = process.env.LOG_LEVEL;
     process.env.LOG_LEVEL = 'info'; // a instância padrão do arquivo é 'silent'; aqui queremos o log real
 
+    // Forçamos NODE_ENV≠development para ESTA instância. Em desenvolvimento o `AppModule` liga o
+    // transport `pino-pretty`, e um transport do pino roda num WORKER THREAD que escreve direto no
+    // descritor de arquivo 1 — fora da main thread, contornando a interceptação de
+    // `process.stdout.write` abaixo (a captura viria vazia, como acontece localmente quando o `.env`
+    // define NODE_ENV=development). Sem o transport, o pino serializa o log em JSON e o escreve de
+    // forma síncrona no `process.stdout` — que é, também, exatamente o caminho de log de PRODUÇÃO.
+    // Este teste prova, portanto, o log real de produção, e não o formatador de dev (que apenas
+    // reformata o MESMO objeto já redigido). É também o que a CI faz por padrão (Vitest usa 'test').
+    const ambienteAnterior = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+
     const capturado: string[] = [];
     const stdoutReal = process.stdout.write.bind(process.stdout);
     const stderrReal = process.stderr.write.bind(process.stderr);
@@ -452,8 +463,9 @@ describe('FR-403 — a senha jamais aparece nos logs', () => {
 
       const tudo = capturado.join('');
 
-      // Guarda contra falso-positivo: se a captura viesse vazia (pino escrevendo direto no fd),
-      // o `not.toContain` passaria sem ter olhado nada. Exigimos evidência de que HOUVE log.
+      // Guarda contra falso-positivo: se a captura viesse vazia (ex.: o transport de dev escrevendo
+      // no fd por um worker thread — ver o NODE_ENV forçado acima), o `not.toContain` passaria sem
+      // ter olhado nada. Exigimos evidência de que HOUVE log.
       expect(tudo.length).toBeGreaterThan(0);
       expect(tudo).toContain('giraffe-api'); // o `base` do pino — prova que capturamos o log da app
 
@@ -464,6 +476,7 @@ describe('FR-403 — a senha jamais aparece nos logs', () => {
       (process.stdout as { write: unknown }).write = stdoutReal;
       (process.stderr as { write: unknown }).write = stderrReal;
       process.env.LOG_LEVEL = nivelAnterior;
+      process.env.NODE_ENV = ambienteAnterior;
       await comLog?.close();
     }
   });
