@@ -1,7 +1,7 @@
 ---
 story_key: 2-9-kanban-e-espaco-operacional-do-card
 epic: 2
-status: draft
+status: done
 release: CORE (bloco 2.9; ver roadmap)
 risco: MEDIO
 baseline_commit: empilha sobre a 2.7 (Card/CardHistory; índice [orgId, pipeId, phaseId] preparado para o Kanban)
