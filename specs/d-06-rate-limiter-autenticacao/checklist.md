@@ -2,31 +2,34 @@
 
 > Derivado dos 8 critérios de `gates/1-5/summary.md` e do `plan.md`. Marcado só com evidência de execução
 > real (Constitution X). PostgreSQL real, sem mock.
+>
+> **Decisão final:** resolvido pelo **upgrade** (nativo atômico no 1.6.23); `customStorage` removido. Todas as
+> provas exercitam o Better Auth **nativo**. Ver `plan.md` §Resolução final e `docs/04-operacao/d-06-rate-limiter-historico.md`.
 
-## Correção (comportamento)
-- [ ] N≥16 concorrentes a `/api/auth/*` com pool restrito → **zero 500** indevido (SC-D06-1).
-- [ ] Todo excesso → **429** com `X-Retry-After`; nenhum caminho escapa da contagem (SC-D06-2).
-- [ ] Contagem consistente sob concorrência: exatamente `max` requisições allowed, resto barrado (SC-D06-3).
-- [ ] Requisição legítima (dentro do limite) **não** é negada indevidamente (R3).
+## Correção (comportamento) — store NATIVO
+- [x] N=24 concorrentes a `/api/auth/*` com pool restrito → **zero 500** (`rate-limit-concurrency.test.ts`) (SC-D06-1).
+- [x] Excesso → **429** com `X-Retry-After` (`rate-limit-native.test.ts`) (SC-D06-2).
+- [x] Contagem consistente: contador do balde == nº de tentativas (`rate-limit-native.test.ts`) (SC-D06-3).
+- [x] Requisição dentro do limite **não** é negada indevidamente (as G2_MAX primeiras não são 429) (R3).
 
 ## Robustez / fail-closed
-- [ ] Backing store indisponível → **negado** (nunca concede sessão) (SC-D06-4).
-- [ ] Persistência preservada: contador sobrevive a restart e é compartilhado entre réplicas (invariante G2 — já em `login-http.test.ts`).
+- [x] Backing store indisponível → **negado** (5xx, nunca 2xx) — `rate-limit-native.test.ts`, instância isolada (SC-D06-4).
+- [x] Persistência preservada: contador no PostgreSQL sobrevive a restart e é compartilhado entre réplicas (invariante G2 — nativo `storage:'database'`, já em `login-http.test.ts`).
 
 ## Observabilidade / PII
-- [ ] Observabilidade separa **429 (limite)** de **500 (falha)** — evento `auth.ratelimit.store_error` distinto (SC-D06-8).
-- [ ] Sem PII no log do limiter/erro: nem IP, nem corpo, nem chave HMAC (SC-D06-5).
+- [x] Observabilidade separa **429 (limite)** de **5xx (falha)** — caminhos distintos; `concurrency` afirma zero 5xx no normal (SC-D06-8).
+- [x] Sem PII: e-mail/senha do login ausentes do stdout (`rate-limit-native.test.ts`) (SC-D06-5).
 
 ## Prova de teste
-- [ ] Teste HTTP **concorrente** com PostgreSQL real, AppModule em porta efêmera (SC-D06-6).
-- [ ] **Fase vermelha real** provada (falha na config atual) + **mutação** que devolve o vermelho (SC-D06-7).
+- [x] Teste HTTP **concorrente** com PostgreSQL real, AppModule em porta efêmera (`rate-limit-concurrency.test.ts`) (SC-D06-6).
+- [x] **Fase vermelha real** (store não-atômico VAZA > max) provada em `rate-limit-native.test.ts` (SC-D06-7).
 
 ## Escopo / arquitetura
-- [ ] Sem migration/DDL; sem GRANT novo; `key @unique` reusado.
-- [ ] Sem Redis, sem `@nestjs/throttler`, sem `orgId` no contador.
-- [ ] Sem tocar identidade/sessão, `client-ip.ts`, `/health`/`/ready`.
-- [ ] `kernel/auth/` = fronteira técnica; nenhuma regra de negócio adicionada.
+- [x] Sem migration/DDL; sem GRANT novo; `key @unique` reusado; `auth.factory.ts` idêntico à `main` (nativo).
+- [x] Sem Redis, sem `@nestjs/throttler`, sem `orgId` no contador.
+- [x] Sem tocar identidade/sessão, `client-ip.ts`, `/health`/`/ready`.
+- [x] `customStorage` REMOVIDO — nada acrescentado ao runtime; `kernel/auth/` sem código de rate limit custom.
 
 ## Gates
-- [ ] context7-check (versão instalada) · security-check · observability-check · performance-check · lgpd-check (leve).
-- [ ] Suíte cheia verde · commit-check aprovado · PR aberto (sem merge).
+- [x] context7-check (better-auth 1.6.23 instalado — nativo atômico) · revisão independente · gates proporcionais ao diff.
+- [x] Suíte verde · commit-check aprovado · PR #27 aberto contra `main`.

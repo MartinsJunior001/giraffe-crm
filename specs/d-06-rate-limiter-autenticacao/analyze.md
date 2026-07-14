@@ -3,23 +3,28 @@
 > Análise não-destrutiva de `spec.md` × `plan.md` × `clarify.md` × `tasks.md` × `checklist.md` × código.
 > Executada após a geração de tasks. Sem edição de artefatos autoritativos.
 
-## Cobertura dos 8 critérios (spec → tasks → teste)
+## Cobertura dos 8 critérios (spec → teste) — CONTRA O STORE NATIVO
 
-| Critério | spec (SC) | task | Evidência de teste |
-|---|---|---|---|
-| 1 — zero 500 sob N≥16 | SC-D06-1 | T001/T004 | `rate-limit-concurrency.test.ts` (N=24 sign-out, pool restrito) |
-| 2 — excesso → 429, sem bypass | SC-D06-2 | T004 | `rate-limit-storage.test.ts` (barradas = N−max, retryAfter setado) |
-| 3 — contador consistente | SC-D06-3 | T002/T004 | storage: N=40 concorrentes → exatamente `max` permitidas |
-| 4 — store down → fail-closed | SC-D06-4 | T006 | storage: `consume` com prisma quebrado **relança** (nega) |
-| 5 — sem PII | SC-D06-5 | T007 | storage: chave com IP não aparece no log |
-| 6 — HTTP concorrente, PG real | SC-D06-6 | T001 | `rate-limit-concurrency.test.ts` (AppModule real, PG real) |
-| 7 — vermelho + mutação | SC-D06-7 | T005 | storage: `consumeIngenuo` (get-set) VAZA > max — a mutação |
-| 8 — observabilidade 429≠500 | SC-D06-8 | T006 | evento `auth.ratelimit.store_error` distinto; 429 vem do 429 |
+> Atualizado após a **decisão final** (ver `plan.md` §Resolução final): o D-06 foi resolvido pelo **upgrade**
+> ao better-auth 1.6.23 e o `customStorage` foi **removido**. As provas migraram para dois arquivos que
+> exercitam o Better Auth **nativo** de produção; `rate-limit-storage.test.ts` foi apagado.
+
+| Critério | spec (SC) | Evidência de teste (nativo) |
+|---|---|---|
+| 1 — zero 500 sob N≥16 | SC-D06-1 | `rate-limit-concurrency.test.ts` (N=24 sign-out, pool restrito) |
+| 2 — excesso → 429, sem bypass | SC-D06-2 | `rate-limit-native.test.ts` (G2_MAX permitidas, 21ª → 429 + `X-Retry-After`) |
+| 3 — contador consistente | SC-D06-3 | `rate-limit-native.test.ts` (contador do balde == nº de tentativas) |
+| 4 — store down → fail-closed | SC-D06-4 | `rate-limit-native.test.ts` (instância isolada com banco inacessível → 5xx, nunca 2xx) |
+| 5 — sem PII | SC-D06-5 | `rate-limit-native.test.ts` (login com e-mail/senha distintos → ausentes do stdout) |
+| 6 — HTTP concorrente, PG real | SC-D06-6 | `rate-limit-concurrency.test.ts` (AppModule real, PG real) |
+| 7 — vermelho + mutação | SC-D06-7 | `rate-limit-native.test.ts` (store não-atômico `consumeIngenuo` VAZA > max) |
+| 8 — observabilidade 429≠500 | SC-D06-8 | nativo devolve 429 (limite) e 5xx (falha) por caminhos distintos; `concurrency` afirma zero 5xx no caminho normal |
 
 ## Consistência
 
-- **Decisão de mitigação** (opção 1, `customStorage.consume`) coerente entre `pre-implementation-check`,
-  `spec`, `clarify` (C1) e `plan`. Redis/pool descartados com justificativa. ✅
+- **Decisão final** (ver `plan.md` §Resolução final): resolvido pelo **upgrade** (nativo atômico no 1.6.23);
+  `customStorage` **removido**. Redis/pool seguem descartados com justificativa. A análise da opção 1
+  permanece abaixo como registro de auditoria da exploração. ✅
 - **Sem migration** afirmado em `plan`/`clarify` (C6) e verificado no código: usa `key @unique` e GRANTs
   já existentes. Nenhum arquivo em `apps/api/prisma/` alterado. ✅ (elimina conflito com a Story CORE)
 - **Escopo**: `client-ip.ts`, identidade/sessão, `/health`/`/ready` intocados; sem Redis, sem
@@ -42,5 +47,6 @@
   testes independentemente da escolha.
 
 ## Veredito
-Artefatos consistentes; 8 critérios rastreados a testes; sem migration; sem conflito com a Story CORE.
-Pronto para implementação sob gates (já implementado neste worktree).
+Artefatos consistentes; 8 critérios rastreados a testes **contra o store nativo**; sem migration; sem
+conflito com a Story CORE. **D-06 RESOLVIDO pelo upgrade** (customStorage removido) — ver
+`plan.md` §Resolução final e o histórico em `docs/04-operacao/d-06-rate-limiter-historico.md`.

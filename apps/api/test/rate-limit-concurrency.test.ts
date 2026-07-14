@@ -6,15 +6,17 @@ import { AppModule } from '../src/app.module';
 import { PrismaClient } from '../generated/prisma';
 
 /**
- * A correção do **D-06** pela porta da frente: HTTP real, `AppModule` real, PostgreSQL real, **pool
- * restrito** e rajada **concorrente** a `/api/auth/*`.
+ * Guarda de regressão do **D-06** pela porta da frente: HTTP real, `AppModule` real (Better Auth como em
+ * produção), PostgreSQL real, **pool restrito** e rajada **concorrente** contra a MESMA chave de `/api/auth/*`.
  *
- * O defeito herdado da 1.4: o rate limiter em `storage: 'database'` abria UMA transação por requisição;
- * sob rajada concorrente com o pool apertado, as transações competiam e parte das respostas virava
- * **500** em vez do 429 correto. Com o `customStorage.consume` atômico (uma instrução, sem transação por
- * requisição), a mesma rajada não produz 500. Este teste é o guarda de regressão desse invariante
- * (SC-D06-1 e SC-D06-6). A prova rigorosa da atomicidade/limite/fail-closed, com fase vermelha e mutação,
- * está isolada em `rate-limit-storage.test.ts`.
+ * O D-06 descrevia um defeito de uma versão ANTERIOR do Better Auth: o rate limiter em `storage: 'database'`
+ * abria UMA transação por requisição e, sob rajada concorrente com o pool apertado, as transações competiam
+ * e parte das respostas virava **500** em vez do 429 correto. O upgrade ao Better Auth **1.6.23 já resolveu
+ * isso** — o `storage: 'database'` desta versão é atômico (read + `incrementOne` com guarda `count < max` +
+ * retry otimista, verificado na fonte). Este teste **prova** que a rajada concorrente com pool restrito **não**
+ * produz 500 no store NATIVO (SC-D06-1/6): sem código custom, só o Better Auth de produção. A prova de
+ * limite/429/Retry-After/contador/fail-closed e a fase vermelha (não-atômico vaza) estão em
+ * `rate-limit-native.test.ts`.
  *
  * ## Isolamento do contador
  * A rota exercitada é `/api/auth/sign-out` — de propósito. O contador do Better Auth é chaveado por
@@ -35,8 +37,8 @@ beforeAll(async () => {
   process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
 
-  // Pool RESTRITO para reproduzir a contenção que produzia o 500. `pool_timeout` baixo faz a config
-  // ANTIGA (transação por requisição) falhar rápido; a nova (uma instrução) termina folgada.
+  // Pool RESTRITO para reproduzir a contenção que produzia o 500 na versão ANTIGA (transação por
+  // requisição). O store atômico do Better Auth 1.6.23 termina folgado sob a mesma restrição.
   urlOriginal = process.env.DATABASE_URL;
   const sep = (urlOriginal ?? '').includes('?') ? '&' : '?';
   process.env.DATABASE_URL = `${urlOriginal ?? ''}${sep}connection_limit=1&pool_timeout=5`;
@@ -82,8 +84,8 @@ describe('rate limiter sob rajada concorrente (D-06)', () => {
   });
 
   it('o limiter de fato engajou: há contador de rate limit para a rota (SC-D06-6)', async () => {
-    // Prova que a rajada passou pelo `consume` (e não que a rota simplesmente ignora o limiter): existe
-    // uma linha `RateLimit` para o balde de sign-out, com contagem > 0.
+    // Prova que a rajada passou pelo limiter nativo (e não que a rota simplesmente ignora o limiter):
+    // existe uma linha `RateLimit` para o balde de sign-out, com contagem > 0.
     const linhas = await prisma.$queryRaw<{ count: number }[]>`
       SELECT "count" FROM "RateLimit" WHERE "key" LIKE ${'%/sign-out'} ORDER BY "count" DESC LIMIT 1
     `;

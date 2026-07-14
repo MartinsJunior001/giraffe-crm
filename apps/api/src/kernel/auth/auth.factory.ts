@@ -2,11 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import type { PinoLogger } from 'nestjs-pino';
-import type { PrismaService } from '../db/prisma.service';
+import type { PrismaClient } from '../../../generated/prisma';
 import { getEnv, parseCorsOrigins } from '../config/env';
 import type { LoginFailureService } from './login-failure.service';
-import { criarRateLimitStorage } from './rate-limit-storage';
 
 /** Rota do login por e-mail no Better Auth. Constante porque dois hooks dependem dela. */
 export const ROTA_LOGIN = '/sign-in/email';
@@ -34,7 +32,7 @@ const MENSAGEM_LIMITE = 'Muitas tentativas. Tente novamente mais tarde.';
  * Recebe o `PrismaClient` e o contador de falhas por injeção — nada de singleton com estado global,
  * que tornaria impossível testar dois ambientes na mesma execução.
  */
-export function criarAuth(prisma: PrismaService, falhas: LoginFailureService, logger: PinoLogger) {
+export function criarAuth(prisma: PrismaClient, falhas: LoginFailureService) {
   const env = getEnv();
 
   const opcoes = {
@@ -123,16 +121,8 @@ export function criarAuth(prisma: PrismaService, falhas: LoginFailureService, lo
       // No BANCO, não em memória. `memory` (o padrão) não sobrevive a restart — o atacante zera a
       // contagem esperando o container reciclar — e não é compartilhado entre réplicas: com 3
       // instâncias, o limite efetivo TRIPLICA. Um limite assim não protege, decora.
-      //
-      // **`customStorage` atômico de UMA instrução (débito D-06).** O `consume` faz o incremento e a
-      // decisão num único `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` — **um** round-trip, sem
-      // leitura-depois-escrita e sem recursão de retry. O modo `storage: 'database'` do Better Auth
-      // 1.6.23 já é atômico (read + `incrementOne` com guarda `count < max` + retry otimista), então
-      // isto é um REFINO — menos round-trips = menos pressão no pool sob rajada — e não a correção de um
-      // "transação por requisição" (isso era de uma versão anterior; ver o relatório do D-06). Mantém a
-      // mesma persistência no banco (sobrevive a restart, compartilhado entre réplicas). Ver
-      // `rate-limit-storage.ts`.
-      customStorage: criarRateLimitStorage(prisma, logger),
+      storage: 'database',
+      modelName: 'RateLimit',
       window: G2_JANELA_S,
       max: 100,
       customRules: {

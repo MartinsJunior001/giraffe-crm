@@ -6,7 +6,7 @@
 
 | # | Ambiguidade | Resolução | Fonte |
 |---|---|---|---|
-| C1 | Qual das 3 opções de mitigação? | **(1) `customStorage.consume` atômico no PostgreSQL.** Redis e pool/backpressure descartados. | `plan.md` §Decisão; pre-check §Plano mínimo |
+| C1 | Qual das 3 opções de mitigação? | **Decisão FINAL: nenhuma — resolvido pelo UPGRADE.** O context7-check contra o 1.6.23 instalado mostrou que o nativo `storage:'database'` já é atômico; o defeito era de versão anterior. `customStorage` **removido**; Redis e pool/backpressure descartados. | `plan.md` §Resolução final; `docs/04-operacao/d-06-rate-limiter-historico.md` |
 | C2 | Adotar Redis (`secondary-storage`)? | **Não.** Não está operacional; adotá-lo é mudança de stack que exige AD e antecipa necessidade não comprovada. | pre-check R1/§Decisões; dossiê §3 |
 | C3 | D-06 depende de CR-09 (borda)? | **Não.** Resolvido no app, independente do Coolify — CR-09 é Coolify-dependente e não pode bloquear o code-advanceable. | dossiê §1/§4; pre-check §Decisões-3 |
 | C4 | Semântica da janela (fixa a partir da 1ª requisição, ou deslizante)? | **Janela fixa**, igual à referência atômica do próprio Better Auth (`secondary-storage.increment`: ttl=window na abertura, nunca estendido). Preserva os invariantes do G2 já testados. | Context7 rate-limit; `login-http.test.ts` (G2) |

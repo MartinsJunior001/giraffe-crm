@@ -1,5 +1,4 @@
 import { Global, Module } from '@nestjs/common';
-import { PinoLogger } from 'nestjs-pino';
 import { PrismaService } from '../db/prisma.service';
 import { PRINCIPAL_PROVIDER } from '../context/principal.provider';
 import { AuthController } from './auth.controller';
@@ -22,9 +21,8 @@ import { SessaoPrincipalProvider } from './sessao-principal.provider';
     LoginFailureService,
     {
       provide: AUTH,
-      useFactory: (prisma: PrismaService, falhas: LoginFailureService, logger: PinoLogger) =>
-        criarAuth(prisma, falhas, logger),
-      inject: [PrismaService, LoginFailureService, PinoLogger],
+      useFactory: (prisma: PrismaService, falhas: LoginFailureService) => criarAuth(prisma, falhas),
+      inject: [PrismaService, LoginFailureService],
     },
     { provide: PRINCIPAL_PROVIDER, useClass: SessaoPrincipalProvider },
   ],

@@ -4,6 +4,29 @@
 > Fonte: `spec.md` + `gates/d-06/pre-implementation-check.md` (APROVADO COM RESSALVAS) + os 8 critérios de
 > `gates/1-5/summary.md`. **Sem nova migration** (ver "Decisão de schema").
 
+## ✅ Resolução final (decisão humana registrada) — RESOLVIDO PELO UPGRADE
+
+> **D-06 = RESOLVIDO por UPGRADE + TESTES REAIS + REVISÃO INDEPENDENTE.** Ver o histórico completo em
+> `docs/04-operacao/d-06-rate-limiter-historico.md`.
+
+A escolha final **não** é o `customStorage`. A "Divergência registrada" abaixo (context7-check contra o
+better-auth **1.6.23 instalado**) mostrou que o modo nativo `storage: 'database'` **já é atômico** nesta
+versão (`readRow` + `incrementOne` com guarda `count < max` + retry otimista) — o defeito que o D-06
+descrevia (uma transação por requisição → 500 sob contenção) era de uma versão **anterior** e foi
+eliminado pelo **upgrade**, não por código nosso. Manter um `customStorage` seria carregar código de
+manutenção para um ganho marginal (Constitution II — sem abstração sem consumidor concreto).
+
+**Portanto o `customStorage` foi REMOVIDO** (`rate-limit-storage.ts` e seu teste apagados; `auth.factory.ts`
+volta a `storage: 'database'` nativo, idêntico à `main`). O que permanece do D-06 é **prova**, não código:
+
+- `apps/api/test/rate-limit-concurrency.test.ts` — rajada concorrente (N=24), pool restrito, HTTP+PG reais → **zero 500** no store **nativo**.
+- `apps/api/test/rate-limit-native.test.ts` — limite não ultrapassado, **429 com `X-Retry-After`**, contador
+  consistente, **fail-closed** (instância isolada com banco inacessível → 5xx), **fase vermelha** (store
+  não-atômico VAZA > max) e **sem PII** no log — tudo contra o Better Auth **nativo** de produção.
+
+As seções abaixo preservam a análise das 3 opções e a evidência que levou a esta decisão — leitura de
+auditoria, não instrução de implementação.
+
 ## Decisão de mitigação (a ressalva (a) do pre-check, resolvida com evidência)
 
 **Opção escolhida: (1) `customStorage` com `consume` atômico no PostgreSQL.** As opções (2) Redis e
