@@ -1,7 +1,7 @@
 ---
 story_key: 2-1-ciclo-de-vida-e-catalogo-de-pipes
 epic: 2
-status: review
+status: done
 release: CORE (Lote 2)
 risco: CRÍTICO
 baseline_commit: c1baef7
