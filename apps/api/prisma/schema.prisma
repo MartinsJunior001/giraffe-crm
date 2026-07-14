@@ -63,6 +63,14 @@ enum PipeGrantState {
   REVOKED
 }
 
+/// Estado da Fase (Story 2.3). Arquivar é MUDANÇA DE ESTADO, não exclusão (simétrico a `PipeState`);
+/// o runtime não tem GRANT DELETE. `ARCHIVED` preserva os dados e a posição na ordem é recalculada ao
+/// restaurar (volta ao final da ordem ativa).
+enum PhaseState {
+  ACTIVE
+  ARCHIVED
+}
+
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
@@ -210,6 +218,7 @@ model Organization {
   memberships Membership[]
   pipes       Pipe[]
   pipeGrants  PipeGrant[]
+  phases      Phase[]
 
   @@map("Organization")
 }
@@ -238,10 +247,47 @@ model Pipe {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grants       PipeGrant[]
+  phases       Phase[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
   @@map("Pipe")
+}
+
+/// Phase — Fase do fluxo DENTRO de um Pipe (Story 2.3). Dado operacional org-owned (AD-10).
+///
+/// `Fase ≠ Status do Card` (invariante conceitual): a Fase é a etapa do processo; o Card é que se move
+/// entre Fases (Cards = 2.7+). RN-030: cada Fase pertence a EXATAMENTE UM Pipe e NÃO migra — não há rota
+/// que altere `pipeId`.
+///
+/// Isolamento pelo BANCO (RLS na migration `..._phases`): ENABLE **e** FORCE ROW LEVEL SECURITY, policies
+/// por `orgId = current_org_id()`. Runtime recebe SELECT/INSERT/UPDATE — **sem DELETE**: arquivar é
+/// `state = ARCHIVED`, não exclusão.
+///
+/// **Ordenação intra-Pipe por chave fracionária** (`position`, `numeric`): mover uma Fase é UM único
+/// UPDATE (novo `position` = ponto médio dos vizinhos), porque `withTenantContext` define o contexto por
+/// operação e não suporta transação multi-statement — reescrever N posições em lote não seria atômico.
+/// Ordem determinística por `ORDER BY position, id`. **Sem unicidade** de `position` (empate raro
+/// desempatado pelo `id`; uma constraint única brigaria com operações concorrentes).
+model Phase {
+  id         String     @id @default(uuid()) @db.Uuid
+  orgId      String     @db.Uuid
+  pipeId     String     @db.Uuid
+  name       String
+  state      PhaseState @default(ACTIVE)
+  /// Chave de ordenação fracionária (ver nota do model). `numeric` de alta escala.
+  position   Decimal    @db.Decimal(38, 18)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  /// Momento do arquivamento (null quando ativa). Arquivar preserva os dados; só muda estado.
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+
+  // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
+  @@index([orgId, pipeId, state, position])
+  @@map("Phase")
 }
 
 /// PipeGrant — concessão explícita de papel POR Pipe (Story 2.2, decisão D1.4). Dado operacional
