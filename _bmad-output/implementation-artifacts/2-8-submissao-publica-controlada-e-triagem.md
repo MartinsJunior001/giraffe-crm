@@ -1,6 +1,6 @@
 # Story 2.8: Submissão pública controlada e triagem
 
-Status: ready-for-dev — **GATE de antiabuso RESOLVIDO** (decisão do dono, 2026-07-14): baseline.
+Status: done — implementada, revisada (4 lentes, risco ALTO) e mergeada (PR #38). GATE de antiabuso resolvido (decisão do dono, 2026-07-14): baseline.
 
 ## Story
 
