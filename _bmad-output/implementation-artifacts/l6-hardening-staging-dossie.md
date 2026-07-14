@@ -12,10 +12,12 @@
 >
 > Data: 2026-07-13 · Autor: Planejador L6 (worktree isolado).
 >
-> **Atualização 2026-07-14:** débitos resolvidos são **marcados** (não apagados) e seguem visíveis com o
-> ponteiro da prova. **D-06 — RESOLVIDO** (PR #27, upgrade do Better Auth + testes reais + revisão
-> independente). Restam **quatro** bloqueadores de `STAGING APPROVED`: **D-05** (code-advanceable) e
-> **CR-09 · D-01 · D-02** (Coolify-dependentes).
+> **Atualização 2026-07-14:** débitos resolvidos/avançados são **marcados** (não apagados) e seguem
+> visíveis com o ponteiro da prova. **D-06 — RESOLVIDO** (PR #27, upgrade do Better Auth + testes reais +
+> revisão independente). **D-05 — CÓDIGO ENTREGUE** (PR #29: advisory lock + runbook versionado); resta só
+> **ativar o cron no Coolify** (Ops). Com isso, **nenhum** débito é mais fechável só por código neste
+> repositório — os **quatro** itens abertos são todos de **Infra/Ops no Coolify**: a **ativação do cron do
+> D-05** e **CR-09 · D-01 · D-02**.
 
 ---
 
@@ -64,16 +66,25 @@ Campos: **impacto · justificativa · responsável · lote-alvo · critério de 
 | **Critério de correção** | Os **8 critérios formais** de `gates/1-5/summary.md` (seção de realocação), resumidos: (1) sob **N≥16** concorrentes a `/api/auth/*`, **zero 500** indevido; (2) todo excesso recebe **429**, sem caminho que escape da contagem; (3) contador consistente sob concorrência (sem perda/duplicação); (4) falha do backing store segue **fail-closed**; (5) sem vazamento de PII em resposta/log; (6) **teste HTTP concorrente com PostgreSQL real** (não mock); (7) **fase vermelha real** provada + mutação; (8) observabilidade separa **429 (limite)** de **500 (falha)**. |
 | **Gate** | ✅ **LIBERADO (2026-07-14).** Fechado pela via (a): mitigação provada pelos 8 critérios contra o store nativo (o upgrade eliminou a causa; ver banner acima e PR #27). Não bloqueia mais `STAGING APPROVED`. |
 
-### D-05 — falta o agendador da coleta de lixo (`db:cleanup`)  · CODE-ADVANCEABLE
+### D-05 — falta o agendador da coleta de lixo (`db:cleanup`)  · CÓDIGO ENTREGUE (PR #29 · 2026-07-14) · ativação pendente de Coolify/Ops
+
+> **CÓDIGO ENTREGUE** (PR #29, 2026-07-14): `LoginFailureService.limparExpiradosComLock` serializa a coleta
+> por `pg_try_advisory_xact_lock` (lock de **transação** — auto-liberado no commit, não vaza pelo pool;
+> execuções concorrentes **pulam** de forma não-bloqueante, evento `auth.antiabuse.cleanup.skipped`);
+> `scripts/db-cleanup.mjs` usa o mesmo lock e **falha visível** (saída != 0) em erro real de banco; runbook
+> versionado em `docs/04-operacao/agendamento-coleta-antiabuso.md` (intervalo sugerido, dono operacional,
+> sem scheduler in-app, sem rodar no boot). Provado com PostgreSQL real (`antiabuse-cleanup-lock.test.ts`).
+> **Resta apenas a ATIVAÇÃO do cron no Coolify** (ação de Infra/Ops) — como CR-09/D-01/D-02, essa metade é
+> Coolify-dependente. Código pronto ≠ agendamento ativado.
 
 | Campo | Conteúdo |
 |---|---|
-| **Impacto** | A **rotina** existe, é idempotente e testada (`limparExpirados()` / `pnpm --filter @giraffe/api db:cleanup`; `login-failure.service.ts` §245), mas **falta o agendador** que a dispara periodicamente. Sem *spray* de larga escala não é urgente — as linhas de `LoginFailure`/`RateLimit` expiram **logicamente** na janela e a coleta só recupera **espaço** físico. Risco: crescimento de tabela sob volume de produção sem uma varredura periódica. |
+| **Impacto** | A **rotina** existe, é idempotente e testada (`limparExpirados()` / `pnpm --filter @giraffe/api db:cleanup`; `login-failure.service.ts` §245). Com o PR #29, existe também a **serialização por advisory lock** (`limparExpiradosComLock`) e o **runbook versionado**. Falta apenas **ativar o cron** no Coolify. Sem *spray* de larga escala não é urgente — as linhas de `LoginFailure`/`RateLimit` expiram **logicamente** na janela e a coleta só recupera **espaço** físico. Risco: crescimento de tabela sob volume de produção sem uma varredura periódica ativa. |
 | **Justificativa** | A coleta segura (só apaga contadores fora da janela; nunca toca um contador ainda válido — ataque em curso) já foi separada da decisão de **quando** rodá-la. O agendamento é operacional e não deve ser embutido no boot do container (mesma regra das migrations — etapa controlada, não no boot). |
 | **Responsável** | **Trilha A / Backend** (dono do comando e do modelo de anti-abuso), com definição do mecanismo de agendamento junto de Infra/Ops. |
 | **Lote-alvo** | **L6 — Hardening de staging.** |
-| **Critério de correção** | (1) Existe um agendador **versionado** que dispara `db:cleanup` periodicamente (cron/scheduler operacional; **não** no boot do container, **não** DDL concorrente); (2) uma única definição de agendamento (sem segunda verdade); (3) execução observável (log estruturado sanitizado do evento `auth.antiabuse.cleanup` já emitido pela rotina) e falha não silenciosa; (4) idempotência preservada (2ª passada não ressuscita nem apaga contador válido) — já coberta por teste; (5) documentado o intervalo e o dono operacional. |
-| **Gate** | **BLOQUEIA `STAGING APPROVED`** (item do L6). Baixa urgência funcional, mas exigido antes de volume de produção. |
+| **Critério de correção** | (1) Existe um agendador **versionado** que dispara `db:cleanup` periodicamente (cron/scheduler operacional; **não** no boot do container, **não** DDL concorrente) — ✅ runbook + `db-cleanup.mjs` versionados (PR #29); (2) uma única definição de agendamento (sem segunda verdade) — ✅ o lock com chave única serializa as superfícies; (3) execução observável (evento `auth.antiabuse.cleanup`/`.skipped` sanitizado) e falha não silenciosa — ✅; (4) idempotência preservada — ✅ coberta por teste; (5) intervalo e dono operacional documentados — ✅ runbook. **Resta:** ativar o cron no ambiente (Coolify/Ops). |
+| **Gate** | ⏳ **CÓDIGO LIBERADO (PR #29); ATIVAÇÃO pendente de Coolify/Ops.** A metade de código não bloqueia mais; a **ativação do agendamento** permanece como item Coolify-dependente antes de volume de produção. |
 
 ### CR-09 — `/ready` precisa de rate limiting **na borda**  · COOLIFY-DEPENDENTE
 
@@ -162,11 +173,12 @@ campos.
    existe a **regra** de que ele não pode aprovar com débito aberto. Falta o dono do relatório de
    prontidão (Integration Agent) abrir o documento e listar os cinco como bloqueadores vivos.
 
-**O que impede `STAGING APPROVED` hoje (resumo, atualizado 2026-07-14):** **D-06 — RESOLVIDO** (PR #27).
-Restam **quatro** débitos **ABERTOS**: **D-05** (code-advanceable, fechável por código+Spec Kit sem infra
-externa) e **CR-09, D-01, D-02** (**bloqueados por decisão/configuração de Infra/Ops no Coolify e
-verificação no ambiente real**). Enquanto qualquer um seguir aberto sem mitigação provada ou decisão de
-aceitação de risco registrada, o relatório de prontidão **não pode** marcar `STAGING APPROVED`.
+**O que impede `STAGING APPROVED` hoje (resumo, atualizado 2026-07-14):** **D-06 — RESOLVIDO** (PR #27) e
+**D-05 — CÓDIGO ENTREGUE** (PR #29). O trabalho de **código+Spec Kit** dos débitos L6 está **concluído**; o
+que resta é **exclusivamente Infra/Ops no Coolify e verificação no ambiente real**: a **ativação do cron do
+D-05** e os três Coolify-dependentes **CR-09, D-01, D-02**. Enquanto qualquer um seguir sem a ação de
+ambiente registrada, o relatório de prontidão **não pode** marcar `STAGING APPROVED` — mas **nenhum**
+depende mais de código deste repositório.
 
 ---
 
