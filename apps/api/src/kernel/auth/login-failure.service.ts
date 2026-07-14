@@ -9,6 +9,18 @@ export const MAX_FALHAS = 5;
 export const JANELA_MS = 15 * 60 * 1000;
 
 /**
+ * Chave do advisory lock que **serializa a coleta de lixo antiabuso** (D-05).
+ *
+ * Duas coletas concorrentes (dois crons sobrepostos, ou um cron + uma execução manual) rodariam os
+ * mesmos DELETEs ao mesmo tempo — contenção e trabalho duplicado evitáveis. `pg_try_advisory_xact_lock`
+ * garante que só uma roda; a outra pula. **A MESMA constante vive em `scripts/db-cleanup.mjs`** (o
+ * gancho de cron): as duas superfícies precisam disputar o mesmo lock, então o valor é idêntico nos dois
+ * lugares. Valor arbitrário e fixo — só precisa ser estável e único dentro do espaço de advisory locks
+ * da aplicação.
+ */
+export const CHAVE_LOCK_CLEANUP = 427_050_006n;
+
+/**
  * Prefixo de FINALIDADE na entrada do HMAC.
  *
  * Sem ele, a mesma chave derivada poderia servir a dois contadores diferentes (login, recuperação
@@ -259,6 +271,61 @@ export class LoginFailureService {
     );
 
     return { loginFailure, rateLimit };
+  }
+
+  /**
+   * `limparExpirados`, mas serializada por um **advisory lock** para o agendador (D-05).
+   *
+   * O agendamento periódico pode sobrepor execuções (dois crons, ou um cron + uma limpeza manual). Sem
+   * trava, as duas rodariam os mesmos DELETEs ao mesmo tempo — contenção e trabalho duplicado. Aqui a
+   * coleta inteira acontece numa transação que primeiro tenta `pg_try_advisory_xact_lock`:
+   *
+   * - **Lock de TRANSAÇÃO, não de sessão.** O Prisma agrupa conexões (pool); um lock de sessão adquirido
+   *   numa conexão e liberado noutra vazaria. O lock de transação é adquirido e liberado na MESMA
+   *   conexão da transação e cai sozinho no commit/rollback — sem `unlock` manual, sem vazar pelo pool.
+   * - **`try` (não-bloqueante):** se outra coleta já detém o lock, esta **pula** em vez de enfileirar.
+   *   Enfileirar só empilharia execuções redundantes; a coleta é idempotente, então pular é seguro.
+   *
+   * Os DELETEs são os MESMOS de `limparExpirados` (mesma janela de 15 min) — repetidos aqui de propósito
+   * porque precisam rodar na conexão da transação que detém o lock; `limparExpirados` (que usa o client
+   * raiz, outra conexão) fica intacta e continua válida para chamada direta e para os testes que já a
+   * cobrem. Se um dia a janela mudar, os dois pontos mudam juntos.
+   *
+   * Erro real (banco caindo no meio) **não é silencioso**: a transação rejeita e o erro sobe — quem
+   * chama (o comando de cron) falha visível, com código de saída != 0.
+   */
+  async limparExpiradosComLock(): Promise<
+    { pulado: true } | { pulado: false; loginFailure: number; rateLimit: number }
+  > {
+    return this.prisma.$transaction(async (tx) => {
+      const trava = await tx.$queryRaw<{ obtido: boolean }[]>`
+        SELECT pg_try_advisory_xact_lock(${CHAVE_LOCK_CLEANUP}::bigint) AS "obtido"
+      `;
+      if (trava[0]?.obtido !== true) {
+        this.logger.info(
+          { event: 'auth.antiabuse.cleanup.skipped' },
+          'coleta antiabuso pulada — outra execução detém o lock',
+        );
+        return { pulado: true };
+      }
+
+      const inicioValido = new Date(Date.now() - JANELA_MS);
+      const corteRateLimit = BigInt(Date.now() - JANELA_MS); // RateLimit.lastRequest é epoch ms (BigInt)
+
+      const loginFailure = await tx.$executeRaw`
+        DELETE FROM "LoginFailure" WHERE "windowStart" < ${inicioValido}
+      `;
+      const rateLimit = await tx.$executeRaw`
+        DELETE FROM "RateLimit" WHERE "lastRequest" < ${corteRateLimit}
+      `;
+
+      this.logger.info(
+        { event: 'auth.antiabuse.cleanup', loginFailure, rateLimit },
+        'contadores antiabuso expirados removidos',
+      );
+
+      return { pulado: false, loginFailure, rateLimit };
+    });
   }
 
   /**
