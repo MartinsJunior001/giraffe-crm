@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { PinoLogger } from 'nestjs-pino';
 import { criarAuth } from '../src/kernel/auth/auth.factory';
 import type { LoginFailureService } from '../src/kernel/auth/login-failure.service';
-import type { PrismaClient } from '../generated/prisma';
+import type { PrismaService } from '../src/kernel/db/prisma.service';
 
 /**
  * A allowlist de origens confiáveis (CSRF).
@@ -17,8 +18,11 @@ import type { PrismaClient } from '../generated/prisma';
  * `gates/1-4/summary.md`.
  */
 
-const prismaFalso = {} as unknown as PrismaClient;
+const prismaFalso = {} as unknown as PrismaService;
 const falhasFalso = {} as unknown as LoginFailureService;
+// A config do rate limit só toca o logger DENTRO do `consume` (caminho de erro); construir o auth não o
+// invoca. Um objeto vazio basta para estes testes de configuração.
+const loggerFalso = {} as unknown as PinoLogger;
 
 beforeEach(() => {
   process.env.BETTER_AUTH_SECRET = 'x'.repeat(32);
@@ -33,7 +37,7 @@ describe('trustedOrigins', () => {
     // errada.
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000,https://app.exemplo.test';
 
-    const auth = criarAuth(prismaFalso, falhasFalso);
+    const auth = criarAuth(prismaFalso, falhasFalso, loggerFalso);
 
     expect(auth.options.trustedOrigins).toEqual([
       'http://localhost:3000',
@@ -44,7 +48,7 @@ describe('trustedOrigins', () => {
   it('inclui a origem da Web — sem isso, todo login do front seria recusado', () => {
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
 
-    const auth = criarAuth(prismaFalso, falhasFalso);
+    const auth = criarAuth(prismaFalso, falhasFalso, loggerFalso);
 
     expect(auth.options.trustedOrigins).toContain('http://localhost:3000');
   });
@@ -52,7 +56,7 @@ describe('trustedOrigins', () => {
   it('NÃO inclui origem fora da allowlist', () => {
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
 
-    const auth = criarAuth(prismaFalso, falhasFalso);
+    const auth = criarAuth(prismaFalso, falhasFalso, loggerFalso);
 
     expect(auth.options.trustedOrigins).not.toContain('https://site-malicioso.test');
     // E não há curinga: um `*` aqui anularia a proteção inteira.
@@ -64,7 +68,7 @@ describe('cadastro aberto', () => {
   it('`/sign-up/email` está DESLIGADO', () => {
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
 
-    const auth = criarAuth(prismaFalso, falhasFalso);
+    const auth = criarAuth(prismaFalso, falhasFalso, loggerFalso);
 
     // Ligar `emailAndPassword` habilita o cadastro junto. Esta Story entrega LOGIN; contas entram
     // por convite do Admin (Épico 8). Deixar ligado publicaria autocadastro na internet por descuido
