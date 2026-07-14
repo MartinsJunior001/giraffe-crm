@@ -10,10 +10,11 @@ import { Requer } from '../src/kernel/authz/requer.decorator';
 import { RequestContext } from '../src/kernel/context/request-context';
 
 /**
- * Autorização do novo sujeito de domínio `Pipe` (Story 2.1), no nível do MECANISMO — factory + cache +
- * guard REAIS, determinístico e sem banco. Em 2.1 SÓ o ADMIN da Organização lê/administra Pipe;
- * MEMBER/GUEST não têm acesso nenhum (papéis por Pipe = 2.2). Espelha `authz.test.ts` para o sujeito
- * `Organizacao`, e como toda prova de segurança desta base, exercita a FASE VERMELHA.
+ * Autorização do sujeito de domínio `Pipe`, no nível do MECANISMO — factory + cache + guard REAIS,
+ * determinístico e sem banco. A partir da Story 2.2 (incremento 2), qualquer Membership ativa pode o
+ * TIPO `ler Pipe` (guarda grossa — QUAL Pipe é decidido no serviço pela concessão); `administrar` (ciclo
+ * de vida) segue SÓ do Admin da Org. Espelha `authz.test.ts` para o sujeito `Organizacao`, e como toda
+ * prova de segurança desta base, exercita a FASE VERMELHA.
  */
 
 const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -54,7 +55,7 @@ function checar(papel: 'ADMIN' | 'MEMBER' | 'GUEST', handler: () => void): true 
   });
 }
 
-describe('ability de Pipe: só ADMIN, escopada ao orgId (SC-203 / AC3)', () => {
+describe('ability de Pipe: `ler` para toda Membership ativa, `administrar` só ADMIN, escopada ao orgId (SC-203 / AC3)', () => {
   it('ADMIN lê e administra Pipe na PRÓPRIA Organização', () => {
     const admin = construirAbility('ADMIN', ORG_A);
     expect(admin.can('ler', subject('Pipe', { orgId: ORG_A }))).toBe(true);
@@ -67,12 +68,14 @@ describe('ability de Pipe: só ADMIN, escopada ao orgId (SC-203 / AC3)', () => {
     expect(adminC.can('administrar', subject('Pipe', { orgId: ORG_A }))).toBe(false);
   });
 
-  it('MEMBER e GUEST não têm NENHUM acesso a Pipe em 2.1 — deny-by-default', () => {
-    // Fase vermelha do escopo: se o factory concedesse Pipe a MEMBER/GUEST por engano (antecipando a
-    // 2.2), estas asserções falhariam. Nem `ler` — em 2.1 o catálogo é só do Admin.
+  it('MEMBER e GUEST podem `ler` o TIPO Pipe (guarda grossa), mas NÃO `administrar` (ciclo de vida é do Admin da Org)', () => {
+    // Incremento 2: MEMBER/GUEST passam a poder o tipo `ler` (para acessar os Pipes concedidos; QUAL
+    // Pipe é a guarda fina, no serviço). Fase vermelha do CICLO DE VIDA: se o factory concedesse
+    // `administrar` a MEMBER/GUEST por engano, abriria criar/arquivar/restaurar a não-Admin e a segunda
+    // asserção falharia.
     for (const papel of ['MEMBER', 'GUEST'] as const) {
       const ability = construirAbility(papel, ORG_A);
-      expect(ability.can('ler', subject('Pipe', { orgId: ORG_A }))).toBe(false);
+      expect(ability.can('ler', subject('Pipe', { orgId: ORG_A }))).toBe(true);
       expect(ability.can('administrar', subject('Pipe', { orgId: ORG_A }))).toBe(false);
     }
   });
@@ -88,13 +91,14 @@ describe('ponto de aplicação: o guard concede/nega Pipe corretamente (SC-203)'
     expect(checar('ADMIN', RotaPipe.prototype.ler)).toBe(true);
   });
 
-  it('MEMBER recebe 403 tanto para administrar quanto para ler Pipe', () => {
+  it('MEMBER passa na guarda grossa de `ler` Pipe, mas recebe 403 em `administrar`', () => {
+    // Passar em `ler` é a guarda GROSSA; o serviço ainda filtra QUAL Pipe pela concessão (404 se nenhuma).
+    expect(checar('MEMBER', RotaPipe.prototype.ler)).toBe(true);
     expect(checar('MEMBER', RotaPipe.prototype.administrar)).toBeInstanceOf(ForbiddenException);
-    expect(checar('MEMBER', RotaPipe.prototype.ler)).toBeInstanceOf(ForbiddenException);
   });
 
-  it('GUEST recebe 403 tanto para administrar quanto para ler Pipe', () => {
+  it('GUEST passa na guarda grossa de `ler` Pipe, mas recebe 403 em `administrar`', () => {
+    expect(checar('GUEST', RotaPipe.prototype.ler)).toBe(true);
     expect(checar('GUEST', RotaPipe.prototype.administrar)).toBeInstanceOf(ForbiddenException);
-    expect(checar('GUEST', RotaPipe.prototype.ler)).toBeInstanceOf(ForbiddenException);
   });
 });

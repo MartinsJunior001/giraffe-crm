@@ -73,25 +73,67 @@ export class PipesService {
   }
 
   /**
-   * Catálogo da Organização. Por padrão só os ACTIVE; `incluirArquivados` traz também os ARCHIVED.
-   * A RLS já limita ao `orgId` do contexto — o filtro por estado é de apresentação, não de isolamento.
+   * Membership da conta ativa NA ORG do contexto — a chave para resolver as concessões por Pipe. A RLS de
+   * `Membership` já escopa à Org; há no máximo uma Membership por (conta, Org). `null` só se, por
+   * regressão, não houver Membership (o contexto não teria nascido) — tratado como "sem acesso".
+   */
+  private async membershipIdAtual(
+    db: ReturnType<typeof withTenantContext>,
+    accountId: string,
+  ): Promise<string | null> {
+    const m = await db.membership.findFirst({ where: { accountId }, select: { id: true } });
+    return m?.id ?? null;
+  }
+
+  /**
+   * Catálogo. **Admin da Org vê TODOS os Pipes** (AC3/SC-224). Não-Admin (MEMBER/GUEST) vê **apenas os
+   * Pipes com concessão `PipeGrant` ACTIVE** para a própria Membership (SC-221/SC-227) — a guarda FINA por
+   * recurso, aqui no serviço, não no guard. Por padrão só os ACTIVE; `incluirArquivados` traz os ARCHIVED.
    */
   async listar(incluirArquivados: boolean): Promise<PipeVisao[]> {
-    const { db } = this.db();
+    const { contexto, db } = this.db();
+    const filtroEstado = incluirArquivados ? {} : { state: 'ACTIVE' as const };
+    if (contexto.papel === 'ADMIN') {
+      return db.pipe.findMany({
+        where: filtroEstado,
+        select: SELECT_PIPE,
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+    const membershipId = await this.membershipIdAtual(db, contexto.accountId);
+    if (!membershipId) return [];
+    const grants = await db.pipeGrant.findMany({
+      where: { membershipId, state: 'ACTIVE' },
+      select: { pipeId: true },
+    });
+    const pipeIds = grants.map((g) => g.pipeId);
+    if (pipeIds.length === 0) return [];
     return db.pipe.findMany({
-      where: incluirArquivados ? {} : { state: 'ACTIVE' },
+      where: { id: { in: pipeIds }, ...filtroEstado },
       select: SELECT_PIPE,
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  /** Um Pipe da Organização do contexto. 404 sanitizado se não existe OU pertence a outra Org (RLS). */
+  /**
+   * Um Pipe do contexto. 404 se não existe OU é de outra Org (RLS). Para **não-Admin**, também 404 se não
+   * houver concessão ACTIVE para este Pipe (SC-221/SC-225) — mesma resposta de "não existe", para não
+   * revelar a existência de um Pipe ao qual a pessoa não tem acesso (não-enumeração). **Admin da Org**
+   * acessa qualquer Pipe da Org sem concessão (SC-224).
+   */
   async obter(id: string): Promise<PipeVisao> {
-    const { db } = this.db();
+    const { contexto, db } = this.db();
     const pipe = await db.pipe.findUnique({ where: { id }, select: SELECT_PIPE });
-    // Fora do escopo da Org, a RLS filtra e o findUnique devolve null — indistinguível de "não existe".
-    // É deliberado: não se revela a existência de um Pipe de outra Organização (não-enumeração).
     if (!pipe) throw new NotFoundException();
+    if (contexto.papel === 'ADMIN') return pipe;
+    const membershipId = await this.membershipIdAtual(db, contexto.accountId);
+    const grant = membershipId
+      ? await db.pipeGrant.findFirst({
+          where: { pipeId: id, membershipId, state: 'ACTIVE' },
+          select: { id: true },
+        })
+      : null;
+    if (!grant) throw new NotFoundException();
     return pipe;
   }
 
