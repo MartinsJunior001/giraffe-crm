@@ -5,6 +5,8 @@ import { FormsController } from './forms/forms.controller';
 import { FormsService } from './forms/forms.service';
 import { FormPublicationController } from './forms/publication.controller';
 import { FormPublicationService } from './forms/publication.service';
+import { CardsController } from './cards/cards.controller';
+import { CardSubmissionService } from './cards/card-submission.service';
 import { PipeGrantsController } from './grants/pipe-grants.controller';
 import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PhasesController } from './phases/phases.controller';
@@ -21,7 +23,10 @@ import { PipesService } from './pipes.service';
  * (`FieldsController`/`FieldsService`) — editar/arquivar/restaurar e o ciclo de opções, reusando os
  * localizadores (`form-locate`) e a mesma autorização fina. Story 2.6: ciclo de publicação
  * (`FormPublicationController`/`FormPublicationService`) — publicar congela o rascunho num `FormVersion`
- * imutável e versionado; despublicar/ler estado e histórico. Depende de `PrismaService` (DbModule global) e
+ * imutável e versionado; despublicar/ler estado e histórico. Story 2.7: submissão interna
+ * (`CardsController`/`CardSubmissionService`) — submeter o Formulário inicial publicado cria um `Card` na 1ª
+ * Fase ativa + evento `CardHistory`, atomicamente; ativa o poder "Membro OPERA Cards" (`exigirOperarPipe`).
+ * Depende de `PrismaService` (DbModule global) e
  * `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais no AppModule;
  * este módulo só registra os controllers e serviços.
  */
@@ -33,6 +38,7 @@ import { PipesService } from './pipes.service';
     FormsController,
     FieldsController,
     FormPublicationController,
+    CardsController,
   ],
   providers: [
     PipesService,
@@ -41,6 +47,7 @@ import { PipesService } from './pipes.service';
     FormsService,
     FieldsService,
     FormPublicationService,
+    CardSubmissionService,
   ],
 })
 export class PipesModule {}
