@@ -1,14 +1,17 @@
 import { Module } from '@nestjs/common';
+import { PipeGrantsController } from './grants/pipe-grants.controller';
+import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PipesController } from './pipes.controller';
 import { PipesService } from './pipes.service';
 
 /**
- * Domínio Pipes (Story 2.1). Depende de `PrismaService` (DbModule é global) e do `RequestContext`
- * (ContextModule é global) — nada além. O `AuthzGuard`/`TenantContextGuard` já são globais no
- * AppModule; este módulo só registra o controller e o serviço do catálogo.
+ * Domínio Pipes. Story 2.1: catálogo e ciclo de vida (`PipesController`/`PipesService`). Story 2.2:
+ * concessão de papel por Pipe (`PipeGrantsController`/`PipeGrantsService`). Depende de `PrismaService`
+ * (DbModule global) e `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já
+ * são globais no AppModule; este módulo só registra os controllers e serviços do domínio.
  */
 @Module({
-  controllers: [PipesController],
-  providers: [PipesService],
+  controllers: [PipesController, PipeGrantsController],
+  providers: [PipesService, PipeGrantsService],
 })
 export class PipesModule {}

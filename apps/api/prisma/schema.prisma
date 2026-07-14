@@ -47,6 +47,22 @@ enum PipeState {
   ARCHIVED
 }
 
+/// Papel POR Pipe (Story 2.2, decisão de Produto D1.4). Conjunto enxuto e fechado:
+/// ADMIN administra a CONFIG do Pipe (não o ciclo de vida — isso é do Admin da Org, Story 2.1);
+/// MEMBER edita os recursos acessíveis do Pipe; VIEWER (Somente leitura) consulta sem editar/mover.
+enum PipeRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+/// Estado da concessão de papel por Pipe (Story 2.2). Revogar é MUDANÇA DE ESTADO, não exclusão —
+/// preserva a trilha (simétrico a `MembershipState`); o runtime não tem GRANT DELETE.
+enum PipeGrantState {
+  ACTIVE
+  REVOKED
+}
+
 /// Identidade GLOBAL da Plataforma (AD-7/AD-10).
 /// Sem `orgId` e SEM RLS: a conta não pertence a nenhuma Organização — é o
 /// Membership que a vincula. `email` é PII (LGPD): minimizado, nunca em log.
@@ -193,6 +209,7 @@ model Organization {
 
   memberships Membership[]
   pipes       Pipe[]
+  pipeGrants  PipeGrant[]
 
   @@map("Organization")
 }
@@ -220,10 +237,50 @@ model Pipe {
   archivedAt DateTime?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  grants       PipeGrant[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
   @@map("Pipe")
+}
+
+/// PipeGrant — concessão explícita de papel POR Pipe (Story 2.2, decisão D1.4). Dado operacional
+/// org-owned (AD-10). É o que abre o acesso de MEMBER/GUEST a um Pipe: sem concessão ACTIVE, não há
+/// acesso (deny-by-default). O Admin da Organização acessa todos os Pipes SEM concessão (Story 2.1).
+///
+/// Liga-se a `Membership` (não a `Account`): o papel por Pipe vive DENTRO de uma Organização, e a
+/// Membership é o vínculo Account×Org que já carrega `orgId` e estado (AD-7). Ligar à Account global
+/// reabriria a porta de uma concessão "sem Org".
+///
+/// Isolamento pelo BANCO (RLS na migration `..._pipe_grants`): ENABLE **e** FORCE ROW LEVEL SECURITY,
+/// policies por `orgId = current_org_id()`. Runtime recebe SELECT/INSERT/UPDATE — **sem DELETE**:
+/// revogar é `state = REVOKED`, não exclusão (preserva a trilha).
+///
+/// **No máximo UM papel efetivo por Pipe por pessoa**: índice único PARCIAL `(pipeId, membershipId)
+/// WHERE state = 'ACTIVE'`, criado por raw SQL na migration (o Prisma 6.19.3 não expressa índice
+/// parcial no schema — é v7.4+). Uma concessão revogada não colide com uma re-concessão.
+model PipeGrant {
+  id           String         @id @default(uuid()) @db.Uuid
+  orgId        String         @db.Uuid
+  pipeId       String         @db.Uuid
+  membershipId String         @db.Uuid
+  role         PipeRole
+  state        PipeGrantState @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  /// Momento da revogação (null quando ativa). Revogar preserva a linha; só muda estado.
+  revokedAt    DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  // Acesso começa por Org; consultas por Pipe (quem acessa) e por pessoa (quais Pipes).
+  @@index([orgId, pipeId])
+  @@index([orgId, membershipId])
+  // Nota: a unicidade "um papel ativo por (pipe, pessoa)" é um índice PARCIAL, criado na migration
+  // (WHERE state='ACTIVE') — não expressável aqui no Prisma 6.19.3.
+  @@map("PipeGrant")
 }
 
 /// Vínculo Account × Organization (AD-7, Forma B). É a tabela organizacional
@@ -239,6 +296,7 @@ model Membership {
 
   account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipeGrants   PipeGrant[]
 
   // Uma conta tem no máximo UM vínculo por Organização (papel único — AD-7).
   @@unique([accountId, orgId])
