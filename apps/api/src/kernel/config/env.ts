@@ -154,6 +154,22 @@ const EnvSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+
+    // ── Story 2.4 — capacidade de arquivos (gate do Campo Arquivo, AD-27/AD-28) ──────────────
+
+    /**
+     * Capacidade de UPLOAD de arquivos. **Desabilitada por padrão** — fail-closed (AD-28).
+     *
+     * O tipo de Campo `FILE` existe no catálogo canônico, mas o armazenamento de arquivos é do Épico 3.
+     * Enquanto esta flag for falsa, um Formulário com Campo `FILE` ativo **não pode ser publicado** (a
+     * publicação é da Story 2.6, que consome a regra `podePublicarComArquivo`). O default falso garante que
+     * ninguém habilite a capacidade por esquecimento: habilitar exige ação explícita, quando o storage do E3
+     * existir. Só `'true'` liga; qualquer outro valor (inclusive ausência) mantém desligado.
+     */
+    FILE_UPLOAD_ENABLED: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   /**
    * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em
