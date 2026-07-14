@@ -251,12 +251,13 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships Membership[]
-  pipes       Pipe[]
-  pipeGrants  PipeGrant[]
-  phases      Phase[]
-  forms       Form[]
-  fields      Field[]
+  memberships  Membership[]
+  pipes        Pipe[]
+  pipeGrants   PipeGrant[]
+  phases       Phase[]
+  forms        Form[]
+  fields       Field[]
+  formVersions FormVersion[]
 
   @@map("Organization")
 }
@@ -412,18 +413,57 @@ model Form {
   pipeId    String?     @db.Uuid
   /// Owner do contexto `PHASE` (null nos demais).
   phaseId   String?     @db.Uuid
+  /// Número da `FormVersion` publicada corrente (null = rascunho/despublicado). Story 2.6. É NÚMERO, não FK,
+  /// de propósito: evita o ciclo de FK Form↔FormVersion e não há risco de ponteiro pendente (versões nunca
+  /// são deletadas e o ponteiro só é gravado para uma versão recém-criada na MESMA transação de publicação).
+  publishedVersion Int?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipe         Pipe?        @relation(fields: [pipeId], references: [id], onDelete: Cascade)
-  phase        Phase?       @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe?         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  phase        Phase?        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
   fields       Field[]
+  versions     FormVersion[]
 
   // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId, context).
   @@index([orgId, pipeId])
   @@index([orgId, phaseId])
   @@map("Form")
+}
+
+/// FormVersion — SNAPSHOT IMUTÁVEL da definição publicada de um Formulário (Story 2.6, AD-12/PRD D3.2).
+///
+/// Publicar congela o rascunho VALIDADO num `snapshot` JSON integral (Campos ATIVOS com id estável, tipo, label,
+/// ajuda e `typeConfig`), na ordem do array — numerado monotonicamente por Formulário
+/// (`@@unique([orgId, formId, version])`). O snapshot captura o que a definição realmente tem: NÃO há atributo
+/// de obrigatoriedade em `Field` na 2.4/2.5 e o snapshot não o inventa (Constitution II). Submissões futuras
+/// (2.7+) referenciarão `formVersionId`. Editar o rascunho depois NÃO altera versões já publicadas — imutáveis.
+///
+/// **Imutabilidade é do BANCO, não do código:** o runtime (`giraffe_app`) recebe **só SELECT+INSERT** em
+/// `FormVersion` — sem UPDATE, sem DELETE (ver GRANT na migration). Uma rota que tentasse alterar uma versão
+/// bateria em `permission denied`. Isolamento por RLS ENABLE+FORCE, policies por `current_org_id()`.
+model FormVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @db.Uuid
+  formId      String   @db.Uuid
+  /// Número monotônico por Formulário (1, 2, 3...). Unicidade imposta pelo banco.
+  version     Int
+  /// Snapshot integral e ordenado da definição publicada. Schema/limite/allowlist validados no serviço.
+  snapshot    Json
+  /// Hash determinístico do snapshot (revisão) — detecta divergência e identifica a versão.
+  revision    String
+  publishedAt DateTime @default(now())
+  /// Conta que publicou (quando disponível). Não é PII sensível: é referência de ator para auditoria.
+  actorId     String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, formId, version])
+  @@index([orgId, formId])
+  @@map("FormVersion")
 }
 
 /// Field — Campo de um Formulário (Story 2.4). Dado operacional org-owned (AD-10). O `id` é a IDENTIDADE
