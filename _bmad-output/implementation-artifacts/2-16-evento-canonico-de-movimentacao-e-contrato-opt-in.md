@@ -17,15 +17,19 @@ so that Automações (E4) e Notificações (E5) possam reagir de forma **opt-in*
 3. **CA3 — Idempotência para o consumidor.** Dado um reprocessamento técnico que reenvia o mesmo evento, quando reenviado, então preserva `eventId`/chave de idempotência para que o **consumidor** (E4/E5) impeça efeitos duplicados. O E2 **não** controla idempotência de Automação/Notificação — apenas garante identidade estável e no máximo **um evento canônico lógico** por movimentação.
 4. **CA4 — Contrato inerte.** O contrato **não executa Automação, não distribui Notificação, não faz integração externa**. É um ponto de extensão **opt-in** (qualquer movimentação / entrada em Fase / saída de Fase / par origem→destino); sem consumidor concreto ativo, emitir o evento não produz efeito colateral.
 
+## Decisões do dono (clarify, 2026-07-15)
+
+- **D0 — Persistência:** **NOVA tabela Outbox org-scoped `MovementEvent`** (não reusar `CardHistory` — respeita AD-13/AD-15: evento de integração ≠ Histórico do Card). Colunas mínimas: `id`, `orgId`, `eventId` (UNIQUE), `pipeId`, `cardId`, `sourcePhaseId`, `targetPhaseId`, `actorId`, `origin`, `occurredAt`, `correlationId`, `type`, `version`, `payload` JSONB, `createdAt`. **RLS ENABLE+FORCE** + WITH CHECK; **GRANT só SELECT/INSERT** (append-only imutável, como `CardHistory`/`FormVersion`/`CardPhaseEntry`); `MODELOS_AUDITADOS += 'MovementEvent'`.
+- **D1 — Idempotência:** `eventId` **derivado determinístico** — `uuidv5(namespace, orgId + cardId + correlationId)` — com `@@unique([orgId, eventId])`. Reprocessamento técnico reproduz o MESMO `eventId`; o índice único impede duplicata lógica. `correlationId` é gerado **server-side** por operação de movimentação (linka o evento à mesma operação do `MOVED`/`CardPhaseEntry`); um novo movimento (inclusive A→B→A→B) tem novo `correlationId` → novo `eventId`. O no-op/bloqueio não persiste e não emite (CA2), então há exatamente 1 evento por movimento persistido por construção.
+- **D2 — Extensão opt-in:** **só o produtor + o tipo do envelope canônico** exportado para consumo futuro. **SEM** dispatcher/registry/bus/worker/motor (Constitution II — sem antecipação; E4/E5 são os consumidores concretos depois).
+
 ## Tasks / Subtasks
 
-> As decisões de **mecanismo (formato/entrega)** do evento canônico são **gate de Arquitetura** (epics §1009). Rodar Spec Kit `specify → clarify` para fechar D0–Dn com o dono ANTES de implementar (padrão da 2.15). Tarefas abaixo são o esqueleto sujeito ao clarify.
-
-- [ ] T0 Gates: `context7-check` (Prisma transação interativa / Outbox) + `pre-implementation-check`.
-- [ ] Task 1 — Modelo do evento canônico (AC: 1, 3)
-  - [ ] Definir a persistência confiável do evento (decisão do dono no clarify: tabela **Outbox** `MovementEvent`/`OutboxEvent` org-scoped vs. reutilizar `CardHistory`). Alinhar a **AD-13** (evento de integração ≠ evento de domínio) e **AD-15** (quatro trilhas separadas — o canônico **não** é o Histórico do Card).
-  - [ ] `eventId` estável + chave de idempotência (`@@unique`); envelope com `type+version` (AD-13).
-  - [ ] Se tabela nova: RLS ENABLE+FORCE + WITH CHECK; GRANT mínimo (append-only — SELECT/INSERT), como `CardHistory`/`FormVersion`.
+- [ ] T0 Gates: `context7-check` (Prisma transação interativa / uuid v5) + `pre-implementation-check`.
+- [ ] Task 1 — Modelo do evento canônico `MovementEvent` (AC: 1, 3) — conforme **D0/D1**
+  - [ ] Migration: tabela `MovementEvent` (colunas de D0), `@@unique([orgId, eventId])`, índices de leitura; RLS ENABLE+FORCE + policies por `current_org_id()` + WITH CHECK no INSERT; GRANT SELECT/INSERT. Reversível.
+  - [ ] `schema.prisma` + relations; `MODELOS_AUDITADOS += 'MovementEvent'` em `tenant-context.ts`.
+  - [ ] Núcleo puro do envelope: montar `EnvelopeCanonico` + derivar `eventId` (`uuidv5`) a partir de `correlationId` (sem I/O).
 - [ ] Task 2 — Emissão na transação da movimentação (AC: 1, 2)
   - [ ] Estender a tx interativa de `card-movement.service` (após UPDATE `phaseId` + reentrada + `MOVED`) com o INSERT do evento canônico — **mesma transação** (AD-13), rollback integral em falha.
   - [ ] Garantir **CA2**: bloqueio/no-op/aguardando confirmação NÃO emitem (a emissão vive só no caminho que persistiu o UPDATE).
