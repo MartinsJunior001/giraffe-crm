@@ -3,6 +3,14 @@
 services:
   db:
     image: postgres:16-alpine
+    # Teto de recursos por serviço (staging provisório coabitando com outra stack no mesmo
+    # host). Docker Compose v2 honra `deploy.resources.limits` fora do Swarm. Somados, os três
+    # serviços ficam sob 4 GB / 2 vCPU — o orçamento acordado para o CRM neste host compartilhado.
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '0.75'
     environment:
       # Credenciais vindas do AMBIENTE, sem valor padrão (`:?`). Um default silencioso é
       # credencial insegura: o ambiente que esquece a variável não falha — ele sobe com uma
@@ -45,6 +53,12 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    # Teto da API no staging provisório (ver nota no serviço `db`).
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '0.75'
     environment:
       NODE_ENV: production
       API_PORT: '3001'
@@ -86,6 +100,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    # Teto da Web no staging provisório (ver nota no serviço `db`).
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
     environment:
       NODE_ENV: production
       # Server-side (container) alcança a API pela rede do Compose. Variável de
