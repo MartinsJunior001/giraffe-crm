@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +14,7 @@ import { PrismaService } from '../../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../../kernel/db/tenant-context';
 import { exigirMoverCard } from '../../pipe-authz';
 import { registrarEntradaNaFase } from '../phase-entry/card-phase-entry';
+import { montarEnvelope } from './movement-event.core';
 import { SubmissaoInvalidaError } from '../submission';
 import {
   resolverRequisitoEntrada,
@@ -102,6 +104,9 @@ export class CardMovementService {
    */
   async mover(cardId: string, dados: MovimentacaoDTO): Promise<MovimentacaoVisao> {
     const { contexto, db } = this.db();
+    // Chave de correlação da operação (Story 2.16): gerada server-side, linka o evento canônico ao MOVED/
+    // CardPhaseEntry da MESMA movimentação e torna o `eventId` determinístico (idempotência — CA3).
+    const correlationId = randomUUID();
     await exigirMoverCard(db, contexto, cardId); // 404 sem acesso; 403 se só lê/observa
 
     const card = await db.card.findUnique({ where: { id: cardId }, select: SELECT_CARD });
@@ -210,6 +215,39 @@ export class CardMovementService {
           },
         });
 
+        // Story 2.16 — EVENTO CANÔNICO de movimentação (Outbox), na MESMA transação (AD-13). Emitido SÓ aqui, no
+        // caminho que PERSISTIU o UPDATE: bloqueio/no-op/aguardando confirmação nunca chegam a este ponto (CA2).
+        // `eventId` determinístico por operação (correlationId) → reprocessamento não duplica; UNIQUE(orgId,eventId)
+        // é a garantia final (CA3). Contrato INERTE: não dispara Automação/Notificação (CA4) — só persiste.
+        const envelope = montarEnvelope({
+          orgId: contexto.orgId,
+          pipeId: faseDestino.pipeId,
+          cardId,
+          sourcePhaseId: card.phaseId,
+          targetPhaseId: dados.destinoPhaseId,
+          actorId: contexto.accountId ?? null,
+          origin: 'MOVE',
+          occurredAt: new Date(),
+          correlationId,
+        });
+        await tx.movementEvent.create({
+          data: {
+            orgId: envelope.orgId,
+            eventId: envelope.eventId,
+            pipeId: envelope.pipeId,
+            cardId: envelope.cardId,
+            sourcePhaseId: envelope.sourcePhaseId,
+            targetPhaseId: envelope.targetPhaseId,
+            actorId: envelope.actorId,
+            origin: envelope.origin,
+            occurredAt: envelope.occurredAt,
+            correlationId: envelope.correlationId,
+            type: envelope.type,
+            version: envelope.version,
+            payload: envelope.payload as never,
+          },
+        });
+
         return tx.card.findUniqueOrThrow({ where: { id: cardId }, select: SELECT_CARD });
       });
     } catch (err) {
@@ -231,6 +269,7 @@ export class CardMovementService {
     this.auditar(contexto, 'create', 'CardPhaseEntry');
     if (entrada.persistir) this.auditar(contexto, 'create', 'CardPhaseValues');
     this.auditar(contexto, 'create', 'CardHistory');
+    this.auditar(contexto, 'create', 'MovementEvent');
     return atualizado;
   }
 
