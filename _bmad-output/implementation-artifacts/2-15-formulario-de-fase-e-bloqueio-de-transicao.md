@@ -1,6 +1,6 @@
 # Story 2.15: Formulário de Fase e bloqueio de transição
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
