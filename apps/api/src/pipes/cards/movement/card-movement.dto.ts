@@ -15,6 +15,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export interface MovimentacaoDTO {
   destinoPhaseId: string;
   confirmado: boolean;
+  /**
+   * Valores do Formulário de Fase da DESTINO (Story 2.15 — requisito de entrada). Mapa `Field.id → valor`,
+   * validado no serviço contra o snapshot da `FormVersion` publicada. Ausente quando a Fase destino não tem
+   * requisito de entrada. Aqui só se garante a FORMA (objeto); a validação de domínio é do serviço.
+   */
+  valoresDeFase?: Record<string, unknown>;
 }
 
 /**
@@ -42,5 +48,14 @@ export function parseMovimentacao(body: unknown): MovimentacaoDTO {
     throw new BadRequestException('confirmado deve ser booleano');
   }
 
-  return { destinoPhaseId: destino, confirmado };
+  let valoresDeFase: Record<string, unknown> | undefined;
+  const vf = dados.valoresDeFase;
+  if (vf !== undefined) {
+    if (typeof vf !== 'object' || vf === null || Array.isArray(vf)) {
+      throw new BadRequestException('valoresDeFase deve ser um objeto');
+    }
+    valoresDeFase = vf as Record<string, unknown>;
+  }
+
+  return { destinoPhaseId: destino, confirmado, valoresDeFase };
 }

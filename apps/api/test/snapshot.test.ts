@@ -26,6 +26,7 @@ function campo(over: Partial<CampoParaSnapshot> & { type: FieldType }): CampoPar
     type: over.type,
     help: over.help ?? null,
     typeConfig: over.typeConfig ?? {},
+    required: over.required ?? false,
   };
 }
 

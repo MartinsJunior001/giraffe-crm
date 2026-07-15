@@ -22,6 +22,13 @@ export interface ContextoDeTransicao {
   faseDestino: { id: string; pipeId: string; ativa: boolean };
   /** Confirmação humana explícita do request (D2/R2/D2.4) — sem contornar confirmação. */
   confirmado: boolean;
+  /**
+   * Requisitos do Formulário de Fase (Story 2.15), MATERIALIZADOS pelo serviço (I/O resolvido antes — o núcleo
+   * segue puro). `undefined` = a Fase não tem esse requisito (informativo); `true` = satisfeito; `false` = faltam
+   * Campos obrigatórios. O validador só bloqueia em `false` — extensão ADITIVA que não afeta os built-in.
+   */
+  requisitoSaidaOk?: boolean;
+  requisitoEntradaOk?: boolean;
 }
 
 /** Motivo tipado de bloqueio — estável; a camada HTTP e 2.15/E4/E5 mapeiam a partir dele. */
@@ -30,7 +37,9 @@ export type MotivoBloqueio =
   | 'FASE_DESTINO_ARQUIVADA'
   | 'FASE_DESTINO_OUTRO_PIPE'
   | 'FASE_DESTINO_IGUAL_ORIGEM' // o serviço trata como no-op idempotente (200), não erro — ver D4
-  | 'CONFIRMACAO_AUSENTE';
+  | 'CONFIRMACAO_AUSENTE'
+  | 'REQUISITO_SAIDA_NAO_ATENDIDO' // Formulário de Fase (2.15): Campos obrigatórios de saída sem valor
+  | 'REQUISITO_ENTRADA_NAO_ATENDIDO'; // Formulário de Fase (2.15): Campos obrigatórios de entrada sem valor
 
 export type ResultadoPreflight = { ok: true } | { ok: false; motivo: MotivoBloqueio };
 
@@ -62,6 +71,17 @@ export const validarDestinoDiferente: ValidadorDeTransicao = (ctx) =>
 /** Confirmação humana explícita (D2/R2/D2.4). Ausência/`false` bloqueia — nunca se contorna a confirmação. */
 export const validarConfirmacao: ValidadorDeTransicao = (ctx) =>
   ctx.confirmado === true ? OK : { ok: false, motivo: 'CONFIRMACAO_AUSENTE' };
+
+/**
+ * Requisito de SAÍDA do Formulário de Fase da origem (Story 2.15). Só bloqueia quando o serviço materializou
+ * `requisitoSaidaOk === false` (há requisito e Campo obrigatório faltando). `undefined` (sem requisito) passa.
+ */
+export const validarRequisitoSaida: ValidadorDeTransicao = (ctx) =>
+  ctx.requisitoSaidaOk === false ? { ok: false, motivo: 'REQUISITO_SAIDA_NAO_ATENDIDO' } : OK;
+
+/** Requisito de ENTRADA do Formulário de Fase da destino (Story 2.15). Idem — só bloqueia em `false`. */
+export const validarRequisitoEntrada: ValidadorDeTransicao = (ctx) =>
+  ctx.requisitoEntradaOk === false ? { ok: false, motivo: 'REQUISITO_ENTRADA_NAO_ATENDIDO' } : OK;
 
 /**
  * Lista PADRÃO da 2.14, na ordem de avaliação. A ordem coloca as regras de estado/estrutura antes da confirmação,

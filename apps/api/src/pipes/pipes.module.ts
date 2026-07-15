@@ -15,6 +15,10 @@ import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.contro
 import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
 import { CardMovementController } from './cards/movement/card-movement.controller';
 import { CardMovementService } from './cards/movement/card-movement.service';
+import { PhaseValuesController } from './cards/phase-values/phase-values.controller';
+import { PhaseValuesService } from './cards/phase-values/phase-values.service';
+import { PhaseFormConfigController } from './forms/phase-form-config.controller';
+import { PhaseFormConfigService } from './forms/phase-form-config.service';
 import { CardPhaseEntryController } from './cards/phase-entry/card-phase-entry.controller';
 import { CardPhaseEntryReadService } from './cards/phase-entry/card-phase-entry-read.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
@@ -82,6 +86,8 @@ import { PipesService } from './pipes.service';
     CardAccessController,
     CardLifecycleController,
     CardMovementController,
+    PhaseValuesController,
+    PhaseFormConfigController,
     CardPhaseEntryController,
     PhaseMilestonesController,
     PublicSubmissionController,
@@ -100,6 +106,8 @@ import { PipesService } from './pipes.service';
     CardAccessService,
     CardLifecycleService,
     CardMovementService,
+    PhaseValuesService,
+    PhaseFormConfigService,
     CardPhaseEntryReadService,
     PhaseMilestonesService,
     PublicSubmissionService,

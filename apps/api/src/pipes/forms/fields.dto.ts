@@ -31,7 +31,7 @@ const CHAVES_PROIBIDAS_EDITAR = [
 ];
 
 /** Único conjunto que a rota de edição aceita. Allowlist estrita: o resto é 400 (não silenciosamente ignorado). */
-const CHAVES_EDITAVEIS = new Set(['label', 'help', 'defaultValue']);
+const CHAVES_EDITAVEIS = new Set(['label', 'help', 'defaultValue', 'required']);
 
 function validarTexto(valor: unknown, campo: string, max: number): string {
   if (typeof valor !== 'string') throw new BadRequestException(`${campo} deve ser uma string`);
@@ -57,6 +57,8 @@ export interface EditarCampoDTO {
   /** presente = mudar; `null` = limpar (help é opcional no schema). */
   help?: string | null;
   defaultValue: DefaultValuePatch;
+  /** Obrigatoriedade (Story 2.15). Só aplicável a Campo de Formulário de Fase — o serviço gate ao contexto PHASE. */
+  required?: boolean;
 }
 
 /**
@@ -90,6 +92,12 @@ export function parseEditarCampo(body: unknown): EditarCampoDTO {
   }
   if ('defaultValue' in dados) {
     dto.defaultValue = normalizarDefaultValue(dados.defaultValue);
+    algo = true;
+  }
+  if ('required' in dados) {
+    if (typeof dados.required !== 'boolean')
+      throw new BadRequestException('required deve ser booleano');
+    dto.required = dados.required;
     algo = true;
   }
 

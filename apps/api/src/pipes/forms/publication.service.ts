@@ -111,7 +111,7 @@ export class FormPublicationService {
     const camposAtivos = (await db.field.findMany({
       where: { formId: form.id, state: 'ACTIVE' },
       orderBy: [{ position: 'asc' }, { id: 'asc' }],
-      select: { id: true, label: true, type: true, help: true, typeConfig: true },
+      select: { id: true, label: true, type: true, help: true, typeConfig: true, required: true },
     })) as CampoParaSnapshot[];
 
     let snapshot: FormSnapshot;
