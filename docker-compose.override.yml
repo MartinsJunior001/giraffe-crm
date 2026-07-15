@@ -1,0 +1,23 @@
+# Override de DESENVOLVIMENTO/CI — publica as portas dos serviços no loopback do host.
+#
+# O `docker compose` carrega este arquivo AUTOMATICAMENTE quando invocado sem `-f` — é o caso do
+# `pnpm compose:up` (`docker compose up --build -d`) e de todos os passos do CI (`docker compose
+# up/build`, e o `pnpm smoke` que bate em `localhost:3000/3001`).
+#
+# O Coolify NÃO carrega este override: ele invoca explicitamente `docker compose -f docker-compose.yml`,
+# então no deploy nenhuma porta de host é publicada. Isso é deliberado — num host compartilhado,
+# publicar `3000`/`3001` colide com outra stack (ex.: `web ... bind host port 127.0.0.1:3000: address
+# already in use`), e o Traefik alcança a Web pela rede do Compose, sem precisar de porta publicada.
+#
+# Binds em `127.0.0.1`: acessíveis só pelo próprio host (dev usa `localhost`), nunca expostos externamente.
+services:
+  db:
+    ports:
+      # 5434 no host: 5432/5433 costumam estar ocupadas por um Postgres local/outro container.
+      - '127.0.0.1:5434:5432'
+  api:
+    ports:
+      - '127.0.0.1:3001:3001'
+  web:
+    ports:
+      - '127.0.0.1:3000:3000'

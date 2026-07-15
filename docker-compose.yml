@@ -26,15 +26,10 @@ services:
       # Consumidas pelo script de bootstrap dos papéis.
       MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}
       APP_PASSWORD: ${APP_PASSWORD:?defina APP_PASSWORD (ver .env.example)}
-    ports:
-      # `127.0.0.1` é deliberado: sem ele o Docker publica em 0.0.0.0 e o banco — com senha
-      # de desenvolvimento, previsível — fica alcançável por qualquer máquina da rede local.
-      #
-      # 5434 no HOST: a 5432 é tomada por uma instalação local de PostgreSQL e a 5433 por
-      # outro container. Quando a porta já está ocupada, as conexões vão silenciosamente
-      # para o banco ERRADO — daí a porta alta e explícita.
-      # Dentro da rede do Compose, a API continua falando com `db:5432`.
-      - '127.0.0.1:5434:5432'
+    # Sem `ports` no compose base — decisão de deploy. No Coolify (que chama `-f docker-compose.yml`)
+    # o banco é alcançado só pela rede do Compose (`db:5432`); publicar porta de host num host
+    # compartilhado é desnecessário e colide. A publicação em loopback para dev/CI vive em
+    # `docker-compose.override.yml` (auto-carregado pelo `docker compose` local/CI, ignorado pelo Coolify).
     volumes:
       - db-data:/var/lib/postgresql/data
       # Bootstrap dos papéis (roda uma vez, como superusuário, antes das migrations).
@@ -90,11 +85,8 @@ services:
       # proxy com o G2 colapsado num balde único por esquecimento. Aqui a exposição direta é real e
       # declarada. A topologia com o proxy do Coolify é validada no gate de staging (débito D-01).
       ALLOW_DIRECT_EXPOSURE: ${ALLOW_DIRECT_EXPOSURE:-true}
-    ports:
-      # Publica SÓ no loopback do host: fecha a API ao mundo externo (staging coabitado — "API
-      # interna"), mantendo `localhost:3001` no dev. O Traefik NÃO usa esta porta — alcança os
-      # serviços pela rede docker do Compose; a API sequer recebe domínio público.
-      - '127.0.0.1:3001:3001'
+    # Sem `ports` no base (ver nota no serviço `db`): a API é interna, alcançada pela rede do
+    # Compose. A publicação em loopback para dev/CI vive em `docker-compose.override.yml`.
     depends_on:
       db:
         condition: service_healthy
@@ -114,11 +106,8 @@ services:
       # Server-side (container) alcança a API pela rede do Compose. Variável de
       # servidor (não NEXT_PUBLIC): não é exposta ao browser.
       API_BASE_URL: http://api:3001
-    ports:
-      # Só no loopback do host: 3000 fica fechada externamente (só 80/443 do Traefik são públicos).
-      # O Traefik roteia o domínio para o container pela rede docker, não por esta porta publicada;
-      # no dev, `localhost:3000` continua funcionando.
-      - '127.0.0.1:3000:3000'
+    # Sem `ports` no base (ver nota no serviço `db`): o Traefik roteia o domínio para o container
+    # pela rede docker. A publicação em loopback para dev/CI vive em `docker-compose.override.yml`.
     depends_on:
       - api
 
