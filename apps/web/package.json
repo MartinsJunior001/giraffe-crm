@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ci": "vitest run"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
