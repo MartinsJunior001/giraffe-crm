@@ -291,6 +291,7 @@ model Organization {
   cardResponsaveis  CardResponsavel[]
   cardPhaseEntries  CardPhaseEntry[]
   cardPhaseValues   CardPhaseValues[]
+  movementEvents    MovementEvent[]
 
   @@map("Organization")
 }
@@ -322,6 +323,7 @@ model Pipe {
   phases       Phase[]
   forms        Form[]
   cards        Card[]
+  movementEvents MovementEvent[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -381,6 +383,8 @@ model Phase {
   cards        Card[]
   phaseEntries CardPhaseEntry[]
   phaseValues  CardPhaseValues[]
+  movementEventsAsSource MovementEvent[] @relation("MovementEventSource")
+  movementEventsAsTarget MovementEvent[] @relation("MovementEventTarget")
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -600,6 +604,7 @@ model Card {
   responsaveis     CardResponsavel[]
   phaseEntries     CardPhaseEntry[]
   phaseValues      CardPhaseValues[]
+  movementEvents   MovementEvent[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -788,6 +793,59 @@ model CardPhaseValues {
   // "Conjunto corrente" (mais recente por Card+Fase) e histórico das correções.
   @@index([orgId, cardId, phaseId, createdAt])
   @@map("CardPhaseValues")
+}
+
+/// MovementEvent — EVENTO CANÔNICO de movimentação de Card (Story 2.16). É a persistência confiável do tipo
+/// **Outbox** (AD-13: registro do evento de integração confirmado ATOMICAMENTE com a movimentação; o processamento
+/// assíncrono, se houver, vem depois). Trilha de INTEGRAÇÃO — DISTINTA do Histórico do Card (`CardHistory`) e das
+/// demais trilhas (AD-15): o consumo é de E4 (Automação) e E5 (Notificação), **não** implementados aqui.
+///
+/// **Append-only e IMUTÁVEL**: o runtime recebe **só SELECT+INSERT** (sem UPDATE/DELETE — ver GRANT), como
+/// `CardHistory`/`FormVersion`/`CardPhaseEntry`. Emitido SOMENTE quando a movimentação persiste, na MESMA transação
+/// do UPDATE `phaseId` + `CardPhaseEntry`(MOVE) + `CardHistory`(MOVED) [+ `CardPhaseValues` da 2.15]; bloqueio,
+/// no-op idempotente ou "aguardando confirmação" NÃO emitem (CA2). Rollback integral se qualquer gravação falhar.
+///
+/// **Idempotência (CA3):** `eventId` DETERMINÍSTICO — `uuidv5(orgId + cardId + correlationId)` — com
+/// `@@unique([orgId, eventId])`: um reprocessamento técnico reproduz o MESMO `eventId`; o índice único impede
+/// duplicata lógica. `correlationId` é gerado server-side por operação (linka o evento ao `MOVED`/`CardPhaseEntry`
+/// da mesma movimentação). `type`+`version` versionam o envelope (AD-13). `payload` é o envelope mínimo, sem PII
+/// desnecessária. **Este E2 NÃO controla idempotência de Automação/Notificação** — E4/E5 o fazem a partir do `eventId`.
+model MovementEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  /// Identidade lógica estável do evento (determinística por operação). Único por Organização.
+  eventId       String   @db.Uuid
+  pipeId        String   @db.Uuid
+  cardId        String   @db.Uuid
+  sourcePhaseId String   @db.Uuid
+  targetPhaseId String   @db.Uuid
+  /// Ator que originou a movimentação (quando disponível). Referência de auditoria.
+  actorId       String?  @db.Uuid
+  /// Origem da movimentação (espelha `CardPhaseEntryOrigin`; hoje `MOVE`). String — vocabulário estável.
+  origin        String
+  /// Momento efetivo da movimentação (instante absoluto).
+  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
+  /// Chave de correlação da operação (linka evento ↔ MOVED ↔ CardPhaseEntry da mesma movimentação).
+  correlationId String   @db.Uuid
+  /// Tipo do envelope canônico (ex.: `CARD_MOVED`). Versão do contrato do envelope.
+  type          String
+  version       Int      @default(1)
+  /// Envelope mínimo versionado (sem PII desnecessária), chaveado pelo contrato canônico.
+  payload       Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe         Pipe         @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  sourcePhase  Phase        @relation("MovementEventSource", fields: [sourcePhaseId], references: [id], onDelete: Cascade)
+  targetPhase  Phase        @relation("MovementEventTarget", fields: [targetPhaseId], references: [id], onDelete: Cascade)
+
+  // Um reprocessamento não cria um 2º evento lógico.
+  @@unique([orgId, eventId])
+  // Leitura da trilha por Card (cronológica) e correlação com a operação.
+  @@index([orgId, cardId, occurredAt])
+  @@index([orgId, correlationId])
+  @@map("MovementEvent")
 }
 
 /// SubmissaoPublica — submissão de um Formulário inicial PÚBLICO por ator externo (Story 2.8). Dado operacional
