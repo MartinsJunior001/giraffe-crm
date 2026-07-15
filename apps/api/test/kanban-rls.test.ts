@@ -8,8 +8,9 @@ import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-co
  * `giraffe_app`. Prova o que só o banco garante para esta fatia:
  *   1. as leituras que o Kanban usa — `phase.findMany` (colunas), `card.findMany` (coluna) e `card.groupBy`
  *      (contagem por Fase) — respeitam a RLS: outra Org vê 0; sem contexto, 0;
- *   2. a fatia é **somente leitura**: o runtime SEGUE sem GRANT de UPDATE em `Card` — mover (2.14) ainda não existe;
- *      UPDATE de `Card.phaseId` bate em `permission denied` (regressão da 2.7 reafirmada).
+ *   2. a fatia é **somente leitura**: o Kanban nunca reescreve o Card — UPDATE de `Card.valores` bate em
+ *      `permission denied` (o runtime não tem esse GRANT). Nota: `phaseId` passou a ser concedido pela 2.14
+ *      (movimentação); a prova do seu escopo column-scoped vive em `card-move-rls`.
  * Escreve na Org C (área de escrita).
  */
 
@@ -120,11 +121,11 @@ describe('cursor forjado não é canal de vazamento (Edge R5)', () => {
   });
 });
 
-describe('a fatia 2.9 é somente leitura — Card segue sem GRANT de UPDATE (SC-295)', () => {
-  it('UPDATE de Card.phaseId (a movimentação de 2.14) ainda bate em permission denied', async () => {
+describe('a fatia 2.9 é somente leitura — o Kanban nunca reescreve o Card (SC-295)', () => {
+  it('UPDATE de Card.valores bate em permission denied (o runtime não tem esse GRANT)', async () => {
     const dbC = withTenantContext(prisma, { orgId: ORG_C }, semLog);
     await expect(
-      dbC.card.updateMany({ where: { id: cardId }, data: { phaseId: randomUUID() } }),
+      dbC.card.updateMany({ where: { id: cardId }, data: { valores: { hack: true } } }),
     ).rejects.toThrow(/permission denied/i);
   });
 });

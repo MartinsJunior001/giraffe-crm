@@ -1,0 +1,29 @@
+-- Story 2.14 — movimentação do Card entre Fases.
+--
+-- PONTO ARQUITETURAL — o 2º UPDATE de `Card` em runtime, e ele é COLUMN-SCOPED, exatamente como a 2.11 antecipou
+-- ("A migration da 2.14 acrescentará `GRANT UPDATE ("phaseId")` junto do seu consumidor e teste"). A 2.11 abriu o
+-- 1º UPDATE de `Card`, restrito às colunas de ciclo de vida (`lifecycleState`, `previousLifecycleState`) mais
+-- `updatedAt`. A 2.14 traz o consumidor concreto da movimentação (o serviço `card-movement`) e o teste que prova o
+-- escopo — então concede `UPDATE` **apenas** em `phaseId`, ADITIVO ao grant da 2.11.
+--
+-- FRONTEIRA DE BANCO (o invariante da casa): `valores` e `orgId` seguem **sem** privilégio de UPDATE. Uma tentativa
+-- de reescrever `valores` (mass-assignment) ou de mudar `orgId` (evasão de tenant) bate em `permission denied` —
+-- garantido pelo BANCO, não pela ausência de rota. Por isso NÃO se usa `GRANT UPDATE ON "Card"` (blanket): o grant
+-- blanket concederia UPDATE em TODAS as colunas, contrariando o invariante. Isto DIVERGE da letra do Apêndice A da
+-- spec 2.9 (que escreveu `GRANT UPDATE ON "Card"`), a favor do invariante `valores`/`orgId` sem UPDATE (CLAUDE.md).
+--
+-- A policy `card_update` já existe desde a 2.7 (`USING`/`WITH CHECK ("orgId" = current_org_id())`): o `WITH CHECK`
+-- impede **mover a linha para outra Organização** num UPDATE de `phaseId`. Nada a criar na policy.
+--
+-- `CardHistory.type` é `String` (schema) — o evento `MOVED` é um novo VALOR de string, sem migration de enum. Sem
+-- coluna nova, sem tabela nova, sem enum novo, sem DELETE.
+--
+-- ROLLBACK: reversível por `REVOKE UPDATE ("phaseId") ON "Card" FROM giraffe_app;` — restaura o Card ao estado
+-- column-scoped da 2.11 (só ciclo de vida). Nenhuma DDL destrutiva; nenhum dado alterado por esta migration.
+
+-- ---------------------------------------------------------------------------
+-- GRANT column-scoped: o runtime passa a poder UPDATE `phaseId` (movimentação). NÃO `valores`, NÃO `orgId`. O teste
+-- `card-move-rls` prova o escopo: UPDATE de `phaseId` passa no contexto e é negado cross-tenant (WITH CHECK); UPDATE
+-- de `valores`/`orgId` bate em permission denied; DELETE continua negado.
+-- ---------------------------------------------------------------------------
+GRANT UPDATE ("phaseId") ON "Card" TO giraffe_app;
