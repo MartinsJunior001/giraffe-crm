@@ -41,7 +41,7 @@
 # - No story enters development before its Definition of Ready (incl. applicable gate closed).
 
 generated: 2026-07-12
-last_updated: 2026-07-14
+last_updated: 2026-07-15
 project: giraffe crm — Fase 1
 project_key: NOKEY
 tracking_system: file-system
@@ -94,7 +94,7 @@ development_status:
   2-11-ciclo-de-vida-do-card: done
   2-12-marcos-por-fase-e-override-por-card: done
   2-13-saude-temporal-derivada-do-card: done
-  2-14-movimentacao-e-regras-de-transicao: backlog
+  2-14-movimentacao-e-regras-de-transicao: done
   2-15-formulario-de-fase-e-bloqueio-de-transicao: backlog
   2-16-evento-canonico-de-movimentacao-e-contrato-opt-in: backlog
   2-17-historico-do-card-consulta-da-timeline: backlog
