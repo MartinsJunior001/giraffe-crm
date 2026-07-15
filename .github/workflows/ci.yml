@@ -131,8 +131,15 @@ jobs:
             echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
             echo "APP_PASSWORD=$APP_PASSWORD"
-            echo "DATABASE_URL=postgresql://giraffe_app:$APP_PASSWORD@localhost:5434/giraffe?schema=public"
-            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+            # `connection_limit=5` capa o pool de CADA cliente Prisma. A suíte roda os 65 arquivos de teste em
+            # PARALELO e cada arquivo de integração sobe seu próprio AppModule (pool de app) + um cliente migrator
+            # (pool de faxina). Sem cap, o pool default do Prisma (~2·CPU+1 por cliente) × workers concorrentes
+            # aproxima/excede o `max_connections` default (100) do PostgreSQL; a conexão recusada faz a resolução de
+            # contexto falhar e o Admin da Org cair em 403 transiente — flakiness observada em `pipe-access-http`
+            # (não é regressão: 556/556 verde em série). O cap mantém o design de testes paralelos e mantém o total
+            # de conexões folgado sob 100. Local usa `--no-file-parallelism`, então não sofre a mesma pressão.
+            echo "DATABASE_URL=postgresql://giraffe_app:$APP_PASSWORD@localhost:5434/giraffe?schema=public&connection_limit=5"
+            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public&connection_limit=5"
             echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
             echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
             echo "BETTER_AUTH_URL=http://localhost:3001"
