@@ -182,8 +182,17 @@ jobs:
 
       # A suíte fica VERMELHA se o banco estiver fora — nunca pulada. Banco indisponível é
       # falha, não ausência de evidência.
+      #
+      # `test:ci` = `vitest run --no-file-parallelism` na API: os testes de integração PostgreSQL rodam em SÉRIE
+      # (estado-alvo do isolamento — ver CLAUDE.md, seção de testes). A flakiness que motivou isso teve DUAS causas,
+      # ambas corrigidas na raiz (TEST-ISO-01): (1) `card-access-rls` reusava a conta global de ANA num vínculo
+      # ACTIVE persistente na Org C, dando a ANA 2 Orgs → a resolução de contexto sem `x-org-id` caía em 403
+      # transiente em `pipe-access-http` sob paralelismo — corrigido com conta dedicada (`randomUUID`); (2) o teto
+      # default de 5s do Vitest era apertado para os testes HTTP (login real ~2s + setup), estourando sob a carga
+      # sustentada do run serial — corrigido elevando `testTimeout`. O cap de connection_limit foi revertido (a
+      # causa nunca foi pool). Restaurar o paralelismo pleno segue gated no aceite de TEST-ISO-01 (≥20 runs verdes).
       - name: Testes (API + Web)
-        run: pnpm test
+        run: pnpm test:ci
 
       - name: Logs do banco (só em falha)
         if: failure()

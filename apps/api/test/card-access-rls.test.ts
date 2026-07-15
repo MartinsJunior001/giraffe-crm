@@ -16,7 +16,11 @@ import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-co
 
 const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ORG_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
-const CONTA = '11111111-1111-1111-1111-111111111111'; // Account global (Ana) — reusada p/ um vínculo na Org C
+// Conta GLOBAL descartável desta suíte (UUID aleatório). NUNCA reusar Ana/Bruno/Carla/Eva do seed em um
+// `membership.create` que persista: elas são fixtures de LEITURA compartilhadas e um segundo vínculo ACTIVE
+// para ANA faz a resolução de contexto sem `x-org-id` (ex.: pipe-access-http) enxergar 2 Orgs → 403 transiente
+// sob paralelismo (TEST-ISO-01). Espelha `pipe-grants-rls.test.ts`.
+const CONTA = randomUUID();
 const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -42,6 +46,14 @@ beforeAll(async () => {
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
   await Promise.all([prisma.$connect(), migrator.$connect()]);
 
+  // Conta é GLOBAL (sem RLS, sem contexto) — criada antes da Membership que a referencia.
+  await migrator.account.create({
+    data: {
+      id: CONTA,
+      email: `card-access-rls-${CONTA}@exemplo.test`,
+      name: 'Alvo CardAccess RLS',
+    },
+  });
   const dbC = withTenantContext(migrator, { orgId: ORG_C }, semLog);
   await dbC.membership.create({
     data: { id: membershipId, orgId: ORG_C, accountId: CONTA, role: 'MEMBER', state: 'ACTIVE' },
@@ -86,6 +98,7 @@ afterAll(async () => {
     const dbC = withTenantContext(migrator, { orgId: ORG_C }, semLog);
     await dbC.pipe.deleteMany({ where: { id: pipeId } }).catch(() => {});
     await dbC.membership.deleteMany({ where: { id: membershipId } }).catch(() => {});
+    await migrator.account.deleteMany({ where: { id: CONTA } }).catch(() => {});
   }
   await Promise.all([prisma?.$disconnect(), migrator?.$disconnect()]);
 });
