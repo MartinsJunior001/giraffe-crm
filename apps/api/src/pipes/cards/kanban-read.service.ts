@@ -5,6 +5,8 @@ import { type ContextoOrganizacional, RequestContext } from '../../kernel/contex
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
 import { type Poder, resolverPoderNoPipe } from '../pipe-authz';
+import { calcularMarcos, lerSnapshotConfig } from '../phases/milestones/phase-milestones.core';
+import { derivarSaude, indicadorDominante } from './health/card-health.core';
 
 type Db = ReturnType<typeof withTenantContext>;
 
@@ -57,6 +59,12 @@ export interface CardDetalheVisao {
     formVersionId: string;
     /** Estado de ciclo de vida (Story 2.11): ATIVO/FINALIZADO/ARQUIVADO. Eixo independente da Fase. */
     lifecycleState: string;
+    /** Eixo de SAÚDE temporal (Story 2.13), DERIVADO dos marcos reais (2.12) — nunca manual. Canônico e distinto
+     * do ciclo de vida. `ok`/`atrasado`/`vencido`/`expirado`. */
+    saude: string;
+    /** Indicador dominante de APRESENTAÇÃO (Story 2.13): precedência ciclo de vida › saúde. Só resumo para a UI —
+     * NÃO substitui `lifecycleState`/`saude` (os dois eixos canônicos). Consumo pleno é do E7. */
+    indicadorDominante: string;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -203,6 +211,23 @@ export class KanbanReadService {
       select: { name: true },
     });
 
+    // Saúde temporal (Story 2.13): DERIVADA na leitura (pura, sem persistir) a partir da entrada ATUAL na Fase
+    // (`CardPhaseEntry` mais recente — 2.12) + `valores` do Card + o instante corrente. `indicadorDominante` aplica
+    // a precedência ciclo de vida › saúde, sem fundir os eixos.
+    const entrada = await db.cardPhaseEntry.findFirst({
+      where: { cardId },
+      orderBy: [{ enteredAt: 'desc' }, { id: 'desc' }],
+      select: { enteredAt: true, configSnapshot: true },
+    });
+    const valores =
+      typeof card.valores === 'object' && card.valores !== null && !Array.isArray(card.valores)
+        ? (card.valores as Record<string, unknown>)
+        : {};
+    const marcos = entrada
+      ? calcularMarcos(entrada.enteredAt, lerSnapshotConfig(entrada.configSnapshot), valores)
+      : { esperado: null, vencimento: null, expiracao: null };
+    const saude = derivarSaude(marcos, new Date());
+
     return {
       card: {
         id: card.id,
@@ -212,6 +237,8 @@ export class KanbanReadService {
         formId: card.formId,
         formVersionId: card.formVersionId,
         lifecycleState: card.lifecycleState,
+        saude,
+        indicadorDominante: indicadorDominante(card.lifecycleState, saude),
         createdAt: card.createdAt,
         updatedAt: card.updatedAt,
       },
