@@ -13,6 +13,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:ci": "vitest run --no-file-parallelism",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "db:migrate": "node ../../scripts/db-migrate.mjs deploy",
