@@ -290,6 +290,7 @@ model Organization {
   cardGrants        CardGrant[]
   cardResponsaveis  CardResponsavel[]
   cardPhaseEntries  CardPhaseEntry[]
+  cardPhaseValues   CardPhaseValues[]
 
   @@map("Organization")
 }
@@ -379,6 +380,7 @@ model Phase {
   forms        Form[]
   cards        Card[]
   phaseEntries CardPhaseEntry[]
+  phaseValues  CardPhaseValues[]
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -488,6 +490,11 @@ model Form {
   publicEnabled    Boolean        @default(false)
   /// Modo da submissão pública (triagem padrão ou criação direta). Só relevante com `publicEnabled`.
   publicMode       PublicFormMode @default(TRIAGE)
+  /// MODO do Formulário de Fase (Story 2.15, D1) — dois booleanos INDEPENDENTES: um Formulário de Fase pode ser
+  /// requisito de ENTRADA (valores exigidos antes de mover para a Fase) E/OU de SAÍDA (validados antes de sair).
+  /// Ambos false = informativo/opcional. Só fazem sentido em `context='PHASE'` (config é "config do Pipe").
+  requisitoEntrada Boolean        @default(false)
+  requisitoSaida   Boolean        @default(false)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -536,6 +543,7 @@ model FormVersion {
   form              Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
   cards             Card[]
   publicSubmissions SubmissaoPublica[]
+  phaseValues       CardPhaseValues[]
 
   @@unique([orgId, formId, version])
   @@index([orgId, formId])
@@ -591,6 +599,7 @@ model Card {
   grants           CardGrant[]
   responsaveis     CardResponsavel[]
   phaseEntries     CardPhaseEntry[]
+  phaseValues      CardPhaseValues[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -749,6 +758,38 @@ model CardPhaseEntry {
   @@map("CardPhaseEntry")
 }
 
+/// CardPhaseValues — valores do Formulário de Fase por (Card, Fase) (Story 2.15). Dado operacional org-owned
+/// (AD-10). É **append-only e IMUTÁVEL** (runtime só SELECT+INSERT — ver GRANT): registrar/corrigir valores é
+/// INSERT (nova linha), NUNCA UPDATE/DELETE. O conjunto CORRENTE por (Card, Fase) é o mais recente por `createdAt`;
+/// a correção posterior é uma nova linha + evento `PHASE_VALUES_CORRECTED` antes/depois no `CardHistory`.
+///
+/// **INV-FORM-01**: é DISTINTO de `Card.valores` (Formulário inicial, 2.7) — os três Formulários são independentes.
+/// `valores` em JSONB por `Field.id` (opção por `id` — AD-11/AD-12), validado contra o snapshot da `FormVersion`
+/// **publicada** (`formVersionId`, congelada — AD-12). Preenchido no requisito de ENTRADA na MESMA transação da
+/// movimentação (2.14); no requisito de SAÍDA e na correção, validado/gravado no seu próprio fluxo.
+model CardPhaseValues {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  cardId        String   @db.Uuid
+  phaseId       String   @db.Uuid
+  /// Versão publicada do Formulário de Fase contra a qual os valores foram validados (congelada — AD-12).
+  formVersionId String   @db.Uuid
+  /// Valores submetidos, chaveados por `Field.id` do snapshot (opção por `id`). Validados contra a versão.
+  valores       Json     @default("{}")
+  /// Ator que registrou/corrigiu (quando disponível). Referência de auditoria, não PII sensível.
+  actorId       String?  @db.Uuid
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  phase        Phase        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  formVersion  FormVersion  @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+
+  // "Conjunto corrente" (mais recente por Card+Fase) e histórico das correções.
+  @@index([orgId, cardId, phaseId, createdAt])
+  @@map("CardPhaseValues")
+}
+
 /// SubmissaoPublica — submissão de um Formulário inicial PÚBLICO por ator externo (Story 2.8). Dado operacional
 /// org-owned (AD-10). É entidade DISTINTA do Card, com ciclo PRÓPRIO (`SubmissaoPublicaState`): triagem NÃO é
 /// estado do Card (`Fase ≠ Status do Card`). Referencia o `Form` inicial e a `FormVersion` publicada no ato;
@@ -844,6 +885,10 @@ model Field {
   defaultValue Json?
   /// Chave de ordenação fracionária (ver nota do model). `numeric` de alta escala.
   position     Decimal    @db.Decimal(38, 18)
+  /// Obrigatoriedade do Campo (Story 2.15). A Fase 1 não tinha obrigatoriedade (2.4-2.7); a 2.15 a introduz e o
+  /// snapshot da publicação (2.6) a captura. É GATED ao Formulário de Fase (`context='PHASE'`) no serviço — o
+  /// Formulário inicial (2.7) ignora obrigatoriedade. Default false: nada muda para Campos/Formulários existentes.
+  required     Boolean    @default(false)
   state        FieldState @default(ACTIVE)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

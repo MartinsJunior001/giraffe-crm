@@ -74,6 +74,14 @@ export class FieldsService {
     if (dto.help !== undefined) data.help = dto.help; // string ou null (limpar)
     if (dto.defaultValue.tipo === 'limpar') data.defaultValue = Prisma.DbNull;
     else if (dto.defaultValue.tipo === 'definir') data.defaultValue = dto.defaultValue.valor;
+    if (dto.required !== undefined) {
+      // Obrigatoriedade é GATED ao Formulário de Fase (Story 2.15): o Formulário inicial não tem obrigatoriedade
+      // (a submissão da 2.7 permite valor ausente). `alvo.phaseId` presente ⇒ contexto PHASE.
+      if (alvo.phaseId === undefined) {
+        throw new BadRequestException('obrigatoriedade só é configurável no Formulário de Fase');
+      }
+      data.required = dto.required;
+    }
 
     const { count } = await db.field.updateMany({ where: { id: fieldId, formId: form.id }, data });
     if (count === 0) throw new NotFoundException();

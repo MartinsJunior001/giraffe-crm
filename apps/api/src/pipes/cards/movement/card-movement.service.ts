@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
   type ContextoOrganizacional,
@@ -8,10 +13,18 @@ import { PrismaService } from '../../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../../kernel/db/tenant-context';
 import { exigirMoverCard } from '../../pipe-authz';
 import { registrarEntradaNaFase } from '../phase-entry/card-phase-entry';
+import { SubmissaoInvalidaError } from '../submission';
+import {
+  resolverRequisitoEntrada,
+  resolverRequisitoSaida,
+} from '../phase-values/phase-form-requirement';
 import {
   type ContextoDeTransicao,
   type EstadoCicloCard,
+  VALIDADORES_PADRAO,
   executarPreflight,
+  validarRequisitoEntrada,
+  validarRequisitoSaida,
 } from './transition-preflight';
 import type { MovimentacaoDTO } from './card-movement.dto';
 
@@ -107,6 +120,19 @@ export class CardMovementService {
     // Origem sempre existe (o Card está nela); defesa: se sumiu, é estado inconsistente → 404.
     if (!faseOrigem) throw new NotFoundException();
 
+    // Story 2.15 — requisitos do Formulário de Fase, MATERIALIZADOS aqui (I/O) para o preflight seguir PURO:
+    //  • SAÍDA: valida os valores JÁ PERSISTIDOS da Fase de origem (D6);
+    //  • ENTRADA: valida os `valoresDeFase` do request contra o snapshot publicado da destino, e prepara a gravação.
+    // `SubmissaoInvalidaError` (tipo/allowlist inválidos) → 400. Sem requisito ⇒ `ok = undefined` (não bloqueia).
+    const saida = await resolverRequisitoSaida(db, faseOrigem.id, cardId);
+    let entrada;
+    try {
+      entrada = await resolverRequisitoEntrada(db, faseDestino.id, dados.valoresDeFase);
+    } catch (err) {
+      if (err instanceof SubmissaoInvalidaError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
     const ctx: ContextoDeTransicao = {
       card: {
         id: card.id,
@@ -124,10 +150,18 @@ export class CardMovementService {
         ativa: faseDestino.state === 'ACTIVE',
       },
       confirmado: dados.confirmado,
+      requisitoSaidaOk: saida.ok,
+      requisitoEntradaOk: entrada.ok,
     };
 
-    const preflight = executarPreflight(ctx);
-    if (!preflight.ok) throw new ConflictException(preflight.motivo); // bloqueio → 409, nada persistido (CA2)
+    // Compõe a lista PADRÃO da 2.14 com os validadores de Formulário de Fase (2.15) — extensão por composição, sem
+    // reescrever o serviço nem a lista built-in (CA4 da 2.14). Bloqueio → 409, nada persistido (CA1/CA2).
+    const preflight = executarPreflight(ctx, [
+      ...VALIDADORES_PADRAO,
+      validarRequisitoSaida,
+      validarRequisitoEntrada,
+    ]);
+    if (!preflight.ok) throw new ConflictException(preflight.motivo);
 
     let atualizado: MovimentacaoVisao | null;
     try {
@@ -148,6 +182,22 @@ export class CardMovementService {
           phaseId: dados.destinoPhaseId,
           origin: 'MOVE',
         });
+
+        // Story 2.15 — requisito de ENTRADA: persiste os valores validados da Fase destino na MESMA transação
+        // (AD-13). Se qualquer passo falhar, o rollback é integral: sem `phaseId` novo, sem entrada, sem valores,
+        // sem `MOVED` — nenhuma movimentação parcial (CA2). `CardPhaseValues` é append-only (só INSERT).
+        if (entrada.persistir) {
+          await tx.cardPhaseValues.create({
+            data: {
+              orgId: contexto.orgId,
+              cardId,
+              phaseId: dados.destinoPhaseId,
+              formVersionId: entrada.persistir.formVersionId,
+              valores: entrada.persistir.valores as never,
+              actorId: contexto.accountId ?? null,
+            },
+          });
+        }
 
         // Evento da movimentação — MESMA transação (AD-13): não há Card movido sem evento no Histórico.
         await tx.cardHistory.create({
@@ -179,6 +229,7 @@ export class CardMovementService {
 
     this.auditar(contexto, 'update', 'Card');
     this.auditar(contexto, 'create', 'CardPhaseEntry');
+    if (entrada.persistir) this.auditar(contexto, 'create', 'CardPhaseValues');
     this.auditar(contexto, 'create', 'CardHistory');
     return atualizado;
   }

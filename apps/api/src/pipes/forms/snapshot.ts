@@ -25,6 +25,9 @@ export interface CampoParaSnapshot {
   type: FieldType;
   help: string | null;
   typeConfig: Prisma.JsonValue;
+  /// Obrigatoriedade (Story 2.15). Capturada no snapshot para a validação do Formulário de Fase usar a versão
+  /// CONGELADA (AD-12), não a definição viva. Default de leitura false quando ausente (Campos/versões antigas).
+  required: boolean;
 }
 
 /** Uma opção congelada no snapshot (só ativas; sem `state`, pois todas são ativas por construção). */
@@ -41,6 +44,8 @@ interface CampoSnapshot {
   type: FieldType;
   help: string | null;
   typeConfig: { options?: OpcaoSnapshot[] };
+  /// Obrigatoriedade congelada (Story 2.15) — a validação do Formulário de Fase a consome da versão publicada.
+  required: boolean;
 }
 
 /** Snapshot integral e ordenado da definição publicada. É o conteúdo imutável de `FormVersion.snapshot`. */
@@ -96,7 +101,14 @@ export function montarSnapshot(
         options: ativas.map((o, i) => ({ id: o.id, label: o.label, position: i + 1 })),
       };
     }
-    return { id: campo.id, label: campo.label, type: campo.type, help: campo.help, typeConfig };
+    return {
+      id: campo.id,
+      label: campo.label,
+      type: campo.type,
+      help: campo.help,
+      typeConfig,
+      required: campo.required,
+    };
   });
 
   return { formId, fields };

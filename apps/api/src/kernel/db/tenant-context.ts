@@ -36,6 +36,7 @@ const MODELOS_AUDITADOS = new Set([
   'CardGrant',
   'CardResponsavel',
   'CardPhaseEntry',
+  'CardPhaseValues',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
