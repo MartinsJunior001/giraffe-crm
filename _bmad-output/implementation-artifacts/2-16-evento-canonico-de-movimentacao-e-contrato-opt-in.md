@@ -1,6 +1,6 @@
 # Story 2.16: Evento canônico de movimentação e contrato opt-in
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
