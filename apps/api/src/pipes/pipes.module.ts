@@ -13,6 +13,8 @@ import { CardAccessController } from './cards/access/card-access.controller';
 import { CardAccessService } from './cards/access/card-access.service';
 import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.controller';
 import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
+import { CardMovementController } from './cards/movement/card-movement.controller';
+import { CardMovementService } from './cards/movement/card-movement.service';
 import { CardPhaseEntryController } from './cards/phase-entry/card-phase-entry.controller';
 import { CardPhaseEntryReadService } from './cards/phase-entry/card-phase-entry-read.service';
 import { PublicSubmissionController } from './public-submissions/public-submission.controller';
@@ -59,7 +61,11 @@ import { PipesService } from './pipes.service';
  * `CardPhaseEntryController`/`CardPhaseEntryReadService` — leitura da base temporal do Card). A referência de
  * entrada (`CardPhaseEntry`, append-only imutável) é gravada na criação do Card pelo helper compartilhado
  * `registrarEntradaNaFase`, na MESMA transação (submissão interna 2.7 e conversão pública 2.8); o snapshot da
- * config congela os marcos na entrada (D-OA1=A — sem recálculo retroativo silencioso). Depende de `PrismaService`
+ * config congela os marcos na entrada (D-OA1=A — sem recálculo retroativo silencioso). Story 2.14: movimentação
+ * do Card entre Fases (`CardMovementController`/`CardMovementService`) — o 2º UPDATE de `Card` em runtime,
+ * column-scoped a `phaseId`; mover exige `exigirMoverCard` (operar + `podeMover`), roda o preflight puro
+ * (`transition-preflight`) e, sem bloqueio, faz UPDATE `phaseId` + reentrada (`CardPhaseEntry`, origin=MOVE, via
+ * `registrarEntradaNaFase`) + evento `MOVED` atomicamente. Depende de `PrismaService`
  * (DbModule global) e `RequestContext` (ContextModule global). O `AuthzGuard`/`TenantContextGuard` já são globais
  * no AppModule; este módulo só registra os controllers e serviços.
  */
@@ -75,6 +81,7 @@ import { PipesService } from './pipes.service';
     KanbanController,
     CardAccessController,
     CardLifecycleController,
+    CardMovementController,
     CardPhaseEntryController,
     PhaseMilestonesController,
     PublicSubmissionController,
@@ -92,6 +99,7 @@ import { PipesService } from './pipes.service';
     KanbanReadService,
     CardAccessService,
     CardLifecycleService,
+    CardMovementService,
     CardPhaseEntryReadService,
     PhaseMilestonesService,
     PublicSubmissionService,

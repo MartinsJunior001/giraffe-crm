@@ -291,3 +291,29 @@ export async function exigirOperarCard(
   if (!acesso.podeOperar) throw new ForbiddenException();
   return acesso;
 }
+
+/**
+ * Exige poder de MOVER o Card entre Fases (Story 2.14). Sem acesso nenhum → **404** (não enumera); com acesso de
+ * leitura mas sem operar (Observador/Somente leitura) → **403**.
+ *
+ * **Regra (reconciliando as fontes autoritativas):** mover é **operar o Card** — o gate é `podeOperar`, idêntico a
+ * `exigirOperarCard`. Fundamentos:
+ *   • Apêndice A da spec 2.9 (design autoritativo da movimentação): "mover é **operar** (`exigirOperar…`);
+ *     Viewer/Observador não movem";
+ *   • epics §792 (Story 2.2): "Somente leitura consulta sem editar/**mover**" — o Membro do Pipe (que opera) move;
+ *   • a garantia do dono para esta Story: "autorização para **operar o Card**".
+ *
+ * Sobre `podeMover` (2.10/D-OA1): a `CardGrant` valida `podeMover ⇒ podeOperar` (`card-access.dto.ts`), então
+ * `podeMover` **nunca** amplia além de `podeOperar` — gatilhar por `podeOperar` já cobre toda concessão com
+ * `podeMover`. A distinção fina "operar mas não mover" numa concessão direta não é exigida por nenhum critério de
+ * aceite da 2.14 e o dado `podeMover` fica reservado a um consumidor concreto que a peça (AD-11). Admin da Org,
+ * Admin do Pipe e Membro do Pipe movem; **Somente leitura/Observador** → 403; `restritoAoProprio` já limita o
+ * alcance na resolução do acesso. Não toca o guard/`ability.ts` (C3 congelado — DBT-AUTHZ-01).
+ */
+export async function exigirMoverCard(
+  db: DbComContexto,
+  principal: Principal,
+  cardId: string,
+): Promise<AcessoNoCard> {
+  return exigirOperarCard(db, principal, cardId); // mover = operar o Card (Apêndice A 2.9; 404 sem acesso, 403 só-lê)
+}
