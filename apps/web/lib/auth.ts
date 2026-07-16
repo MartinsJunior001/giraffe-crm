@@ -28,6 +28,7 @@ export async function loginNaApi(
   email: string,
   senha: string,
   origin: string,
+  ipCliente?: string,
 ): Promise<ResultadoLogin> {
   let res: Response;
   try {
@@ -35,7 +36,16 @@ export async function loginNaApi(
       method: 'POST',
       // `origin` é exigido pelo CSRF do Better Auth fora de teste; mandamos a origem da própria Web,
       // que está na allowlist (CORS_ALLOWED_ORIGINS/trustedOrigins).
-      headers: { 'content-type': 'application/json', origin },
+      //
+      // `x-forwarded-for` é o elo Web→API da cadeia de proxy (D-01): UM único IP, já validado por
+      // `derivarIpValidadoDoXff` (nunca a cadeia recebida). A API só o honra porque o peer é o IP
+      // fixo da Web (TRUSTED_PROXY_IPS) — sem ele, o rate limit do login (G2) contaria a Web, não
+      // o cliente. Ausente (dev sem proxy), o header simplesmente não vai.
+      headers: {
+        'content-type': 'application/json',
+        origin,
+        ...(ipCliente === undefined ? {} : { 'x-forwarded-for': ipCliente }),
+      },
       body: JSON.stringify({ email, password: senha }),
       cache: 'no-store',
     });
