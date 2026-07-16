@@ -12,7 +12,7 @@
 | `orgId`      | `String @db.Uuid`       | FK → `Organization` (`onDelete: Cascade`). Dado org-owned (AD-10). |
 | `name`       | `String`                | Rótulo da base. **Não é PII.** **Sem unicidade** (colidiria no restaurar). |
 | `state`      | `DatabaseState`         | `ACTIVE` \| `ARCHIVED`. Fonte de verdade única do eixo somente-leitura. |
-| `archivedAt` | `DateTime? @db.Timestamptz` | Instante do arquivamento; `null` quando `ACTIVE`. Restaurar zera. |
+| `archivedAt` | `DateTime?`             | Instante do arquivamento; `null` quando `ACTIVE`. Restaurar zera. **`TIMESTAMP(3)`, não `Timestamptz`** — simétrico a `Pipe.archivedAt`/`Phase`/`Field` (D3, twin). O `Timestamptz` do schema é reservado a instantes que são carga funcional (`CardPhaseEntry.enteredAt`, base dos marcos — DIV-1; `MovementEvent.occurredAt`, ordenação de evento); `archivedAt` é carimbo de auditoria, e divergir do twin aqui seria inconsistência sem consumidor. |
 | `createdAt`  | `DateTime @default(now())`  | — |
 | `updatedAt`  | `DateTime @updatedAt`       | — |
 
