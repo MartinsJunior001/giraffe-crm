@@ -106,6 +106,11 @@ services:
       # Server-side (container) alcança a API pela rede do Compose. Variável de
       # servidor (não NEXT_PUBLIC): não é exposta ao browser.
       API_BASE_URL: http://api:3001
+      # Origem PÚBLICA da Web (a URL do browser). Atrás de proxy, `req.nextUrl.origin` é o bind
+      # interno (0.0.0.0:3000) — o Origin do relay BFF e o fallback do CSRF usam ESTA variável, e
+      # ela precisa constar em CORS_ALLOWED_ORIGINS da API. Sem default silencioso (`:?`): uma
+      # origem errada quebra o login de forma opaca; melhor falhar no `up`, dizendo qual falta.
+      WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?defina WEB_PUBLIC_ORIGIN (ver .env.example)}
     # Sem `ports` no base (ver nota no serviço `db`): o Traefik roteia o domínio para o container
     # pela rede docker. A publicação em loopback para dev/CI vive em `docker-compose.override.yml`.
     depends_on:

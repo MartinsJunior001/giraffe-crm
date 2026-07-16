@@ -140,6 +140,9 @@ jobs:
             # que exercitam o LoginFailureService SEM subir o AppModule (login-failure, hmac-rotacao)
             # — exige CORS_ALLOWED_ORIGINS. Localmente vem do `.env`; aqui, do ambiente do job.
             echo "CORS_ALLOWED_ORIGINS=http://localhost:3000"
+            # O compose exige (`:?`) a origem pública da Web para interpolar o serviço `web`,
+            # mesmo subindo só o `db` — o arquivo inteiro é interpolado.
+            echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
       - name: Instalar dependências (imutável)
@@ -250,6 +253,8 @@ jobs:
             echo "APP_PASSWORD=$APP_PASSWORD"
             echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
             echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
+            # Exigida (`:?`) pelo serviço `web` do compose (origem pública da Web).
+            echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
       # O `smoke` é script do repositório; a imagem de RUNTIME deliberadamente NÃO carrega o CLI

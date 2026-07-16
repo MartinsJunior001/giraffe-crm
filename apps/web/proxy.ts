@@ -22,10 +22,10 @@ import {
 export function proxy(req: NextRequest): NextResponse {
   const nomes = req.cookies.getAll().map((c) => c.name);
   if (decidirAcesso(req.nextUrl.pathname, nomes) === 'login') {
-    const url = req.nextUrl.clone();
-    url.pathname = '/login';
-    url.search = '';
-    return NextResponse.redirect(url);
+    // Redirect RELATIVO, nunca `nextUrl.clone()`: atrás de proxy, o host do `nextUrl` é o bind
+    // interno do container (`0.0.0.0:3000`) e o clone mandaria o browser para fora do ar. O
+    // caminho relativo é resolvido pelo browser contra a origem pública em que ele já está.
+    return new NextResponse(null, { status: 307, headers: { location: '/login' } });
   }
 
   const res = NextResponse.next();
