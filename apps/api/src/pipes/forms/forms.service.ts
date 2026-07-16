@@ -6,9 +6,11 @@ import { getEnv } from '../../kernel/config/env';
 import { RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
-import { exigirGerenciarPipe, resolverPoderNoPipe } from '../pipe-authz';
+import { resolverPoderNoPipe } from '../pipe-authz';
+import { exigirGerenciarForm, resolverPoderNoForm } from './form-authz';
 import {
   type AlvoFormulario,
+  type OwnerFormulario,
   SELECT_FORM,
   acharForm,
   exigirFaseDoPipe,
@@ -47,6 +49,7 @@ export interface FormularioVisao {
   context: FormContext;
   pipeId: string | null;
   phaseId: string | null;
+  databaseId: string | null;
   capabilities: { fileUpload: boolean };
   fields: CampoVisao[];
 }
@@ -118,6 +121,13 @@ export class FormsService {
     return this.montarVisao(db, { pipeId, phaseId }, 'PHASE');
   }
 
+  /** Obtém o Formulário **de Database** e seus Campos na ordem. Exige ao menos ler o Database (senão 404). */
+  async obterDeDatabase(databaseId: string): Promise<FormularioVisao> {
+    const { contexto, db } = this.db();
+    await resolverPoderNoForm(db, contexto, { databaseId }); // 404 se não há acesso ao Database
+    return this.montarVisao(db, { databaseId }, 'DATABASE');
+  }
+
   /**
    * Adiciona um Campo ao Formulário do contexto, ao **final da ordem ativa**. Exige **gerenciar** (Admin da
    * Org ou Admin do Pipe). O Formulário é **materializado sob demanda** aqui (getOrCreate) — a 1ª adição o
@@ -125,7 +135,7 @@ export class FormsService {
    */
   async adicionarCampo(alvo: AlvoFormulario, dto: AdicionarCampoDTO): Promise<CampoVisao> {
     const { contexto, db } = this.db();
-    await exigirGerenciarPipe(db, contexto, alvo.pipeId);
+    await exigirGerenciarForm(db, contexto, alvo);
     const { context, owner } = await resolverContexto(db, alvo);
     const form = await this.getOrCreateForm(db, contexto.orgId, context, owner);
     const position = await this.proximaPosicao(db, form.id);
@@ -155,7 +165,7 @@ export class FormsService {
     afterFieldId: string | null,
   ): Promise<CampoVisao> {
     const { contexto, db } = this.db();
-    await exigirGerenciarPipe(db, contexto, alvo.pipeId);
+    await exigirGerenciarForm(db, contexto, alvo);
     if (afterFieldId === fieldId) throw new NotFoundException(); // "depois de si mesmo" não é posição válida
     const { context, owner } = await resolverContexto(db, alvo);
     const form = await acharForm(db, contexto.orgId, context, owner);
@@ -210,7 +220,7 @@ export class FormsService {
     db: ReturnType<typeof withTenantContext>,
     orgId: string,
     context: FormContext,
-    owner: { pipeId?: string; phaseId?: string },
+    owner: OwnerFormulario,
   ) {
     const existente = await acharForm(db, orgId, context, owner);
     if (existente) return existente;
@@ -231,15 +241,20 @@ export class FormsService {
     alvo: AlvoFormulario,
     context: FormContext,
   ): Promise<FormularioVisao> {
-    const owner =
-      context === 'PHASE' ? { phaseId: alvo.phaseId ?? undefined } : { pipeId: alvo.pipeId };
+    const owner: OwnerFormulario =
+      context === 'DATABASE'
+        ? { databaseId: alvo.databaseId }
+        : context === 'PHASE'
+          ? { phaseId: alvo.phaseId ?? undefined }
+          : { pipeId: alvo.pipeId };
     const form = await acharForm(db, this.requestContext.obter().orgId, context, owner);
     const fields = form ? await this.listarCampos(db, form.id) : [];
     return {
       id: form?.id ?? null,
       context,
-      pipeId: form?.pipeId ?? (context === 'PIPE_INITIAL' ? alvo.pipeId : null),
+      pipeId: form?.pipeId ?? (context === 'PIPE_INITIAL' ? (alvo.pipeId ?? null) : null),
       phaseId: form?.phaseId ?? (context === 'PHASE' ? (alvo.phaseId ?? null) : null),
+      databaseId: form?.databaseId ?? (context === 'DATABASE' ? (alvo.databaseId ?? null) : null),
       capabilities: { fileUpload: getEnv().FILE_UPLOAD_ENABLED },
       fields,
     };

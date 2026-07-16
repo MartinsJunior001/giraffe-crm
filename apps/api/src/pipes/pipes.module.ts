@@ -120,5 +120,9 @@ import { PipesService } from './pipes.service';
     TriageService,
     PublicConfigService,
   ],
+  // Story 3.3: o Form Builder é canônico (INV-FORM-01). Estes serviços são exportados para que o módulo
+  // Databases (que importa PipesModule) monte/evolua/publique o Formulário de Database SEM um segundo builder.
+  // A autorização é roteada por contexto em `form-authz` (Database → `database-authz`, função pura; sem ciclo).
+  exports: [FormsService, FieldsService, FormPublicationService],
 })
 export class PipesModule {}
