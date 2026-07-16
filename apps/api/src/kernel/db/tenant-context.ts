@@ -40,6 +40,8 @@ const MODELOS_AUDITADOS = new Set([
   'CardPhaseEntry',
   'CardPhaseValues',
   'MovementEvent',
+  'Record',
+  'RecordHistory',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
