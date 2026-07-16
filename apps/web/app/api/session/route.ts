@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getApiBaseUrl, getPublicOrigin } from '@/lib/env';
 import { loginNaApi } from '@/lib/auth';
+import { derivarIpValidadoDoXff } from '@/lib/client-ip';
 import { ehMesmaOrigem } from '@/lib/session';
 
 /**
@@ -39,7 +40,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // O `Origin` do relay é a origem pública — a que consta em CORS_ALLOWED_ORIGINS/trustedOrigins
   // da API. Com o valor do `nextUrl`, o Better Auth recusaria o login em produção.
-  const resultado = await loginNaApi(getApiBaseUrl(), email, senha, origemPublica);
+  //
+  // O IP do cliente vai junto (D-01): derivado da ÚLTIMA entrada do X-Forwarded-For — a única
+  // que o Traefik escreveu vendo o socket; a ponta esquerda é a que um atacante controla. Sem
+  // ele, o rate limit do login (G2) contaria a Web como origem única.
+  const ipCliente = derivarIpValidadoDoXff(req.headers.get('x-forwarded-for'));
+  const resultado = await loginNaApi(getApiBaseUrl(), email, senha, origemPublica, ipCliente);
 
   if (!resultado.ok) {
     return redirecionar(`/login?erro=${resultado.motivo}`);
