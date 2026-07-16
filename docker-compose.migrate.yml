@@ -1,0 +1,38 @@
+# Migration como ETAPA CONTROLADA (AD-17/AD-32) — serviço ONE-SHOT, num arquivo PRÓPRIO.
+#
+# Por que um arquivo separado, e não um `profile` dentro do docker-compose.yml: o Coolify parseia
+# o docker-compose.yml para gerar o deploy, e um serviço extra lá — mesmo sob profile — dependeria
+# do comportamento do parser dele para NÃO virar um container de boot. Migration no boot é
+# exatamente o que o AD-32 proíbe (cada réplica/restart viraria uma tentativa concorrente de DDL).
+# Um arquivo que o deploy nunca lê elimina a classe de erro, em vez de mitigá-la.
+#
+# Uso (a partir do diretório que contém os dois arquivos, com o `db` JÁ de pé). O `run` precisa
+# entrar na MESMA rede do projeto Compose que está no ar: se o project name do deploy não for o
+# basename do diretório (ex.: Coolify usa o UUID da aplicação — confira com `docker compose ls`),
+# acrescente `-p <project>` a TODOS os comandos abaixo, ou `db:5432` não resolve:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
+#     run --rm --build --no-deps migrate                    # aplica as migrations pendentes
+#
+#   ... run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status    # estado
+#   ... run --rm --no-deps migrate node ../../scripts/db-migrate.mjs rollback  # ⚠️ DESTRUTIVO
+#
+# `--no-deps` é deliberado: o serviço NÃO deve criar/recriar o `db` — se o banco não está de pé,
+# migrar está errado de qualquer forma, e um `run` sem a flag poderia recriar o `db` com a config
+# mesclada deste arquivo, derrubando o ambiente que só queria migrar.
+#
+# Concorrência: o `prisma migrate deploy` segura um ADVISORY LOCK no PostgreSQL — duas execuções
+# simultâneas não se atropelam; a segunda falha explicitamente (timeout de 10s) e se re-executa.
+# Falha é honesta: o exit code do container é o do Prisma, e o runner (`scripts/db-migrate.mjs`)
+# só imprime NOMES de variáveis, nunca valores.
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    restart: 'no'
+    environment:
+      # Papel DONO do schema (giraffe_migrator) — só aqui, nunca no runtime (AD-6). A URL é
+      # montada pelo Compose a partir da MESMA variável do bootstrap; ninguém digita DSN.
+      MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public

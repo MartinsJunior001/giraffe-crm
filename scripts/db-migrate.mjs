@@ -40,6 +40,33 @@ function arquivoDeRollback(nomeExplicito) {
     process.exit(1);
   }
 
+  // GUARDA fail-closed: só se reverte a migration do TOPO da pilha. Quando o `.down.sql` mais
+  // recente não corresponde à migration mais nova de `prisma/migrations`, o "mais recente
+  // disponível" é uma migration DO MEIO — revertê-la derrubaria tabelas por baixo das migrations
+  // posteriores (FKs órfãs, histórico inconsistente) exatamente como o comentário acima descreve.
+  // Isso acontece quando novas migrations entram sem o seu `.down.sql`: o rollback correto passa a
+  // NÃO EXISTIR, e a resposta honesta é recusar com a lacuna nomeada, não reverter a coisa errada.
+  const migrationsAplicaveis = readdirSync('prisma/migrations', { withFileTypes: true })
+    .filter((e) => e.isDirectory() && /^[0-9]{14}_/.test(e.name))
+    .map((e) => e.name)
+    .sort();
+  const maisNovaDaPilha = migrationsAplicaveis[migrationsAplicaveis.length - 1];
+  const alvoResolvido = (
+    nomeExplicito
+      ? (disponiveis.find((f) => f.startsWith(nomeExplicito)) ?? nomeExplicito)
+      : disponiveis[disponiveis.length - 1]
+  ).replace(/\.down\.sql$/, '');
+
+  if (maisNovaDaPilha !== undefined && alvoResolvido !== maisNovaDaPilha) {
+    console.error(
+      `[db] rollback RECUSADO: o alvo "${alvoResolvido}" não é a migration do topo da pilha ` +
+        `("${maisNovaDaPilha}"). Reverter uma migration do meio derrubaria o schema por baixo ` +
+        `das posteriores. Se falta o arquivo prisma/rollback/${maisNovaDaPilha}.down.sql, ` +
+        `escreva-o antes — não há rollback seguro sem ele.`,
+    );
+    process.exit(1);
+  }
+
   if (nomeExplicito) {
     const alvo = disponiveis.find((f) => f.startsWith(nomeExplicito));
     if (!alvo) {

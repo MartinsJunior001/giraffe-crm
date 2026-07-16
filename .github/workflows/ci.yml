@@ -248,13 +248,13 @@ jobs:
             echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
             echo "APP_PASSWORD=$APP_PASSWORD"
-            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
             echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
             echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
           } >> "$GITHUB_ENV"
 
-      # O `smoke` e o `db:migrate` são scripts do repositório; a imagem de produção
-      # deliberadamente NÃO carrega o CLI do Prisma nem `scripts/` (ver README, publicação).
+      # O `smoke` é script do repositório; a imagem de RUNTIME deliberadamente NÃO carrega o CLI
+      # do Prisma nem `scripts/`. A migration roda pelo one-shot `docker-compose.migrate.yml` —
+      # o MESMO caminho usado no deploy (staging), para que o CI prove o caminho que vale lá.
       - name: Instalar dependências (imutável)
         run: pnpm install --frozen-lockfile
 
@@ -270,8 +270,18 @@ jobs:
       # Migration é ETAPA CONTROLADA (AD-32): não roda no boot do container. A API sobe antes,
       # e é isso que faz o `/ready` dela responder 503 até o schema existir — comportamento
       # desejado, e a razão de esperarmos `healthy` DEPOIS da migration.
-      - name: Aplicar migrations (etapa controlada, fora do container)
-        run: pnpm --filter @giraffe/api db:migrate
+      #
+      # `--no-deps`: o `db` JÁ está de pé (subiu com a stack) e o `run` não deve tocá-lo — sem a
+      # flag, o Compose poderia recriar o `db` com a config mesclada e derrubar a stack no meio.
+      - name: Aplicar migrations (one-shot conteinerizado — o caminho do deploy)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
+            run --rm --build --no-deps migrate
+
+      - name: Conferir que não há migration pendente (mesma imagem one-shot)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
+            run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status
 
       - name: Esperar api e web ficarem healthy
         run: |
