@@ -3,6 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { withTenantContext } from '../kernel/db/tenant-context';
+import { resolverPoderNoDatabase } from './database-authz';
 import {
   planejarArquivamento,
   planejarRestauracao,
@@ -57,7 +58,11 @@ export class DatabasesService {
   /** Client já amarrado ao contexto da Organização ativa. `obter()` LANÇA se não houver contexto. */
   private db() {
     const contexto = this.requestContext.obter();
-    return { contexto, db: withTenantContext(this.prisma, contexto, this.logger) };
+    return {
+      contexto,
+      principal: { accountId: contexto.accountId, papel: contexto.papel },
+      db: withTenantContext(this.prisma, contexto, this.logger),
+    };
   }
 
   /** Cria um Database ACTIVE na Organização do contexto. O `orgId` vem do servidor, nunca do corpo. */
@@ -70,25 +75,50 @@ export class DatabasesService {
   }
 
   /**
-   * Catálogo da Org atual. Admin vê TODOS os Databases da própria Org (não há concessão fina em 3.1).
-   * Por padrão só os ACTIVE; `incluirArquivados` traz também os ARCHIVED. Nunca lista de outra Org (RLS).
+   * Catálogo da Org atual. **Acesso fino por concessão (Story 3.2):** o **Admin da Org** vê TODOS os
+   * Databases da própria Org; um **não-Admin** vê **apenas** os Databases com uma `DatabaseGrant` ACTIVE
+   * para a própria Membership — os não concedidos simplesmente **não aparecem** (não-enumerante; sem revelar
+   * o que não lhe foi concedido). Por padrão só os ACTIVE; `incluirArquivados` traz também os ARCHIVED.
+   * Nunca lista de outra Org (RLS).
    */
   async listar(incluirArquivados: boolean): Promise<DatabaseVisao[]> {
-    const { db } = this.db();
+    const { contexto, db } = this.db();
     const filtroEstado = incluirArquivados ? {} : { state: 'ACTIVE' as const };
+    if (contexto.papel === 'ADMIN') {
+      return db.database.findMany({
+        where: filtroEstado,
+        select: SELECT_DATABASE,
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+    // Não-Admin: filtra pela concessão ACTIVE da própria Membership. Sem Membership ativa (defesa em
+    // profundidade — o contexto já exige uma) ou sem concessão nenhuma → lista vazia, nunca a da Org toda.
+    const membership = await db.membership.findFirst({
+      where: { accountId: contexto.accountId },
+      select: { id: true, state: true },
+    });
+    if (!membership || membership.state !== 'ACTIVE') return [];
     return db.database.findMany({
-      where: filtroEstado,
+      where: {
+        ...filtroEstado,
+        grants: { some: { membershipId: membership.id, state: 'ACTIVE' } },
+      },
       select: SELECT_DATABASE,
       orderBy: { createdAt: 'asc' },
     });
   }
 
   /**
-   * Um Database do contexto. 404 se não existe OU é de outra Org (RLS filtra e o `findUnique` volta
-   * null) — mesma resposta, para não revelar a existência de um Database de outra Org (não-enumerante).
+   * Um Database do contexto. **Acesso fino por concessão (Story 3.2):** o Admin da Org obtém qualquer
+   * Database da própria Org; um não-Admin só obtém um Database com concessão ACTIVE — sem concessão
+   * (ou inexistente/de outra Org) → **404 não-enumerante** (mesma resposta, para não revelar a existência).
+   * `resolverPoderNoDatabase` faz exatamente essa resolução (Admin → gerenciar; não-Admin → papel da
+   * concessão ou 404). O ciclo de vida (renomear/arquivar/restaurar) chama `obter` já sob `administrar`
+   * (Admin da Org), para quem a resolução devolve `gerenciar` sem 404 — comportamento da 3.1 preservado.
    */
   async obter(id: string): Promise<DatabaseVisao> {
-    const { db } = this.db();
+    const { principal, db } = this.db();
+    await resolverPoderNoDatabase(db, principal, id); // 404 não-enumerante se inexistente/cross-tenant/sem concessão
     const database = await db.database.findUnique({ where: { id }, select: SELECT_DATABASE });
     if (!database) throw new NotFoundException();
     return database;
