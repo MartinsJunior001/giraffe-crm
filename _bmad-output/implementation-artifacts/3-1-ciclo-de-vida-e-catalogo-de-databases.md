@@ -1,7 +1,7 @@
 ---
 story_key: 3-1-ciclo-de-vida-e-catalogo-de-databases
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: CRÍTICO
 baseline_commit: 65214b3
@@ -14,7 +14,7 @@ gate_arquitetura: Nova entidade organizacional (Database) com nova tabela + enum
 **I want** criar, renomear, arquivar e restaurar Databases,
 **So that** eu mantenha bases de dados estruturadas, separadas dos processos (Database ≠ Pipe).
 
-**Status: ready-for-dev.** Primeira Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos),
+**Status: done.** Primeira Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos),
 risco **CRÍTICO** — introduz a primeira entidade de domínio do E3 (`Database`) com **nova tabela, enum,
 RLS+FORCE e migration versionada**, tocando o **invariante-mãe** (isolamento por Organização). É o **twin
 estrutural da Story 2.1** (ciclo de vida e catálogo de Pipes): mesma forma de RLS/GRANT/CASL/guard, aplicada
@@ -117,6 +117,16 @@ Pipe**; arquiva (entra em somente-leitura) e restaura preservando dados; outro t
   `gates/3-1/`.
   - [ ] **Revisão adversarial independente** — não auto-atestável por quem implementou.
   - [ ] **`commit-check`** — último gate, no momento do commit.
+
+### Review Findings
+
+Revisão de encerramento (code-review, 2026-07-16) com três camadas adversariais paralelas (Blind Hunter, Edge Case Hunter, Acceptance Auditor) sobre o diff `dd0cac4..db8fa1e` + spec. Resultado: **0 decision-needed, 0 patch, 3 defer, 3 dismiss**; nenhum achado `high`/`medium`. Blind Hunter: nenhum achado nas dimensões críticas (isolamento/RLS/GRANT, mass-assignment de `orgId`, cross-tenant, idempotência, ciclo de vida). Base para `status = done`.
+
+- [x] [Review][Defer] Arquivo de teste `databases-authz.test.ts` nomeado na spec não existe como artefato próprio [apps/api/test/] — deferido: a cobertura de autorização já existe dobrada em `databases-http.test.ts` (MEMBER→403 nas 6 rotas; cross-tenant→404). Follow-up: extrair para arquivo dedicado.
+- [x] [Review][Defer] Caso GUEST não é exercitado explicitamente (só MEMBER) [apps/api/test/databases-http.test.ts] — deferido: comportamento correto por deny-by-default (a `ability.factory` só concede a ADMIN). Follow-up: adicionar caso GUEST.
+- [x] [Review][Defer] `parseIncluirArquivados` faz `valor === 'true'` sem tratar array [apps/api/src/databases/dto/databases.dto.ts:51] — deferido: `?arquivados` repetido vira array e cai para só-ativos (fail-safe, sem vazamento; entrada malformada). Follow-up: coerção do último valor.
+
+Dismissed (ruído/handled/cosmético): (1) falso `denied` de auditoria sob corrida real em arquivar/restaurar — **trade-off já documentado no CLAUDE.md** (o caminho idempotente de leitura não emite `updateMany`; a corrida residual é o custo conhecido; correção preservada via re-check EvalPlanQual sob READ COMMITTED); (2) `return this.obter(id)` pode refletir estado de transição concorrente — padrão read-after-write; (3) gate nomeado `podeEditarDatabase` vs `assertDatabaseEditavel` da spec — cosmético, funcionalmente equivalente (o service traduz `false`→409).
 
 ---
 
