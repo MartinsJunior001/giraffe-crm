@@ -319,6 +319,8 @@ model Organization {
   cardPhaseEntries  CardPhaseEntry[]
   cardPhaseValues   CardPhaseValues[]
   movementEvents    MovementEvent[]
+  records           Record[]
+  recordHistories   RecordHistory[]
 
   @@map("Organization")
 }
@@ -382,6 +384,7 @@ model Database {
   organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grants       DatabaseGrant[]
   forms        Form[]
+  records      Record[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -615,6 +618,7 @@ model Form {
   cards             Card[]
   publicSubmissions SubmissaoPublica[]
   publicRoutes      PublicFormRoute[]
+  records           Record[]
 
   // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId|databaseId, context).
   @@index([orgId, pipeId])
@@ -654,6 +658,7 @@ model FormVersion {
   cards             Card[]
   publicSubmissions SubmissaoPublica[]
   phaseValues       CardPhaseValues[]
+  records           Record[]
 
   @@unique([orgId, formId, version])
   @@index([orgId, formId])
@@ -1065,4 +1070,92 @@ model Field {
   // Acesso começa por Org; a listagem por Formulário filtra estado e ordena por position.
   @@index([orgId, formId, state, position])
   @@map("Field")
+}
+
+/// Record — Registro: instância de DADO DO TITULAR de um Database (Story 3.4). Dado operacional org-owned
+/// (AD-10). **Card ≠ Registro** (invariante conceitual): o Registro é o dado do Database; o Card é a unidade
+/// que percorre o Pipe. O Registro pertence a EXATAMENTE UM Database (RN-063) e **não é transferível** — não há
+/// rota nem GRANT que altere `databaseId`.
+///
+/// Criado por uma submissão do **Formulário de Database publicado** (3.3), reusando a maquinaria da submissão de
+/// Card (2.7): referencia a `FormVersion` publicada no ato (`formVersionId`, imutável — AD-12) e guarda os
+/// `valores` validados contra o snapshot em JSONB **chaveado por `Field.id`** (opção por `id`, nunca rótulo —
+/// AD-11), não em tabela de valores por Campo. **Idempotência**: `idempotencyKey` + `@@unique([orgId,
+/// databaseId, idempotencyKey])` — um retry da MESMA operação lógica devolve o Registro existente (nunca
+/// duplica); P2002/P2028 → idempotente/409, nunca 500.
+///
+/// Ciclo de vida de **2 estados** (`ATIVO`/`ARQUIVADO` — sem `FINALIZADO`, que é do Card): arquivar é reversível
+/// e não bloqueado por vínculos; restaurar volta a ATIVO (sem `previousLifecycleState`). Isolamento pelo banco
+/// (RLS ENABLE+FORCE); GRANT column-scoped: o runtime pode UPDATE **só** `lifecycleState`/`valores`/`updatedAt`
+/// (ciclo de vida 2.11 + edição de valores) e **sem DELETE** — arquivar é `state`, sem exclusão física (LGPD).
+model Record {
+  id             String               @id @default(uuid()) @db.Uuid
+  orgId          String               @db.Uuid
+  databaseId     String               @db.Uuid
+  formId         String               @db.Uuid
+  formVersionId  String               @db.Uuid
+  /// Chave lógica da operação de criação (cliente). Garante idempotência via índice único org+database.
+  idempotencyKey String
+  /// Valores submetidos/editados, chaveados por `Field.id` do snapshot (opção por `id`). Validados contra a versão.
+  valores        Json                 @default("{}")
+  /// Origem do Registro. Story 3.4 materializa só `NOVO_REGISTRO` (criação interna); Automação (E4) e público
+  /// entram com seus consumidores (AD-11).
+  origin         RecordOrigin         @default(NOVO_REGISTRO)
+  /// Estado de CICLO DE VIDA (Story 3.4), eixo próprio. Dois estados canônicos; `restaurado`/`arquivado` são
+  /// TRANSIÇÕES. Coluna que o runtime pode UPDATE (GRANT column-scoped), junto de `valores`/`updatedAt`.
+  lifecycleState RecordLifecycleState @default(ATIVO)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  database     Database        @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  form         Form            @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion  FormVersion     @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+  history      RecordHistory[]
+
+  // Um retry da mesma operação lógica não cria um 2º Registro no mesmo Database.
+  @@unique([orgId, databaseId, idempotencyKey])
+  // Consulta por Database (a visualização 3.5 consumirá).
+  @@index([orgId, databaseId])
+  @@map("Record")
+}
+
+/// RecordHistory — trilha própria do Registro (write-side, Story 3.4). Dado operacional org-owned (AD-10). É
+/// **append-only e IMUTÁVEL**: o runtime recebe **só SELECT+INSERT** (sem UPDATE/DELETE — ver GRANT), como
+/// `CardHistory`/`FormVersion`. Distinta da Auditoria/Log técnico (AD-15): é histórico de negócio, legível.
+///
+/// Vocabulário inicial: `CREATED`/`VALUES_UPDATED`/`ARCHIVED`/`RESTORED`. Eventos de arquivo (3.8) e de vínculo
+/// (3.9, com `correlationId`) entram com suas Stories. O evento é escrito na MESMA transação da mutação (AD-13):
+/// não há Registro/mutação sem evento. Correção = NOVO evento (não altera o original — imutabilidade do banco).
+/// A CONSULTA da timeline (projeção/autorização por acesso atual/mascaramento) é a 3.6 (read-side).
+model RecordHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @db.Uuid
+  recordId  String   @db.Uuid
+  /// Vocabulário do evento (3.4: CREATED/VALUES_UPDATED/ARCHIVED/RESTORED). String — a taxonomia cresce em 3.8/3.9.
+  type      String
+  /// Resumo legível do evento (sem PII desnecessária).
+  summary   String
+  /// Ator/iniciador que originou o evento (quando disponível).
+  actorId   String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  record       Record       @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, recordId, createdAt])
+  @@map("RecordHistory")
+}
+
+/// Estado de CICLO DE VIDA do Registro (Story 3.4). Dois estados canônicos e persistentes; `restaurado`/
+/// `arquivado` NÃO são estados — são transições. Sem `FINALIZADO` (é do Card): restaurar volta sempre a ATIVO.
+enum RecordLifecycleState {
+  ATIVO
+  ARQUIVADO
+}
+
+/// Origem do Registro (Story 3.4). Só `NOVO_REGISTRO` tem consumidor agora (criação interna autenticada);
+/// `AUTOMACAO` (E4) e público entram com suas Stories (AD-11 — sem antecipar valores sem consumidor).
+enum RecordOrigin {
+  NOVO_REGISTRO
 }
