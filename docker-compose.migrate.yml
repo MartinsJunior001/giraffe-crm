@@ -6,7 +6,10 @@
 # exatamente o que o AD-32 proíbe (cada réplica/restart viraria uma tentativa concorrente de DDL).
 # Um arquivo que o deploy nunca lê elimina a classe de erro, em vez de mitigá-la.
 #
-# Uso (a partir do diretório que contém os dois arquivos, com o `db` JÁ de pé):
+# Uso (a partir do diretório que contém os dois arquivos, com o `db` JÁ de pé). O `run` precisa
+# entrar na MESMA rede do projeto Compose que está no ar: se o project name do deploy não for o
+# basename do diretório (ex.: Coolify usa o UUID da aplicação — confira com `docker compose ls`),
+# acrescente `-p <project>` a TODOS os comandos abaixo, ou `db:5432` não resolve:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
 #     run --rm --build --no-deps migrate                    # aplica as migrations pendentes
