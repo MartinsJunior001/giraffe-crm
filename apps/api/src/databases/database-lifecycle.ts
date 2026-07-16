@@ -27,10 +27,7 @@ export interface PlanoTransicaoDatabase {
  * Arquivar: `ACTIVE → ARCHIVED` com `archivedAt = agora`. Já-`ARCHIVED` → idempotente (não reescreve
  * `archivedAt`, preserva o instante original). Recebe `agora` por injeção para ser puro/testável.
  */
-export function planejarArquivamento(
-  state: DatabaseState,
-  agora: Date,
-): PlanoTransicaoDatabase {
+export function planejarArquivamento(state: DatabaseState, agora: Date): PlanoTransicaoDatabase {
   if (state === 'ARCHIVED') {
     return { aplicar: false, novoState: 'ARCHIVED', archivedAt: undefined };
   }

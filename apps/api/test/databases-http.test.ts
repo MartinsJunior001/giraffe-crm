@@ -160,7 +160,9 @@ describe('CA2/CA3: arquivar não é bloqueado; somente-leitura integral (D1)', (
 
   it('arquivar já-arquivado é no-op idempotente (200), sem reescrever archivedAt', async () => {
     const base = await criarBase('Idempotente arquivar');
-    const um = (await (await req('POST', `/databases/${base.id}/archive`, ANA)).json()) as DatabaseResp;
+    const um = (await (
+      await req('POST', `/databases/${base.id}/archive`, ANA)
+    ).json()) as DatabaseResp;
     const dois = await req('POST', `/databases/${base.id}/archive`, ANA);
     expect(dois.status).toBe(200);
     const doisBody = (await dois.json()) as DatabaseResp;
@@ -211,7 +213,9 @@ describe('CA4: restaurar preserva identidade e reabilita a escrita', () => {
 
     // restaurar → renomear → arquivar novamente
     expect((await req('POST', `/databases/${base.id}/restore`, ANA)).status).toBe(200);
-    expect((await req('PATCH', `/databases/${base.id}`, ANA, { name: 'Nome livre' })).status).toBe(200);
+    expect((await req('PATCH', `/databases/${base.id}`, ANA, { name: 'Nome livre' })).status).toBe(
+      200,
+    );
     const rearquivado = (await (
       await req('POST', `/databases/${base.id}/archive`, ANA)
     ).json()) as DatabaseResp;
@@ -251,8 +255,8 @@ describe('CA5: sem exclusão, deny-by-default e não-enumeração', () => {
   });
 
   it('inexistente (UUID válido) → 404', async () => {
-    expect(
-      (await req('GET', '/databases/00000000-0000-4000-8000-000000000000', ANA)).status,
-    ).toBe(404);
+    expect((await req('GET', '/databases/00000000-0000-4000-8000-000000000000', ANA)).status).toBe(
+      404,
+    );
   });
 });

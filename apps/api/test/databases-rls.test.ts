@@ -31,7 +31,9 @@ const criados: string[] = []; // ids de Database a remover no final (todos na Or
 
 beforeAll(async () => {
   if (!databaseUrl) {
-    throw new Error('DATABASE_URL ausente: os testes de RLS de Database exigem um PostgreSQL real.');
+    throw new Error(
+      'DATABASE_URL ausente: os testes de RLS de Database exigem um PostgreSQL real.',
+    );
   }
   if (!migratorUrl) {
     throw new Error(
@@ -82,7 +84,9 @@ describe('escrita e leitura de Database com contexto (CA6 / AC5)', () => {
     const id = randomUUID();
     criados.push(id);
 
-    const base = await db.database.create({ data: { id, orgId: ORG_C, name: 'Base RLS positiva' } });
+    const base = await db.database.create({
+      data: { id, orgId: ORG_C, name: 'Base RLS positiva' },
+    });
     expect(base.orgId).toBe(ORG_C);
     expect(base.state).toBe('ACTIVE');
     expect(base.archivedAt).toBeNull();
@@ -133,7 +137,9 @@ describe('contexto ausente falha fechado', () => {
     // Client CRU (sem a extensão): `current_org_id()` devolve NULL, nenhuma policy casa.
     expect(await prisma.database.findMany()).toEqual([]);
     await expect(
-      prisma.database.createMany({ data: [{ id: randomUUID(), orgId: ORG_C, name: 'Sem contexto' }] }),
+      prisma.database.createMany({
+        data: [{ id: randomUUID(), orgId: ORG_C, name: 'Sem contexto' }],
+      }),
     ).rejects.toThrow(/row-level security/i);
   });
 });
