@@ -1,7 +1,7 @@
 ---
 story_key: 3-2-papeis-e-acesso-por-database
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: CRÍTICO
 baseline_commit: 29cf323
@@ -14,7 +14,7 @@ gate_arquitetura: Nova entidade organizacional (DatabaseGrant) com nova tabela +
 **I want** conceder e revogar papéis por Database,
 **So that** cada pessoa acesse apenas as bases autorizadas, com o poder correto (Database ≠ Pipe).
 
-**Status: ready-for-dev.** Segunda Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos),
+**Status: done.** Segunda Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos),
 risco **CRÍTICO** — introduz a autorização **fina por Database** sobre o substrato materializado pela 3.1,
 com **nova entidade** (`DatabaseGrant`), **nova tabela + 2 enums + RLS/FORCE + migration versionada + índice
 único parcial**, tocando o **invariante-mãe** (isolamento por Organização) e abrindo o sujeito CASL
@@ -160,8 +160,31 @@ usuário sem papel **não** vê o Database (404 não-enumerante); revogar corta 
   acesso fino por Database; `ler Database` grossa); Spec Kit completo (`spec.md`, `checklists/requirements.md`,
   `research.md`, `data-model.md`, `contracts/`, `plan.md`, `tasks.md`, `analyze`); `safe-implementation` e
   `code-review` em `gates/3-2/`.
-  - [ ] **Revisão adversarial independente** — não auto-atestável por quem implementou.
-  - [ ] **`commit-check`** — último gate, no momento do commit.
+  - [x] **Revisão adversarial independente** — três camadas read-only (Segurança, Edge Cases, Aceite).
+  - [x] **`commit-check`** — último gate, `APPROVED FOR COMMIT`.
+
+### Review Findings
+
+Revisão de encerramento (code-review, 2026-07-16) com três camadas adversariais read-only paralelas
+(Segurança, Edge Cases, Aceite) sobre o diff da Story 3.2 + spec. Resultado: **nenhum achado `high`/`crítico`**;
+veredito de Aceite = **APROVADO** (6/6 Acceptance Criteria e os gates RV-1/RV-2/RV-3 atendidos e testados;
+decisões Q1–Q4/RD-1 conferidas; C3/guard congelados; role dormente sem antecipação de escopo). Triagem dos
+achados menores:
+
+- **Segurança — BAIXO (defesa em profundidade):** o ciclo de vida (renomear/arquivar/restaurar) autoriza pela
+  guarda **grossa** `@Requer('administrar','Database')` (Admin-da-Org-only via CASL), não por checagem fina no
+  serviço. **Decisão: manter** — a autorização de ciclo de vida é grossa por design (RV-2), e mantê-la
+  Admin-da-Org-only é o próprio RV-3; um `exigirGerenciarDatabase` no serviço deixaria o **Admin do Database**
+  arquivar, violando o RV-3. Não é vulnerabilidade viva; o decorator é o guard pretendido.
+- **Edge Cases — MÉDIO (cobertura):** o caminho de escopo cross-Database (`grant.databaseId !== databaseId` → 404),
+  correto no código, estava sem teste. **Corrigido nesta Story** — caso adicionado (686/686 na suíte serial).
+- **LOW/INFO (ordenação por `createdAt` sem desempate; grants em Database arquivado não bloqueados; leitura dupla
+  em `obter`):** aceitos — espelham o precedente já mergeado de `PipeGrant` (2.2) ou são contrato futuro
+  intencional (3.3+); registrados, sem ação nesta Story.
+
+Gates de conclusão (security/observability/migration-SC-206/lgpd/backup/performance) verdes em `gates/3-2/T020`.
+CI do PR #76 verde (Qualidade, Segurança/Trivy, Testes PostgreSQL real, Containers boot+smoke); merge `--no-ff`
+(commit `cf57026`). Base para `status = done`.
 
 ---
 
