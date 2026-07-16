@@ -97,7 +97,7 @@ development_status:
   2-14-movimentacao-e-regras-de-transicao: done
   2-15-formulario-de-fase-e-bloqueio-de-transicao: done
   2-16-evento-canonico-de-movimentacao-e-contrato-opt-in: done
-  2-17-historico-do-card-consulta-da-timeline: ready-for-dev
+  2-17-historico-do-card-consulta-da-timeline: done
   2-18-integracao-fr32-pipes-relacionados-no-perfil: backlog
   epic-2-retrospective: optional
 
