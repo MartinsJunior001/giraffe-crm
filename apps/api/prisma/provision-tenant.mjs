@@ -219,6 +219,18 @@ async function mainCli() {
     throw new Error('MIGRATION_DATABASE_URL ausente — o provisionamento usa o papel migrator.');
   }
 
+  // Segredo do Better Auth: OBRIGATÓRIO e igual ao do runtime. O hash da senha do Admin é derivado
+  // dele; provisionar com o fallback (ou um segredo diferente) geraria um hash que o runtime não
+  // valida — o Admin nunca conseguiria logar, e o defeito só apareceria no primeiro acesso. Fail
+  // closed AQUI (e não no Compose, que penalizaria migrate/status/rollback): cita só o NOME.
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    throw new Error(
+      'BETTER_AUTH_SECRET ausente — o provisionamento precisa do MESMO segredo do runtime para ' +
+        'gerar um hash de senha que o login aceite (ver .env.example).',
+    );
+  }
+
   // Senha: fornecida OU gerada forte e impressa UMA vez. Nunca um valor padrão.
   let senha = process.env.PROVISION_ADMIN_PASSWORD;
   let senhaGerada = false;
@@ -243,7 +255,7 @@ async function mainCli() {
 
   const prisma = new PrismaClient({ datasourceUrl: url });
   const auth = betterAuth({
-    secret: process.env.BETTER_AUTH_SECRET ?? 'provision-only-secret-'.padEnd(48, 'x'),
+    secret,
     database: prismaAdapter(prisma, { provider: 'postgresql' }),
     emailAndPassword: { enabled: true },
     user: { modelName: 'Account' },

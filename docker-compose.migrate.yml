@@ -17,6 +17,11 @@
 #   ... run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status    # estado
 #   ... run --rm --no-deps migrate node ../../scripts/db-migrate.mjs rollback  # ⚠️ DESTRUTIVO
 #
+# Provisionamento do 1º tenant (tech-2), reusando a MESMA imagem (serviço `provision`):
+#
+#   PROVISION_ORG_NAME="..." PROVISION_ADMIN_EMAIL="..." \
+#     docker compose -f docker-compose.yml -f docker-compose.migrate.yml run --rm --no-deps provision
+#
 # `--no-deps` é deliberado: o serviço NÃO deve criar/recriar o `db` — se o banco não está de pé,
 # migrar está errado de qualquer forma, e um `run` sem a flag poderia recriar o `db` com a config
 # mesclada deste arquivo, derrubando o ambiente que só queria migrar.
@@ -40,3 +45,37 @@ services:
       # Papel DONO do schema (giraffe_migrator) — só aqui, nunca no runtime (AD-6). A URL é
       # montada pelo Compose a partir da MESMA variável do bootstrap; ninguém digita DSN.
       MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+
+  # Provisionamento do PRIMEIRO tenant (tech-2) — MESMA imagem `migrate`, comando próprio.
+  # Existe como serviço separado (e não um `-e` no `migrate`) para que o SEGREDO nunca vá na linha
+  # de comando: `BETTER_AUTH_SECRET` é INTERPOLADO pelo Compose a partir do `.env` (o mesmo que o
+  # Coolify já escreve), nunca digitado nem extraído por `grep`/substituição. Os dados NÃO secretos
+  # do tenant (nome da Org, e-mail/nome do Admin) vêm de variáveis de ambiente do shell, também por
+  # interpolação. A senha do Admin, se omitida, é GERADA e impressa UMA vez pelo próprio script.
+  provision:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    restart: 'no'
+    networks:
+      interna: {}
+    environment:
+      # Papel migrator: único que INSERE em Organization (o runtime tem só SELECT/UPDATE).
+      MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+      # O MESMO segredo do runtime — o hash da senha PRECISA ser gerado com ele, senão o Admin não
+      # loga. Vem do `.env` por interpolação. Opcional AQUI (`:-`) de propósito: um `:?` obrigaria
+      # TODA invocação do arquivo (inclusive `migrate`/`status`/`rollback`) a tê-lo. O fail-closed
+      # de verdade vive no script (`provision-tenant.mjs` recusa segredo ausente) — o ponto onde o
+      # segredo é de fato exigido, sem penalizar os outros serviços.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # Dados do 1º tenant — NÃO secretos; interpolados do shell. Opcionais AQUI (pela mesma razão);
+      # nome/e-mail obrigatórios são validados PELO script (fail-closed, mensagem honesta).
+      PROVISION_ORG_NAME: ${PROVISION_ORG_NAME:-}
+      PROVISION_ORG_SLUG: ${PROVISION_ORG_SLUG:-}
+      PROVISION_ADMIN_EMAIL: ${PROVISION_ADMIN_EMAIL:-}
+      PROVISION_ADMIN_NAME: ${PROVISION_ADMIN_NAME:-Administrador}
+      # Senha OPCIONAL: ausente ⇒ o script gera forte e imprime UMA vez. Se fornecida, use um
+      # arquivo de ambiente do shell (nunca `-e ...=valor`), pela mesma razão do segredo.
+      PROVISION_ADMIN_PASSWORD: ${PROVISION_ADMIN_PASSWORD:-}
+    command: ['node', 'prisma/provision-tenant.mjs']
