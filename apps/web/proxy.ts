@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { getPublicOrigin } from '@/lib/env';
 import {
   SESSION_COOKIE,
   SESSION_COOKIE_SECURE,
@@ -22,10 +23,12 @@ import {
 export function proxy(req: NextRequest): NextResponse {
   const nomes = req.cookies.getAll().map((c) => c.name);
   if (decidirAcesso(req.nextUrl.pathname, nomes) === 'login') {
-    // Redirect RELATIVO, nunca `nextUrl.clone()`: atrás de proxy, o host do `nextUrl` é o bind
-    // interno do container (`0.0.0.0:3000`) e o clone mandaria o browser para fora do ar. O
-    // caminho relativo é resolvido pelo browser contra a origem pública em que ele já está.
-    return new NextResponse(null, { status: 307, headers: { location: '/login' } });
+    // Redirect ABSOLUTO sobre a ORIGEM PÚBLICA configurada — nem `nextUrl.clone()` (atrás de
+    // proxy o host do `nextUrl` é o bind interno `0.0.0.0:3000`, fora do ar), nem `Location`
+    // relativa (nos ROUTE HANDLERS ela passa intacta e funciona, mas AQUI o wrapper do servidor
+    // do Next parseia a Location do middleware como URL absoluta e responde 500 ERR_INVALID_URL
+    // — visto em staging; o teste unitário não pega porque chama `proxy()` sem o wrapper).
+    return NextResponse.redirect(new URL('/login', getPublicOrigin()));
   }
 
   const res = NextResponse.next();
