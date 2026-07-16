@@ -34,6 +34,36 @@ COPY apps/api/package.json ./apps/api/package.json
 # produção; o client já foi gerado no stage `build`.
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts --filter @giraffe/api...
 
+# Migrate: imagem ONE-SHOT para aplicar migrations como ETAPA CONTROLADA (AD-17/AD-32) em
+# ambientes onde o host não tem o repositório instalado (ex.: staging via Coolify).
+#
+# Este stage NÃO é o runtime: fica ANTES dele de propósito (o build sem `target` usa o ÚLTIMO
+# stage, e o serviço `api` do Compose precisa continuar produzindo o runtime). Ele carrega o
+# que o runtime deliberadamente exclui — o CLI do Prisma (devDependency, vindo do stage de
+# build) e `prisma/` (migrations, rollback, seed, bootstrap) — porque migrar É o seu único
+# propósito. A credencial entra só em runtime, via `MIGRATION_DATABASE_URL` no ambiente do
+# `docker compose run` (ver docker-compose.migrate.yml); nenhum segredo é copiado para a imagem.
+#
+# Concorrência: o `prisma migrate deploy` adquire um ADVISORY LOCK do PostgreSQL (timeout fixo
+# de 10s) — duas execuções simultâneas não se atropelam: a segunda falha explicitamente e se
+# re-executa. (Documentado em prisma.io/docs/orm/prisma-migrate/workflows/development-and-production.)
+FROM node:24-slim AS migrate
+ENV NODE_ENV=production
+# Mesma redução de superfície do runtime: sem npm/corepack (nada é instalado aqui).
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
+WORKDIR /repo/apps/api
+# node_modules do stage de BUILD (com devDependencies): é onde vive o CLI do Prisma.
+COPY --from=build /repo/node_modules /repo/node_modules
+COPY --from=build /repo/apps/api/node_modules /repo/apps/api/node_modules
+COPY --from=build /repo/apps/api/prisma /repo/apps/api/prisma
+COPY apps/api/package.json /repo/apps/api/package.json
+# O runner é o MESMO script do repositório (uma única verdade sobre como se migra):
+# ele exige MIGRATION_DATABASE_URL e nunca imprime valor de variável, só nomes.
+COPY scripts/db-migrate.mjs /repo/scripts/db-migrate.mjs
+USER node
+CMD ["node", "../../scripts/db-migrate.mjs", "deploy"]
+
 # Runtime: preserva o layout /repo (store .pnpm na raiz + symlinks em apps/api) para a
 # resolução de módulos funcionar; usuário não-root; sem segredos.
 FROM node:24-slim AS runtime
