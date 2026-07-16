@@ -123,10 +123,14 @@ describe('logout — mesmos invariantes do login', () => {
   });
 });
 
-describe('proxy — proteção de rota redireciona RELATIVO', () => {
-  it('sem cookie, a Location é /login sem esquema/host (nunca o bind interno)', () => {
+describe('proxy — proteção de rota redireciona à ORIGEM PÚBLICA', () => {
+  it('sem cookie, a Location é absoluta sobre a origem configurada (nunca o bind interno)', () => {
+    // O wrapper do servidor do Next parseia a Location do MIDDLEWARE como URL absoluta
+    // (relativa ⇒ 500 ERR_INVALID_URL em produção — visto no staging), então aqui o redirect
+    // é absoluto sobre a origem pública configurada; nos route handlers, relativo continua.
+    vi.stubEnv('WEB_PUBLIC_ORIGIN', ORIGEM_PUBLICA);
     const res = proxy(new NextRequest(new URL(`${BIND_INTERNO}/painel`)));
     expect(res.status).toBe(307);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe(`${ORIGEM_PUBLICA}/login`);
   });
 });
