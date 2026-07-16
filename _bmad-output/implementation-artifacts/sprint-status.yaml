@@ -80,7 +80,7 @@ development_status:
   epic-8-retrospective: optional
 
   # ===== Wave 3 — Épico 2: Pipes, Fases, Formulários e Cards =====
-  epic-2: in-progress
+  epic-2: done
   2-1-ciclo-de-vida-e-catalogo-de-pipes: done
   2-2-papeis-e-acesso-por-pipe: done
   2-3-gerenciamento-de-fases: done
@@ -98,7 +98,7 @@ development_status:
   2-15-formulario-de-fase-e-bloqueio-de-transicao: done
   2-16-evento-canonico-de-movimentacao-e-contrato-opt-in: done
   2-17-historico-do-card-consulta-da-timeline: done
-  2-18-integracao-fr32-pipes-relacionados-no-perfil: ready-for-dev
+  2-18-integracao-fr32-pipes-relacionados-no-perfil: done
   epic-2-retrospective: optional
 
   # ===== Wave 4 — Épico 3: Databases, Registros, Vínculos e Arquivos =====
