@@ -47,6 +47,14 @@ enum PipeState {
   ARCHIVED
 }
 
+/// Estado do Database (Story 3.1). Twin de `PipeState`, entidade DISTINTA (Database ≠ Pipe — RN-061).
+/// Arquivar é MUDANÇA DE ESTADO, não exclusão (runtime sem GRANT DELETE) e coloca o Database em
+/// SOMENTE-LEITURA INTEGRAL: em `ARCHIVED`, renomear é bloqueado (409) e a única escrita é `restaurar`.
+enum DatabaseState {
+  ACTIVE
+  ARCHIVED
+}
+
 /// Papel POR Pipe (Story 2.2, decisão de Produto D1.4). Conjunto enxuto e fechado:
 /// ADMIN administra a CONFIG do Pipe (não o ciclo de vida — isso é do Admin da Org, Story 2.1);
 /// MEMBER edita os recursos acessíveis do Pipe; VIEWER (Somente leitura) consulta sem editar/mover.
@@ -278,6 +286,7 @@ model Organization {
 
   memberships       Membership[]
   pipes             Pipe[]
+  databases         Database[]
   pipeGrants        PipeGrant[]
   phases            Phase[]
   forms             Form[]
@@ -328,6 +337,35 @@ model Pipe {
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
   @@map("Pipe")
+}
+
+/// Database — base de dados estruturada, org-owned (Story 3.1). Twin ESTRUTURAL de `Pipe`, entidade
+/// DISTINTA (Database ≠ Pipe — RN-061): catálogo/subject/módulo próprios, nunca reusa os de `Pipe`.
+///
+/// Isolamento pelo BANCO (RLS na migration `..._databases`): ENABLE **e** FORCE ROW LEVEL SECURITY,
+/// policies por `orgId = current_org_id()` com `WITH CHECK` no INSERT e no UPDATE. Runtime recebe
+/// SELECT/INSERT/UPDATE — **sem DELETE**: arquivar é `state = ARCHIVED`, não exclusão.
+///
+/// **Sem unicidade de `name`**: o identificador estável é o `id` (AD-11); nome único org-scoped
+/// colidiria no restaurar. **Sem `locked`/`starred`** (não estão na epics da 3.1 — não inventar).
+/// Arquivar coloca em SOMENTE-LEITURA INTEGRAL: em `ARCHIVED` o único write-side é `restaurar`
+/// (renomear → 409). As escritas sobre dados dependentes (Formulário/Registro/Campo/arquivo/vínculo)
+/// são contrato futuro (3.3/3.4/3.7/3.8/3.9), enforçadas pelo owner checando `state === ACTIVE`.
+model Database {
+  id         String        @id @default(uuid()) @db.Uuid
+  orgId      String        @db.Uuid
+  name       String
+  state      DatabaseState @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  /// Momento do arquivamento (null quando ativo). Arquivar preserva os dados; só muda estado.
+  archivedAt DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
+  @@index([orgId, state])
+  @@map("Database")
 }
 
 /// Phase — Fase do fluxo DENTRO de um Pipe (Story 2.3). Dado operacional org-owned (AD-10).
