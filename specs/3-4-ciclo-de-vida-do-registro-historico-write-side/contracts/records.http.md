@@ -10,9 +10,11 @@ Todas sob `@Controller('databases/:databaseId')`, `@Requer('ler','Database')` (g
   - Corpo: `{ idempotencyKey: string (obrigatória), valores: object }`.
   - Cria ≤1 Registro contra a `FormVersion` **publicada** vigente; valida `valores` contra o snapshot (allowlist,
     tipo, Seleção por `id`); evento `CREATED`. Idempotência por `[orgId, databaseId, idempotencyKey]`.
-  - **200** (em vez de 201) quando a chave repete uma criação já feita (idempotente — devolve o existente).
-  - Erros: 400 (idempotencyKey ausente / valores inválidos / Formulário não publicado); 403 (VIEWER); 404 (sem
-    acesso / Database inexistente); 409 (corrida de idempotência irreconciliável — P2002/P2028).
+  - **Idempotente:** um retry com a mesma `idempotencyKey` devolve o MESMO Registro (também **201** — paridade com
+    a submissão de Card 2.7; não duplica).
+  - Erros: 400 (idempotencyKey ausente / valores inválidos); 403 (VIEWER); 404 (sem acesso / Database
+    inexistente); 409 (Formulário de Database **não publicado**; Database arquivado `DATABASE_ARQUIVADO`; corrida
+    de idempotência irreconciliável — P2002/P2028).
 - `PATCH /databases/:databaseId/records/:recordId` → **200** `RecordVisao`
   - Corpo: `{ valores: object }`. Revalida contra a `FormVersion` **do próprio Registro** (congelada). Evento
     `VALUES_UPDATED`.
@@ -37,8 +39,9 @@ Todas sob `@Controller('databases/:databaseId')`, `@Requer('ler','Database')` (g
 
 ## Status codes
 
-- 201: criar Registro (nova criação). 200: idempotente/obter/editar/arquivar/restaurar.
-- 400: idempotencyKey ausente, valores inválidos (chave desconhecida/tipo/Seleção), Formulário não publicado.
+- 201: criar Registro (nova criação **e** retry idempotente — paridade com Card 2.7). 200: obter/editar/arquivar/
+  restaurar.
+- 400: idempotencyKey ausente, valores inválidos (chave desconhecida/tipo/Seleção).
 - 403: VIEWER do Database ao operar. 404: sem acesso ao Database/Registro (não-enumerante) / owner inválido.
-- 409: idempotência irreconciliável (P2002/P2028); guarda otimista de estado; `RECORD_ARQUIVADO`/
-  `DATABASE_ARQUIVADO`; transição inválida.
+- 409: Formulário de Database **não publicado**; idempotência irreconciliável (P2002/P2028); guarda otimista de
+  estado; `RECORD_ARQUIVADO`/`DATABASE_ARQUIVADO`.
