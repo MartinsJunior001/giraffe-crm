@@ -11,10 +11,24 @@ import type { withTenantContext } from '../../kernel/db/tenant-context';
 
 type Db = ReturnType<typeof withTenantContext>;
 
-/** Alvo de um Formulário: sempre um Pipe; opcionalmente uma Fase dele (contexto de Fase). */
+/**
+ * Alvo de um Formulário. Três formas mutuamente exclusivas (o contexto é derivado em `resolverContexto`):
+ *  - `{ pipeId }` → Formulário inicial do Pipe (`PIPE_INITIAL`);
+ *  - `{ pipeId, phaseId }` → Formulário de Fase (`PHASE`);
+ *  - `{ databaseId }` → Formulário de Database (`DATABASE`, Story 3.3).
+ * A autorização (por Pipe ou por Database) é roteada em `form-authz.ts`, não aqui.
+ */
 export interface AlvoFormulario {
-  pipeId: string;
+  pipeId?: string;
   phaseId?: string | null;
+  databaseId?: string;
+}
+
+/** Owner concreto derivado do alvo (exatamente um preenchido). */
+export interface OwnerFormulario {
+  pipeId?: string;
+  phaseId?: string;
+  databaseId?: string;
 }
 
 /** Projeção fixa do Formulário (sem `orgId`). */
@@ -23,6 +37,7 @@ export const SELECT_FORM = {
   context: true,
   pipeId: true,
   phaseId: true,
+  databaseId: true,
 } as const;
 
 /** 404 (não-enumerante) se a Fase não existe ou não é deste Pipe (RN-030 — Fase não migra). */
@@ -38,7 +53,12 @@ export async function exigirFaseDoPipe(db: Db, pipeId: string, phaseId: string):
 export async function resolverContexto(
   db: Db,
   alvo: AlvoFormulario,
-): Promise<{ context: FormContext; owner: { pipeId?: string; phaseId?: string } }> {
+): Promise<{ context: FormContext; owner: OwnerFormulario }> {
+  // Database (Story 3.3): a existência/autorização do Database é do `form-authz` (resolverPoderNoDatabase → 404).
+  if (alvo.databaseId) {
+    return { context: 'DATABASE', owner: { databaseId: alvo.databaseId } };
+  }
+  if (!alvo.pipeId) throw new NotFoundException();
   if (alvo.phaseId) {
     await exigirFaseDoPipe(db, alvo.pipeId, alvo.phaseId);
     return { context: 'PHASE', owner: { phaseId: alvo.phaseId } };
@@ -51,10 +71,16 @@ export async function acharForm(
   db: Db,
   orgId: string,
   context: FormContext,
-  owner: { pipeId?: string; phaseId?: string },
+  owner: OwnerFormulario,
 ) {
   return db.form.findFirst({
-    where: { orgId, context, pipeId: owner.pipeId ?? null, phaseId: owner.phaseId ?? null },
+    where: {
+      orgId,
+      context,
+      pipeId: owner.pipeId ?? null,
+      phaseId: owner.phaseId ?? null,
+      databaseId: owner.databaseId ?? null,
+    },
     select: SELECT_FORM,
   });
 }

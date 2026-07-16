@@ -381,6 +381,7 @@ model Database {
 
   organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grants       DatabaseGrant[]
+  forms        Form[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -585,6 +586,8 @@ model Form {
   pipeId           String?        @db.Uuid
   /// Owner do contexto `PHASE` (null nos demais).
   phaseId          String?        @db.Uuid
+  /// Owner do contexto `DATABASE` (null nos demais). Story 3.3. CHECK na migration garante a coerência.
+  databaseId       String?        @db.Uuid
   /// Número da `FormVersion` publicada corrente (null = rascunho/despublicado). Story 2.6. É NÚMERO, não FK,
   /// de propósito: evita o ciclo de FK Form↔FormVersion e não há risco de ponteiro pendente (versões nunca
   /// são deletadas e o ponteiro só é gravado para uma versão recém-criada na MESMA transação de publicação).
@@ -606,15 +609,17 @@ model Form {
   organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipe              Pipe?              @relation(fields: [pipeId], references: [id], onDelete: Cascade)
   phase             Phase?             @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  database          Database?          @relation(fields: [databaseId], references: [id], onDelete: Cascade)
   fields            Field[]
   versions          FormVersion[]
   cards             Card[]
   publicSubmissions SubmissaoPublica[]
   publicRoutes      PublicFormRoute[]
 
-  // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId, context).
+  // Acesso começa por Org; a resolução por owner busca por (orgId, pipeId|phaseId|databaseId, context).
   @@index([orgId, pipeId])
   @@index([orgId, phaseId])
+  @@index([orgId, databaseId])
   @@map("Form")
 }
 

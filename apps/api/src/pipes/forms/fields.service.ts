@@ -9,7 +9,7 @@ import { type FieldType, Prisma } from '../../../generated/prisma';
 import { RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
-import { exigirGerenciarPipe } from '../pipe-authz';
+import { exigirGerenciarForm } from './form-authz';
 import { type EditarCampoDTO } from './fields.dto';
 import { type AlvoFormulario, acharForm, resolverContexto } from './form-locate';
 import { type CampoVisao, SELECT_CAMPO } from './forms.service';
@@ -214,7 +214,8 @@ export class FieldsService {
   }
 
   /**
-   * Guarda comum: exige **gerenciar** o Pipe (403/404 — reusa `pipe-authz`), localiza o Formulário do
+   * Guarda comum: exige **gerenciar** o Formulário do contexto (403/404 — `form-authz` roteia por contexto:
+   * Pipe/Fase → `pipe-authz`; Database → `database-authz`), localiza o Formulário do
    * contexto (404 se não materializado — evoluir pressupõe Campo) e o Campo por `id` **confirmando o
    * `formId`** (404 não-enumerante se não é deste Formulário). Devolve `db`, `form` e o Campo (com `type`,
    * `typeConfig`, `state`).
@@ -234,7 +235,7 @@ export class FieldsService {
     };
   }> {
     const { contexto, db } = this.db();
-    await exigirGerenciarPipe(db, contexto, alvo.pipeId);
+    await exigirGerenciarForm(db, contexto, alvo);
     const { context, owner } = await resolverContexto(db, alvo);
     const form = await acharForm(db, contexto.orgId, context, owner);
     if (!form) throw new NotFoundException();
