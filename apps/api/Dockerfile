@@ -57,6 +57,11 @@ WORKDIR /repo/apps/api
 COPY --from=build /repo/node_modules /repo/node_modules
 COPY --from=build /repo/apps/api/node_modules /repo/apps/api/node_modules
 COPY --from=build /repo/apps/api/prisma /repo/apps/api/prisma
+# O client Prisma GERADO (engine nativo Linux) — necessário para o provisionamento do 1º tenant
+# (tech-2, `prisma/provision-tenant.mjs`), que importa `../generated/prisma` e o `better-auth` para
+# gerar o hash de senha pelo MESMO caminho do runtime. As migrations (`db-migrate.mjs`) usam o CLI e
+# não dependem dele; ele entra aqui porque este stage também é o veículo do provisionamento.
+COPY --from=build /repo/apps/api/generated /repo/apps/api/generated
 COPY apps/api/package.json /repo/apps/api/package.json
 # O runner é o MESMO script do repositório (uma única verdade sobre como se migra):
 # ele exige MIGRATION_DATABASE_URL e nunca imprime valor de variável, só nomes.

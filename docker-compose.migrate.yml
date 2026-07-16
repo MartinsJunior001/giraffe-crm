@@ -48,3 +48,34 @@ services:
       # caminho de migração local/CI, sem esse segredo, não falhe — o hash scrypt do Better Auth é
       # salt-based e não é chaveado por ele, então sua ausência não invalida o provisionamento.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+
+  # Provisionamento do PRIMEIRO tenant (tech-2) — MESMA imagem `migrate`, comando próprio. Existe como
+  # serviço separado (não um `-e` no `migrate`) para que o SEGREDO e os dados do tenant cheguem pela
+  # CONFIGURAÇÃO do Compose (interpolados do `.env`/ambiente do shell), NUNCA pela linha de comando.
+  #
+  #   PROVISION_ORG_NAME="..." PROVISION_ADMIN_EMAIL="..." \
+  #     docker compose -f docker-compose.yml -f docker-compose.migrate.yml run --rm --no-deps provision
+  provision:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    restart: 'no'
+    networks:
+      interna: {}
+    environment:
+      # Papel migrator: único que INSERE em Organization (o runtime tem só SELECT/UPDATE).
+      MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+      # O MESMO segredo do runtime, do `.env` por interpolação. Opcional (`:-`): o hash scrypt do Better
+      # Auth é salt-based e não é chaveado por ele — sua ausência não invalida o provisionamento.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # Dados do 1º tenant — NÃO secretos; interpolados do shell. Opcionais AQUI (um `:?` obrigaria TODA
+      # invocação do arquivo, inclusive migrate/status/rollback); nome/e-mail são validados PELO script.
+      PROVISION_ORG_NAME: ${PROVISION_ORG_NAME:-}
+      PROVISION_ORG_SLUG: ${PROVISION_ORG_SLUG:-}
+      PROVISION_ADMIN_EMAIL: ${PROVISION_ADMIN_EMAIL:-}
+      PROVISION_ADMIN_NAME: ${PROVISION_ADMIN_NAME:-Administrador}
+      # Senha OPCIONAL: ausente ⇒ o script gera forte e imprime UMA vez. Se fornecida, use um arquivo de
+      # ambiente do shell (nunca `-e ...=valor`), pela mesma razão do segredo.
+      PROVISION_ADMIN_PASSWORD: ${PROVISION_ADMIN_PASSWORD:-}
+    command: ['node', 'prisma/provision-tenant.mjs']
