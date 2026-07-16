@@ -1,7 +1,7 @@
 ---
 story_key: 3-4-ciclo-de-vida-do-registro-historico-write-side
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: CRÍTICO
 baseline_commit: 4e60ee4
@@ -14,7 +14,7 @@ gate_arquitetura: Materializa a 1ª entidade de DADO do titular no Database — 
 **I want** criar, editar, arquivar e restaurar Registros de forma idempotente,
 **So that** os dados do Database sejam mantidos sem perda nem duplicação, com trilha própria.
 
-**Status: ready-for-dev.** Quarta Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos), risco
+**Status: done.** Quarta Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos), risco
 **CRÍTICO** — materializa **`Record`** (o **Registro**, 1ª entidade de **dado do titular** do Database) e o
 **write-side** da sua trilha (`RecordHistory`, append-only). Reutiliza integralmente a maquinaria de **submissão
 de Card** (2.7 — validação contra snapshot da `FormVersion`, valores JSONB por `Field.id`, idempotência,
@@ -255,6 +255,19 @@ vínculo (3.9), Automação (E4).
 | Data | Mudança |
 |------|---------|
 | 2026-07-16 | Story criada (E3, Wave 4) a partir de `epics.md` (Story 3.4) e da Spine (FR-19, RN-062/063, AD-11/12/13/15). Risco **CRÍTICO** (1ª entidade de dado do titular no Database: `Record` + write-side `RecordHistory`). Escopo **congelado**: criar/editar/arquivar/restaurar Registro idempotente + write-side do Histórico, reusando a submissão de Card (2.7) e o ciclo de vida (2.11) sobre o Formulário de Database publicado (3.3). Acorda o MEMBER do Database (`exigirOperarDatabase`). Visualização (3.5), read-side (3.6), arquivos (3.7/3.8), vínculo (3.9), Automação (E4) = fora. Guard C3 congelado. Dependências 3.3/3.2 `done`. Status → **ready-for-dev** (após create-story). |
+| 2026-07-16 | Implementada, revisada (revisão adversarial CRÍTICA em 4 camadas sem achado CRÍTICO/ALTO; fase vermelha do GRANT column-scoped provada por mutação), integrada pelo **PR #80** (merge `47c6c5b`) com CI **verde** nos 4 jobs e drill de migration/rollback/reapply (**SC-206**) verde. Status → **done**. |
+
+## Review Findings
+
+Revisão adversarial CRÍTICA (4 camadas read-only sobre o diff da 3.4): **Segurança**, **Arquitetura/RLS**, **Edge Cases** e **Aceite**. **Nenhum achado CRÍTICO/ALTO de código.** Aceite **APROVADO** (AC1–AC7 e invariantes do dono atendidos; guard C3 congelado confirmado por `git diff 4e60ee4 -- apps/api/src/kernel/authz/` vazio).
+
+- **Segurança:** todo sítio de mutação passa por `exigirOperarDatabase` (VIEWER→403; sem acesso→404); leitura por `exigirLerDatabase`. `Record` GRANT **column-scoped** (só `lifecycleState`/`valores`/`updatedAt`) e **sem DELETE**; `RecordHistory` só `SELECT/INSERT` (imutável). RLS ENABLE+FORCE + `WITH CHECK` (INSERT e UPDATE). `valores` (PII) só no detalhe. Idempotência P2002/P2028 → nunca 500. **Fase vermelha provada por mutação:** uma coluna não concedida recebe **`42501 permission denied for table Record`** — o GRANT column-scoped é genuíno (grant indevido revogado após a prova).
+- **Arquitetura/RLS:** `Card ≠ Registro` — entidade/módulo/enum próprios (`databases/records/`), reusa a lógica (`submission.ts` puro, padrão de tx/idempotência/ciclo de vida) não as entidades de Card; sem ciclo de módulo (Databases→Pipes unidirecional). `formVersionId`/`databaseId` sem UPDATE → definição congelada (AD-12) e não-transferível (RN-063) garantidos pelo banco.
+- **Edge Cases / Aceite:** produção correta; ressalvas **documentais** (contrato) endereçadas.
+
+**Achados endereçados nesta Story:** contrato `records.http.md` corrigido — criação idempotente devolve **201** (paridade com Card 2.7), não 200; Formulário de Database **não publicado** é **409** (estado), não 400. O código já estava certo; a doc foi alinhada. Sem mudança de código.
+
+**Evidência de execução:** typecheck/lint/format/build verdes; testes-alvo **11/11** em PostgreSQL real; regressão de Card/Formulário de Database **39/39**; suíte serial **711/711**; **SC-206** verde; CI do PR #80 verde nos 4 jobs.
 
 ## Dev Agent Record
 
