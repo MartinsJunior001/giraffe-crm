@@ -24,6 +24,7 @@ const MODELOS_AUDITADOS = new Set([
   'Organization',
   'Membership',
   'Pipe',
+  'Database',
   'PipeGrant',
   'Phase',
   'Form',

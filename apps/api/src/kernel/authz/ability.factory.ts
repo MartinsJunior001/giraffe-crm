@@ -44,5 +44,14 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Pipe', { orgId });
   }
 
+  // Database (Story 3.1): entidade DISTINTA de Pipe (RN-061). Ao contrário de `ler Pipe` (grosseira
+  // para qualquer Membership, pois o acesso fino por concessão veio na 2.2), em 3.1 **só o Admin da
+  // Org** recebe QUALQUER ability de Database — ler E administrar. MEMBER/GUEST não têm nada até os
+  // papéis por Database (3.2): ausência de regra basta para negar (deny-by-default), sem `cannot`.
+  if (papel === 'ADMIN') {
+    can('ler', 'Database', { orgId });
+    can('administrar', 'Database', { orgId });
+  }
+
   return build();
 }

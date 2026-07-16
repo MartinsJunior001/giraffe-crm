@@ -29,7 +29,7 @@ export type AcaoAutorizada = 'ler' | 'administrar';
  * Épico consumir este substrato (o próprio arquivo prevê "eles chegam com regra própria nos Épicos") —
  * NÃO é uma alteração do mecanismo (C3 permanece congelado), é extensão do catálogo.
  */
-export type SujeitoAutorizado = 'Organizacao' | 'Pipe';
+export type SujeitoAutorizado = 'Organizacao' | 'Pipe' | 'Database';
 
 /**
  * Forma do sujeito `Organizacao` para as `conditions` (escopo por `id`). O CASL tipa as conditions e
@@ -48,5 +48,16 @@ export interface Pipe {
   readonly orgId: string;
 }
 
-/** A ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id }` para Org, `{ orgId }` para Pipe). */
-export type AppAbility = MongoAbility<[AcaoAutorizada, SujeitoAutorizado | Organizacao | Pipe]>;
+/**
+ * Forma do sujeito `Database` para as `conditions` (Story 3.1). Escopo por `orgId`, simétrico à RLS —
+ * como `Pipe`, mas sujeito DISTINTO (Database ≠ Pipe — RN-061). Em 3.1 só o ADMIN da Org recebe
+ * abilities de Database (ler/administrar); MEMBER/GUEST nada (papéis por Database são a 3.2).
+ */
+export interface Database {
+  readonly orgId: string;
+}
+
+/** A ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id }` para Org, `{ orgId }` para Pipe/Database). */
+export type AppAbility = MongoAbility<
+  [AcaoAutorizada, SujeitoAutorizado | Organizacao | Pipe | Database]
+>;

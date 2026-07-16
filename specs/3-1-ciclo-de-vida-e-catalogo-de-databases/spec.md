@@ -16,10 +16,10 @@ somente leitura integral**; restaurar reabilita **sem alterar identidades nem re
 
 ### Session 2026-07-16
 
-- Q: Renomear um Database **arquivado** — permitido ou bloqueado? → A: **Bloqueado (409)**. "Somente leitura
-  integral" abrange o próprio metadado do Database; a única escrita permitida sobre um Database `ARCHIVED` é
-  `restaurar`. (Default conservador; a lista de AC da epics enumerou operações sobre dados dependentes sem
-  nomear `renomear` — flag ao dono, ver Decisões D1.)
+- Q: Renomear um Database **arquivado** — permitido ou bloqueado? → A: **Bloqueado (409) — CONFIRMADO pelo dono
+  (2026-07-16).** "Somente leitura integral" abrange o próprio metadado do Database; a única escrita permitida
+  sobre um Database `ARCHIVED` é `restaurar`. Para renomear um Database arquivado, o fluxo autorizado é
+  **restaurar → renomear → arquivar novamente**. (Ver Decisões D1.)
 - Q: `Database` tem atributos `locked`/`starred` como `Pipe`? → A: **Não.** A epics da 3.1 não os menciona para
   Database; não inventar (Constitution II). Diverge de `Pipe` deliberadamente.
 - Q: O nome do Database é único por Organização? → A: **Não.** O identificador estável é o `id` (AD-11);
@@ -63,9 +63,10 @@ somente leitura integral**; restaurar reabilita **sem alterar identidades nem re
 > A epics marca a 3.1 com **Gates: —**. Os defaults abaixo derivam de epics/Spine/Constitution e do **precedente
 > da 2.1** (twin). Apenas **D1** merece confirmação do dono (a epics não nomeou `renomear` na lista de bloqueios).
 
-- **D1 — Renomear em `ARCHIVED` é bloqueado (409).** Default conservador para "integralmente somente leitura".
-  **A confirmar com o dono** — alternativa: permitir renomear metadado mesmo arquivado (menos restritivo). Escolhi
-  bloquear porque dá à regra de somente-leitura um consumidor concreto já na 3.1 e é coerente com "integral".
+- **D1 — Renomear em `ARCHIVED` é bloqueado (409). CONFIRMADO pelo dono (2026-07-16).** "Integralmente somente
+  leitura" cobre o próprio metadado: um Database `ARCHIVED` não pode ser renomeado. Para renomear, o fluxo é
+  **restaurar → renomear → arquivar novamente**. Dá à regra de somente-leitura um consumidor concreto já na 3.1.
+  Registrado em Story, spec, testes (`databases-http` CA3) e documentação.
 - **D2 — Somente-leitura sobre dados dependentes = contrato futuro (3.3/3.4/3.7/3.8/3.9).** Não é escolha livre:
   AD-11/Constitution II proíbem materializar Registro/Formulário-owner/Campo/arquivo/vínculo só para bloqueá-los.
   Enforced por owner via `Database.state === ACTIVE`. Espelha a 2.1 ("Pipe com Cards ativos" → 2.11).
