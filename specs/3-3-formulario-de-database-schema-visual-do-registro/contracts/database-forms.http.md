@@ -16,13 +16,13 @@ Todas sob `@Controller('databases/:databaseId')`, `@Requer('ler','Database')` (g
   `POST .../options/:optionId/archive|restore`, `POST .../options/reorder` — espelham 2.5. gerenciar.
 
 ## Publicação (2.6)
-- `POST /databases/:databaseId/form/publish` → 200 `VersaoDetalhe` (snapshot imutável; gate de Arquivo). gerenciar.
+- `POST /databases/:databaseId/form/publish` → **201** `VersaoDetalhe` (publish **cria** uma `FormVersion` — paridade com E2; snapshot imutável; gate de Arquivo). gerenciar.
 - `POST /databases/:databaseId/form/unpublish` → 200 `EstadoPublicacao`. gerenciar.
 - `GET  /databases/:databaseId/form/publication` → 200 `EstadoPublicacao`. ler.
 - `GET  /databases/:databaseId/form/versions/:version` → 200 `VersaoDetalhe`. ler.
 
 ## Status codes
-- 201: criar Campo. 200: obter/reorder/editar/arquivar/restaurar/publicar/despublicar/ler.
+- 201: criar Campo; **publicar** (cria `FormVersion`). 200: obter/reorder/editar/arquivar/restaurar/despublicar/ler.
 - 400: entrada inválida (id malformado, `typeConfig` fora da allowlist, publicar rascunho inválido).
 - 403: MEMBER/VIEWER do Database ao mutar (só leem). 404: sem acesso ao Database (não-enumerante) / owner inválido.
 - 409: conflito de número de versão na publicação (UNIQUE) / guarda otimista de `typeConfig`.
