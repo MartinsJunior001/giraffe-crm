@@ -44,15 +44,16 @@ describe('getPublicOrigin — origem pública é configuração, com falha hones
   });
 
   it('em produção, ausente ⇒ erro honesto citando só o NOME da variável', () => {
-    expect(() => getPublicOrigin(undefined, 'production')).toThrowError(
-      /WEB_PUBLIC_ORIGIN ausente/,
-    );
+    // `undefined` explícito NÃO serve aqui: o default de parâmetro reaplicaria
+    // `process.env.WEB_PUBLIC_ORIGIN`, que o CI exporta — o ambiente contaminaria o teste.
+    // O caso "ausente" determinístico é a string vazia (é o que `${VAR:-}` produz).
     expect(() => getPublicOrigin('', 'production')).toThrowError(/WEB_PUBLIC_ORIGIN ausente/);
+    expect(() => getPublicOrigin('   ', 'production')).toThrowError(/WEB_PUBLIC_ORIGIN ausente/);
   });
 
   it('fora de produção, ausente ⇒ padrão localhost (pnpm dev sem configuração)', () => {
-    expect(getPublicOrigin(undefined, 'test')).toBe('http://localhost:3000');
-    expect(getPublicOrigin(undefined, 'development')).toBe('http://localhost:3000');
+    expect(getPublicOrigin('', 'test')).toBe('http://localhost:3000');
+    expect(getPublicOrigin('', 'development')).toBe('http://localhost:3000');
   });
 
   it('valor que não é URL absoluta ⇒ erro honesto (nunca origem lixo em header)', () => {
