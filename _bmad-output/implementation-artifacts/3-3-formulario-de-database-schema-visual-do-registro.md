@@ -1,7 +1,7 @@
 ---
 story_key: 3-3-formulario-de-database-schema-visual-do-registro
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: CRÍTICO
 baseline_commit: 53ad4b8
@@ -14,7 +14,7 @@ gate_arquitetura: Ativa o contexto DATABASE do `Form` (stub desde 2.4) — nova 
 **I want** definir, evoluir e publicar o schema visual do Registro reutilizando o Form Builder canônico,
 **So that** os dados do Database sejam estruturados sem um segundo builder e sem corromper Registros já criados.
 
-**Status: ready-for-dev.** Terceira Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos), risco
+**Status: done.** Terceira Story do **Épico 3** (Databases, Registros, Vínculos e Arquivos), risco
 **CRÍTICO** — ativa o **contexto `DATABASE`** do `Form` (materializado como stub na 2.4: "DATABASE é contrato
 do E3, sem owner ainda") **reutilizando integralmente** o Form Builder de E2 (2.4 montagem, 2.5 evolução segura
 de Campos, 2.6 publicação por `FormVersion` imutável). Introduz o **owner `Form.databaseId`** e roteia a
@@ -182,6 +182,19 @@ Database + database-authz (3.1/3.2). Fora: Registro/Novo Registro/submissão (3.
 | Data | Mudança |
 |------|---------|
 | 2026-07-16 | Story criada (E3, Wave 4) a partir de `epics.md` (Story 3.3) e da Spine (FR-17, INV-FORM-01, AD-12). Risco **CRÍTICO** (ativa o contexto DATABASE do Form: coluna owner + CHECK + índice; roteamento de autz por contexto). Escopo **congelado**: só o schema (montar/evoluir/publicar o Formulário de Database) reutilizando o Form Builder de E2 — sem segundo builder/catálogo. Registro/`Novo Registro`/submissão = 3.4 (fora). Campo Arquivo gated (AD-28). Guard C3 congelado. Dependências 3.1/3.2/2.4/2.5/2.6 `done`. Status → **ready-for-dev** (após create-story). |
+| 2026-07-16 | Implementada, revisada (revisão adversarial CRÍTICA em 4 camadas — Segurança/Arquitetura-RLS/Edge/Aceite — sem achado CRÍTICO/ALTO), integrada pelo **PR #78** (merge `8580e2d`) com CI **verde** nos 4 jobs (Qualidade, Segurança/Trivy, Testes PostgreSQL real, Containers) e drill de migration/rollback/reapply (**SC-206**) verde. Status → **done**. |
+
+## Review Findings
+
+Revisão adversarial CRÍTICA (4 camadas read-only, em paralelo sobre o diff da 3.3): **Segurança**, **Arquitetura/RLS**, **Edge Cases** e **Aceite**. **Nenhum achado CRÍTICO/ALTO de código.** Aceite **APROVADO** (AC1–AC7 e invariantes do dono atendidos; guard C3 congelado confirmado por `git diff 53ad4b8 -- kernel/authz/` vazio).
+
+- **Segurança:** roteamento de autz por contexto sólido (todo sítio de mutação/leitura passa por `form-authz`; MEMBER/VIEWER do Database só leem → 403 ao mutar; sem acesso → 404 não-enumerante); CHECK de owner correto; sem GRANT novo; `FormVersion` imutável preservada; sem ciclo de módulo. 1 LOW (rollback) endereçado.
+- **Arquitetura/RLS:** INV-FORM-01 preservado (controllers reusam os 3 serviços canônicos, zero segundo builder); generalização **aditiva** sem regressão de E2 (caminho Pipe/Fase é o default); migration coerente com o padrão de owner; fiação unidirecional Databases→Pipes sem ciclo.
+- **Edge Cases / Aceite:** produção correta; achados = **lacunas de teste (MÉDIO)**, **endereçadas** na própria Story (opções de Seleção; mutação por MEMBER → 403; publicação inválida 404/400; publish/unpublish por Admin do Database; aresta DATABASE+phaseId no CHECK).
+
+**Achados endereçados nesta Story:** (1) **LOW** — rollback re-adiciona o CHECK de 2 cláusulas antes de dropar a coluna; é **fail-safe por construção** (transação implícita do Postgres reverte o rollback inteiro se houver Form `DATABASE`), com **pré-condição documentada** no `.down.sql`. (2) **MÉDIO** — 4 casos de teste adicionados (14/14 em PostgreSQL real). (3) **Doc** — contrato `database-forms.http.md` corrigido (publish → **201**, paridade com E2; o código já retornava 201).
+
+**Evidência de execução:** typecheck/lint/format/build verdes; testes-alvo **14/14** em PostgreSQL real; suíte serial **695/696** (a única falha é `login-http` rate-limit, **flake ambiental** alheio à 3.3 — verde 23/23 isolado); **SC-206** verde; CI do PR #78 verde nos 4 jobs.
 
 ## Dev Agent Record
 
