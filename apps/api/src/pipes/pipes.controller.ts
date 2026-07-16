@@ -16,7 +16,7 @@ import {
   parseIncluirArquivados,
   validarIdPipe,
 } from './dto/pipes.dto';
-import { PipesService, type PipeVisao } from './pipes.service';
+import { PipesService, type PipeRelacionadoVisao, type PipeVisao } from './pipes.service';
 
 /**
  * Catálogo e ciclo de vida de Pipes (Story 2.1), superfície de API INTERNA. Nenhuma rota recebe
@@ -43,6 +43,15 @@ export class PipesController {
   @Get()
   async listar(@Query('arquivados') arquivados?: string): Promise<PipeVisao[]> {
     return this.pipes.listar(parseIncluirArquivados(arquivados));
+  }
+
+  // DECLARADA ANTES de `@Get(':id')`: `related` é rota estática e não pode ser capturada pelo param `:id`.
+  // Pipes relacionados no Perfil (Story 2.18): leitura pura, com o papel/nível efetivo. Membros têm `ler Pipe`
+  // (guarda grossa); a guarda FINA (Admin vê todos; não-Admin só os concedidos) vive no serviço.
+  @Requer('ler', 'Pipe')
+  @Get('related')
+  async relacionados(): Promise<PipeRelacionadoVisao[]> {
+    return this.pipes.listarRelacionados();
   }
 
   @Requer('ler', 'Pipe')

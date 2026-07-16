@@ -3,6 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { withTenantContext } from '../kernel/db/tenant-context';
+import type { Poder } from './pipe-authz';
 
 /**
  * O que um Pipe expõe pela API interna. Sem campo "de brinde": exatamente os atributos do catálogo
@@ -37,6 +38,25 @@ export interface AtualizacaoPipe {
   name?: string;
   locked?: boolean;
   starred?: boolean;
+}
+
+/**
+ * Um Pipe RELACIONADO ao principal, na visão do Perfil (Story 2.18): só nome/estado + o **papel/nível efetivo**
+ * (`poder`). `orgId` fica fora da fronteira; nenhum marcador/timestamp de catálogo — o Perfil só situa o usuário.
+ */
+export interface PipeRelacionadoVisao {
+  id: string;
+  name: string;
+  state: 'ACTIVE' | 'ARCHIVED';
+  /** Nível efetivo do principal no Pipe: `gerenciar` (Admin) › `operar` (Membro) › `ler` (Viewer). */
+  poder: Poder;
+}
+
+/** Mapeia o `PipeGrant.role` ao `Poder` efetivo — a MESMA regra de `resolverPoderNoPipe` (não uma 2ª verdade). */
+function poderDoRole(role: 'ADMIN' | 'MEMBER' | 'VIEWER'): Poder {
+  if (role === 'ADMIN') return 'gerenciar';
+  if (role === 'MEMBER') return 'operar';
+  return 'ler';
 }
 
 /**
@@ -113,6 +133,39 @@ export class PipesService {
       select: SELECT_PIPE,
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  /**
+   * **Pipes relacionados no Perfil** (Story 2.18, suporte a FR-32). Os Pipes da Org atual a que o principal está
+   * relacionado, com o **papel/nível efetivo** — leitura pura, **sem conceder acesso**. Reusa a MESMA resolução do
+   * catálogo (`listar`): **Admin da Org vê todos** (poder `gerenciar`); **não-Admin** vê só os Pipes com `PipeGrant`
+   * ACTIVE para a Membership atual, com o poder derivado do `role`. Sem Pipes relacionados → **lista vazia** (ausência
+   * honesta, sem dado fictício — CA4). Um Pipe fora do acesso não aparece (não-enumeração — CA2) e segue 404 em `obter`
+   * (listar não amplia acesso — CA3).
+   */
+  async listarRelacionados(): Promise<PipeRelacionadoVisao[]> {
+    const { contexto, db } = this.db();
+    if (contexto.papel === 'ADMIN') {
+      const pipes = await db.pipe.findMany({
+        select: { id: true, name: true, state: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      return pipes.map((p) => ({ ...p, poder: 'gerenciar' as const }));
+    }
+    const membershipId = await this.membershipIdAtual(db, contexto.accountId);
+    if (!membershipId) return [];
+    const grants = await db.pipeGrant.findMany({
+      where: { membershipId, state: 'ACTIVE' },
+      select: { role: true, pipe: { select: { id: true, name: true, state: true } } },
+    });
+    return grants
+      .map((g) => ({
+        id: g.pipe.id,
+        name: g.pipe.name,
+        state: g.pipe.state,
+        poder: poderDoRole(g.role),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
