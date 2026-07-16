@@ -90,6 +90,13 @@ COPY --from=build /repo/apps/api/dist /repo/apps/api/dist
 # traz o próprio `runtime/` — e por isso não depende do `@prisma/client` do store.
 COPY --from=build /repo/apps/api/generated /repo/apps/api/generated
 COPY apps/api/package.json /repo/apps/api/package.json
+# Único script operacional que o runtime carrega — o gancho do Scheduled Task do Coolify (D-05):
+# `node /repo/scripts/db-cleanup.mjs` roda por `docker exec` NESTE container, com o MESMO ambiente
+# (DATABASE_URL do papel de runtime, que tem DELETE em LoginFailure/RateLimit — nunca o migrator).
+# Ele importa apenas o client já gerado (`../apps/api/generated/...`), então não reintroduz o CLI
+# do Prisma nem gerenciador de pacotes na imagem. Serializado por advisory lock (chave 427050006);
+# ver docs/04-operacao/agendamento-coleta-antiabuso.md.
+COPY scripts/db-cleanup.mjs /repo/scripts/db-cleanup.mjs
 USER node
 EXPOSE 3001
 # Readiness, não liveness: com o banco fora, a API não está apta a receber tráfego, e o
