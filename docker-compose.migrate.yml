@@ -40,3 +40,11 @@ services:
       # Papel DONO do schema (giraffe_migrator) — só aqui, nunca no runtime (AD-6). A URL é
       # montada pelo Compose a partir da MESMA variável do bootstrap; ninguém digita DSN.
       MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
+      # Secret do MESMO Better Auth do runtime, entregue pela CONFIGURAÇÃO do Compose (interpolado do
+      # `.env` do projeto), NUNCA pela linha de comando — o secret de auth não deve transitar por
+      # `-e` num histórico de shell. Só o provisionamento do 1º tenant (`provision-tenant.mjs`) o
+      # consome, para instanciar o Better Auth que gera o hash da senha do Admin; no fluxo de migração
+      # pura (`db-migrate.mjs deploy`) fica presente e ocioso. Vazio por padrão (`:-`) para que o
+      # caminho de migração local/CI, sem esse segredo, não falhe — o hash scrypt do Better Auth é
+      # salt-based e não é chaveado por ele, então sua ausência não invalida o provisionamento.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
