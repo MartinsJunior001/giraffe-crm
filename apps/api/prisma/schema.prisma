@@ -55,6 +55,23 @@ enum DatabaseState {
   ARCHIVED
 }
 
+/// Papel POR Database (Story 3.2, decisão de Produto D3.4). Distinto de `PipeRole` (RN-061 — Database ≠ Pipe):
+/// ADMIN (Admin do Database) configura/administra a estrutura e concede MEMBER/VIEWER; NÃO controla o ciclo de
+/// vida do Database (Admin da Org, Story 3.1) nem Memberships da Org; MEMBER (Membro do Database) cria/edita
+/// Registros (poder DIFERENCIAL = contrato futuro 3.4 — role dormente); VIEWER (Somente leitura) consulta.
+enum DatabaseRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+/// Estado da concessão de papel por Database (Story 3.2). Revogar é MUDANÇA DE ESTADO, não exclusão —
+/// preserva a trilha (simétrico a `PipeGrantState`); o runtime não tem GRANT de DELETE.
+enum DatabaseGrantState {
+  ACTIVE
+  REVOKED
+}
+
 /// Papel POR Pipe (Story 2.2, decisão de Produto D1.4). Conjunto enxuto e fechado:
 /// ADMIN administra a CONFIG do Pipe (não o ciclo de vida — isso é do Admin da Org, Story 2.1);
 /// MEMBER edita os recursos acessíveis do Pipe; VIEWER (Somente leitura) consulta sem editar/mover.
@@ -287,6 +304,7 @@ model Organization {
   memberships       Membership[]
   pipes             Pipe[]
   databases         Database[]
+  databaseGrants    DatabaseGrant[]
   pipeGrants        PipeGrant[]
   phases            Phase[]
   forms             Form[]
@@ -361,7 +379,8 @@ model Database {
   /// Momento do arquivamento (null quando ativo). Arquivar preserva os dados; só muda estado.
   archivedAt DateTime?
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  grants       DatabaseGrant[]
 
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
@@ -477,6 +496,49 @@ model PipeGrant {
   @@map("PipeGrant")
 }
 
+/// DatabaseGrant — concessão explícita de papel POR Database (Story 3.2, decisão D3.4). Dado operacional
+/// org-owned (AD-10). É o que abre o acesso de MEMBER/GUEST a um Database: sem concessão ACTIVE, não há
+/// acesso (deny-by-default). O Admin da Organização acessa todos os Databases SEM concessão (Story 3.1).
+/// É o **twin estrutural de `PipeGrant`** (2.2), entidade **DISTINTA** (Database ≠ Pipe — RN-061): tabela,
+/// enums e subject próprios; nunca reutilizar `PipeGrant`/`PipeRole`.
+///
+/// Liga-se a `Membership` (não a `Account`): o papel por Database vive DENTRO de uma Organização (AD-7).
+///
+/// **Autoridade hierárquica de concessão (ajuste 2, D3.4 §969/§1086 — resolvida no serviço, não no banco):**
+/// Admin da Org concede/altera/revoga qualquer papel; Admin do Database (grant `role=ADMIN` ACTIVE) concede/
+/// revoga SÓ `MEMBER`/`VIEWER`; **somente Admin da Org concede/remove `ADMIN` do Database**. Teto da Org
+/// (AD-9): um Convidado (`Membership.role=GUEST`) só recebe `VIEWER`.
+///
+/// Isolamento pelo BANCO (RLS na migration `..._database_grants`): ENABLE **e** FORCE ROW LEVEL SECURITY,
+/// policies por `orgId = current_org_id()`. Runtime recebe SELECT/INSERT/UPDATE — **sem DELETE**: revogar é
+/// `state = REVOKED`, não exclusão (preserva a trilha).
+///
+/// **No máximo UM papel efetivo por Database por pessoa**: índice único PARCIAL `(databaseId, membershipId)
+/// WHERE state = 'ACTIVE'`, criado por raw SQL na migration (o Prisma 6.19.3 não expressa índice parcial).
+model DatabaseGrant {
+  id           String             @id @default(uuid()) @db.Uuid
+  orgId        String             @db.Uuid
+  databaseId   String             @db.Uuid
+  membershipId String             @db.Uuid
+  role         DatabaseRole
+  state        DatabaseGrantState @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  /// Momento da revogação (null quando ativa). Revogar preserva a linha; só muda estado.
+  revokedAt    DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  database     Database     @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  // Acesso começa por Org; consultas por Database (quem acessa) e por pessoa (quais Databases).
+  @@index([orgId, databaseId])
+  @@index([orgId, membershipId])
+  // Nota: a unicidade "um papel ativo por (database, pessoa)" é um índice PARCIAL, criado na migration
+  // (WHERE state='ACTIVE') — não expressável aqui no Prisma 6.19.3.
+  @@map("DatabaseGrant")
+}
+
 /// Vínculo Account × Organization (AD-7, Forma B). É a tabela organizacional
 /// desta Story — e a fixture dos testes de isolamento.
 model Membership {
@@ -491,6 +553,7 @@ model Membership {
   account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   organization     Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pipeGrants       PipeGrant[]
+  databaseGrants   DatabaseGrant[]
   cardGrants       CardGrant[]
   cardResponsaveis CardResponsavel[]
 

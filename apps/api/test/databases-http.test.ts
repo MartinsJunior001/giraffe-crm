@@ -225,10 +225,17 @@ describe('CA4: restaurar preserva identidade e reabilita a escrita', () => {
 });
 
 describe('CA5: sem exclusão, deny-by-default e não-enumeração', () => {
-  it('MEMBER (Bruno) é NEGADO em toda operação de Database — até a 3.2', async () => {
+  it('MEMBER (Bruno) sem concessão: passa o `ler` grosseiro (3.2) mas não enxerga Databases não concedidos; ciclo de vida segue Admin-only', async () => {
     const base = await criarBase('Fora do alcance do Bruno');
-    expect((await req('GET', '/databases', BRUNO)).status).toBe(403);
-    expect((await req('GET', `/databases/${base.id}`, BRUNO)).status).toBe(403);
+    // Story 3.2: `ler Database` virou grosseira (qualquer Membership ativa passa o guard, como `ler Pipe`).
+    // Sem concessão, a leitura fina não vaza: a LISTA não inclui o Database e obtê-lo direto é 404
+    // NÃO-ENUMERANTE (não 403, que confirmaria a existência). Antes da 3.2 tudo isto era 403 (Admin-only).
+    const listaRes = await req('GET', '/databases', BRUNO);
+    expect(listaRes.status).toBe(200);
+    const lista = (await listaRes.json()) as DatabaseResp[];
+    expect(lista.some((d) => d.id === base.id)).toBe(false);
+    expect((await req('GET', `/databases/${base.id}`, BRUNO)).status).toBe(404);
+    // O ciclo de vida (criar/renomear/arquivar/restaurar) segue `administrar Database` — só Admin da Org.
     expect((await req('POST', '/databases', BRUNO, { name: 'Do Bruno' })).status).toBe(403);
     expect((await req('PATCH', `/databases/${base.id}`, BRUNO, { name: 'X' })).status).toBe(403);
     expect((await req('POST', `/databases/${base.id}/archive`, BRUNO)).status).toBe(403);

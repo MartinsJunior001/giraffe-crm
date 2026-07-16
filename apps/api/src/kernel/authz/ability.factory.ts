@@ -44,12 +44,20 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Pipe', { orgId });
   }
 
-  // Database (Story 3.1): entidade DISTINTA de Pipe (RN-061). Ao contrário de `ler Pipe` (grosseira
-  // para qualquer Membership, pois o acesso fino por concessão veio na 2.2), em 3.1 **só o Admin da
-  // Org** recebe QUALQUER ability de Database — ler E administrar. MEMBER/GUEST não têm nada até os
-  // papéis por Database (3.2): ausência de regra basta para negar (deny-by-default), sem `cannot`.
+  // Database (Story 3.2): entidade DISTINTA de Pipe (RN-061). Como `ler Pipe` (2.2), `ler Database` é
+  // GROSSEIRA — qualquer Membership ativa pode o TIPO `ler Database`. Isto apenas confirma que o papel
+  // pode ler *algum* Database na Org; QUAL Database cada não-Admin enxerga é a guarda FINA, decidida no
+  // `DatabasesService`/`DatabaseGrantsService` pela concessão `DatabaseGrant` ACTIVE, com não-enumeração
+  // (404 para Database não concedido). Isto NÃO é condition do guard (o guard não carrega o recurso —
+  // DBT-AUTHZ-01). Em 3.1 `ler Database` era Admin-only (não havia concessão); a 3.2 a abre.
+  //
+  // `administrar Database` (ciclo de vida: criar/renomear/arquivar/restaurar — Story 3.1; e conceder
+  // `Admin do Database` — Story 3.2) segue SÓ do Admin da Organização. O poder do Admin do Database
+  // (config: conceder MEMBER/VIEWER, schema em 3.3) é enforçado no serviço com a concessão carregada,
+  // não aqui — por isso ele passa só pela `ler Database` grosseira + a guarda fina, e NÃO alcança o
+  // ciclo de vida (que exige `administrar`).
+  can('ler', 'Database', { orgId });
   if (papel === 'ADMIN') {
-    can('ler', 'Database', { orgId });
     can('administrar', 'Database', { orgId });
   }
 
