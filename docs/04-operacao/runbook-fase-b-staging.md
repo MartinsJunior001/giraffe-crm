@@ -211,6 +211,32 @@ Prova end-to-end reproduzível (build da imagem migrate; não toca o staging):
 → recupera → migrate completo → zero pendências → idempotente). Reconciliação isolada do app:
 `bash scripts/ops/l6/test-app-role.sh` → `REGRESSAO_OK`.
 
+## Troubleshooting — P2021 no reset (`public."Account"` não existe)
+
+Sintoma: o empacotamento passa, o reset inicia, mas o Prisma retorna **P2021** (`public."Account"` não
+existe) — apesar de o migrate ter reportado `MIGRATE_ONESHOT_OK`. Indica **divergência de destino de
+banco** (o reset conecta a um lugar sem o schema) ou schema/search_path incorreto. **Nenhuma senha é
+gerada** (o preflight aborta antes). **Não** repita o reset nem o provisionamento.
+
+1. **Diagnóstico (read-only, sanitizado):**
+   ```bash
+   REDE="$REDE" RESET_ADMIN_EMAIL="admin@staging.giraffedev.cloud" \
+     bash scripts/ops/l6/diagnose-db-target.sh
+   ```
+   Compara três pontos de vista sobre `giraffe`: `[1]` `DATABASE_URL` (giraffe_app) na rede, `[2]`
+   `MIGRATION_DATABASE_URL` (giraffe_migrator) na rede, `[3]` o container `db` por label. Reporta
+   `current_database`/`current_schema`/`current_user`, `to_regclass` de `Account`/`AuthCredential`,
+   migrations finalizadas e a contagem do Account do Admin — **sem** DSN/senha/PII. A leitura ao final
+   distingue **A** (reset no banco errado), **B** (migrations no banco errado), **C** (schema/search_path)
+   e **D** (`MIGRATE_ONESHOT_OK` falso positivo).
+
+2. **Proteção já ativa:** o `reset-admin-password.mjs` roda um **preflight fail-closed** — confirma
+   `Account`/`AuthCredential` e o Account do Admin **no destino real** antes de gerar/aplicar qualquer
+   senha. Se o destino divergir, aborta com `NENHUMA senha gerada` (nunca uma credencial no banco errado).
+
+3. Corrigida a causa (garantir que reset e migrate usem o mesmo `giraffe`), repita o reset — o preflight
+   passa (`preflight OK — destino database=giraffe schema=public`) e então `RESET_ADMIN_OK`.
+
 ## Gates de segurança (invioláveis)
 
 - **Nunca** imprimir/colar segredos ou senha do Admin no relatório.
