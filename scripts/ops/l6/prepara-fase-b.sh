@@ -55,23 +55,79 @@ CT_DB=$(container_de db)
 # Dois labels podem carregar o MESMO SHA; isso não é ambiguidade. Só SHAs DISTINTOS param o script.
 # Um SHA de git tem 40 hexadecimais; um digest de imagem tem 64, e as fronteiras de palavra do awk
 # impedem que um trecho de 40 dentro de um de 64 case por engano.
+#
+# Quatro fontes, em ordem. A execução de 2026-07-16 provou que a fonte 1 (labels do container) vem
+# VAZIA neste Coolify — por isso as demais existem:
+#
+#   1. labels do CONTAINER api
+#   2. labels da IMAGEM do api (`org.opencontainers.image.revision`, quando o build a grava)
+#   3. ambiente do CONTAINER — SOMENTE variáveis cujo NOME remeta a commit/revision/git.
+#      O filtro por nome não é zelo: um segredo de 40 hexadecimais (`LOGIN_HMAC_SECRET`, por
+#      exemplo) casaria o padrão de SHA e seria impresso como se fosse um. O nome é o que separa
+#      "identificador de build" de "segredo".
+#   4. SHA_STAGING= informado pelo operador (lido da UI do Coolify → aba Deployments), para quando
+#      o host não carrega essa informação em lugar nenhum. NÃO é presunção: é entrada explícita, e
+#      passa exatamente pelas mesmas validações contra o repositório oficial.
+#
+# Se as fontes discordarem entre si, o script PARA. Nunca cai para a HEAD da main.
 # ---------------------------------------------------------------------------
-LABELS_COM_SHA=$(
-  docker inspect -f '{{range $k,$v := .Config.Labels}}{{$k}} {{$v}}{{"\n"}}{{end}}' "${CT_API}" |
-    awk 'NF==2 && $2 ~ /^[0-9a-f]{40}$/' | sort -u
-)
-QTD_SHA=$(echo "${LABELS_COM_SHA}" | awk 'NF{print $2}' | sort -u | grep -c . || true)
+FONTES=""
 
-if [ "${QTD_SHA}" != "1" ]; then
-  echo "STOP: ${QTD_SHA} SHA(s) distintos nos labels do container api." >&2
-  echo "Labels disponíveis (somente NOMES, sem valores):" >&2
-  docker inspect -f '{{range $k,$v := .Config.Labels}}{{$k}}{{"\n"}}{{end}}' "${CT_API}" |
-    sed '/^$/d' | sort -u | sed 's/^/  label: /' >&2
+adicionar_fonte() { # $1 = rótulo da origem, $2 = candidato
+  if echo "$2" | grep -qE '^[0-9a-f]{40}$'; then
+    FONTES="${FONTES}$1 $2"$'\n'
+  fi
+}
+
+while read -r nome valor; do
+  [ -n "${nome:-}" ] && adicionar_fonte "label-container:${nome}" "${valor}"
+done < <(
+  docker inspect -f '{{range $k,$v := .Config.Labels}}{{$k}} {{$v}}{{"\n"}}{{end}}' "${CT_API}" |
+    awk 'NF==2 && $2 ~ /^[0-9a-f]{40}$/'
+)
+
+IMG=$(docker inspect -f '{{.Image}}' "${CT_API}")
+while read -r nome valor; do
+  [ -n "${nome:-}" ] && adicionar_fonte "label-imagem:${nome}" "${valor}"
+done < <(
+  docker inspect -f '{{range $k,$v := .Config.Labels}}{{$k}} {{$v}}{{"\n"}}{{end}}' "${IMG}" 2>/dev/null |
+    awk 'NF==2 && $2 ~ /^[0-9a-f]{40}$/'
+)
+
+while read -r par; do
+  nome=${par%%=*}
+  valor=${par#*=}
+  adicionar_fonte "env:${nome}" "${valor}"
+done < <(
+  docker inspect -f '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "${CT_API}" |
+    grep -iE '^[A-Za-z0-9_]*(COMMIT|REVISION|GIT_SHA|GITSHA)[A-Za-z0-9_]*='
+)
+
+if [ -n "${SHA_STAGING:-}" ]; then
+  adicionar_fonte "operador:SHA_STAGING" "${SHA_STAGING}"
+fi
+
+DISTINTOS=$(echo "${FONTES}" | awk 'NF{print $2}' | sort -u | grep -c . || true)
+
+if [ "${DISTINTOS}" != "1" ]; then
+  echo "STOP: ${DISTINTOS} SHA(s) distintos entre as fontes de descoberta." >&2
+  if [ "${DISTINTOS}" = "0" ]; then
+    echo "O host não carrega o commit implantado em label nem em ambiente." >&2
+    echo "Leia o commit na UI do Coolify (Deployments) e reexecute informando-o:" >&2
+    echo "  SHA_STAGING=<sha40> bash \$0" >&2
+    echo "Fontes inspecionadas (somente NOMES, nenhum valor):" >&2
+    docker inspect -f '{{range $k,$v := .Config.Labels}}{{$k}}{{"\n"}}{{end}}' "${CT_API}" |
+      sed '/^$/d' | sort -u | sed 's/^/  label-container: /' >&2
+    docker inspect -f '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "${CT_API}" |
+      cut -d= -f1 | sed '/^$/d' | sort -u | sed 's/^/  env: /' >&2
+  else
+    echo "${FONTES}" | awk 'NF{print "  " $1 " -> " $2}' >&2
+  fi
   exit 1
 fi
 
-SHA=$(echo "${LABELS_COM_SHA}" | awk 'NF{print $2}' | head -1)
-LABEL_FONTE=$(echo "${LABELS_COM_SHA}" | awk 'NF{print $1}' | head -1)
+SHA=$(echo "${FONTES}" | awk 'NF{print $2}' | head -1)
+LABEL_FONTE=$(echo "${FONTES}" | awk 'NF{print $1}' | head -1)
 
 # ---------------------------------------------------------------------------
 # 3. Clone oficial + checkout detached do commit implantado
