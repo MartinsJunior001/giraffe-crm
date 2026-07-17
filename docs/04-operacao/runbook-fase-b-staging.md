@@ -112,6 +112,33 @@ Restart do app; repetir o smoke (`/healthz`, `/login`, `/painel`→307) para con
 Revisores read-only: Segurança; Rede/Proxy; Migration/Backup; Aceite. Emitir
 `STAGING PROVISÓRIO APROVADO` ou `BLOQUEADO` com evidência e uma única solicitação consolidada.
 
+## Troubleshooting — P1000 no migrate (drift de senha do `giraffe_migrator`)
+
+Sintoma: o passo 4 alcança `db:5432` mas o Prisma retorna **P1000** (autenticação inválida do
+`giraffe_migrator`). Causa típica: o volume `db-data` sobreviveu a um deploy anterior que criou o
+papel com uma senha; o `.env` atual tem outra. O bootstrap (`00-roles.sql`) só roda na **primeira**
+criação do volume, então não reconcilia. **Não** retente o migrate nem provisione até resolver.
+
+1. **Diagnóstico (read-only, não expõe segredos):**
+   ```bash
+   bash scripts/ops/l6/diagnose-migrator-auth.sh
+   ```
+   Reporta `MIGRATOR_PASSWORD_NO_ENV`, existência e atributos seguros do papel (canlogin/super/
+   bypassrls/ownership), `AUTENTICACAO=AUTH_OK|AUTH_FAIL` (testada pelo IP de rede, não 127.0.0.1 —
+   que é `trust` e mascararia) e o `VEREDITO`. `DRIFT_CONFIRMADO` = papel existe, senha presente no
+   `.env`, mas não autentica.
+
+2. **Reparo controlado (só com `DRIFT_CONFIRMADO`):**
+   ```bash
+   bash scripts/ops/l6/repair-migrator-password.sh
+   ```
+   Realinha **apenas a senha** do `giraffe_migrator` ao `.env` (via `\getenv` + env herdado; nunca em
+   `ps`/log/arquivo). Preserva os atributos autoritativos (compara antes/depois), é idempotente e
+   fail-closed; re-testa a auth e exige `REPAIR_OK`. **Não** cria papel, **não** toca `giraffe_app`,
+   `postgres`, Chatwoot nem produção.
+
+3. **Após `AUTH_OK`:** repita o passo 4 (migrate one-shot) e o passo 5 (zero pendências).
+
 ## Gates de segurança (invioláveis)
 
 - **Nunca** imprimir/colar segredos ou senha do Admin no relatório.
