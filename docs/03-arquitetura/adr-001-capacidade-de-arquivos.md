@@ -1,64 +1,73 @@
 # ADR-001 — Capacidade compartilhada de arquivos (resolve OQ-47, destrava AD-28 para arquivos)
 
-- **Status:** **PROPOSTA** — Opção A e as decisões de escopo são do dono (2026-07-17); a v4 fecha os achados de
-  duas revisões independentes (Arquitetura e Segurança) que **reprovaram a v3**. **Não é "aprovada"**: aprovar antes
-  do `security-check` inverteria o gate da Constitution. **Há divergências autoritativas ABERTAS (§0) que precisam
-  de emenda pelos workflows oficiais antes de a Story 3.7 entrar em `ready-for-dev`.**
+- **Status:** **RATIFICADA (design) — em re-revisão final do delta v5.** Opção A e as decisões de escopo são do dono
+  (2026-07-17); as duas divergências autoritativas foram **emendadas pelos workflows oficiais** (§0) e as três
+  decisões do dono, **tomadas** (§0/DIV-3). A v5 fecha os achados de **três** revisões independentes (a v4 foi
+  aprovada com ressalvas, fechadas aqui) e aguarda a **re-revisão read-only do delta v5** antes do merge. **Alcance:**
+  o **design** está ratificado pelo dono; os gates de **runtime/implementação** da Story 3.7
+  (`pre-implementation-check`, `security-check`, `migration-check`, `lgpd-check`) **permanecem obrigatórios no momento
+  de escrever o código** — a implementação é passo futuro **ainda não autorizado**, e nada nesta ADR o antecipa.
 - **Escopo:** **apenas arquivos.** E-mail outbound e IA **permanecem gated** pelo AD-28 (OQ-32, OQ-43..46 abertas).
 - **Rastreabilidade:** OQ-47 (Produto) · AD-4/AD-5 (fronteiras) · AD-6 (isolamento) · AD-9 (principal) · AD-13
   (transação) · **AD-24 (portas)** · AD-27 (Storage) · AD-28 (fail-closed) · AD-29 (observabilidade) · AD-30
-  (auditoria) · **AD-32 (ambientes)** · D3.5 · NFR-8 · Épico 3 Stories 3.7/3.8/3.10 · consumidores E5, E6.
+  (auditoria) · **AD-32 (ambientes)** · D3.5 · NFR-8 · Épico 3 Stories 3.7/3.8/3.10 · consumidores E5, E6 ·
+  **`sprint-change-proposal-2026-07-17.md`** (emendas DIV-1/DIV-2).
 - **Relação com o AD-27:** o AD-27 **já é autoritativo**. Esta ADR o **instancia em quase tudo** (números, antivírus
-  nomeado, modelo de execução, fronteira de porta) e o **EMENDA num ponto** — a cláusula "acesso por URL temporária
-  e curta", que a Opção A revoga. **Instanciar e emendar não são a mesma coisa, e a v3 chamou o conjunto de
-  "instanciação".** Ver §0.
+  nomeado, modelo de execução, fronteira de porta) e o **EMENDOU num ponto** — a cláusula "acesso por URL temporária
+  e curta", que a Opção A revoga. A emenda **já foi ratificada** pelo workflow oficial (§0). **Instanciar e emendar
+  não são a mesma coisa, e a v3 chamou o conjunto de "instanciação".**
 
 ---
 
-## 0. Divergências autoritativas REGISTRADAS (não silenciadas)
+## 0. Divergências autoritativas — RESOLVIDAS pelos workflows oficiais, e decisões do dono TOMADAS
 
 A Constitution XI proíbe alterar artefato autoritativo fora do seu fluxo próprio, e o CLAUDE.md manda **registrar a
-divergência e escalar antes de implementar**. As duas abaixo estão **abertas** e são **bloqueadoras da 3.7**.
+divergência e escalar antes de implementar**. As duas divergências abaixo foram **emendadas pelo workflow oficial
+`bmad-correct-course`** (Sprint Change Proposal `sprint-change-proposal-2026-07-17.md`, 2026-07-17), **preservando o
+texto original por marcação de emenda** — não por exclusão. **Não estão mais abertas.**
 
-### DIV-1 — AD-27, cláusula "URL temporária e curta" — **EMENDADA pela Opção A**
+### DIV-1 — AD-27, cláusula "URL temporária e curta" — **EMENDADA e RATIFICADA**
 
-Texto autoritativo íntegro (`ARCHITECTURE-SPINE.md:179`, AD-27 Rule):
+Texto autoritativo **original** (o que a Rule dizia antes da emenda):
 
-> capacidade de arquivos condicional a Produto; metadados e autorização na aplicação/banco; buckets privados;
-> **acesso por URL temporária e curta**; validar tamanho/tipo/conteúdo, checksum, quarentena e verificação de
-> arquivo malicioso; impedir acesso cruzado mesmo conhecendo a chave do objeto; ciclo de vida definido […]
+> … buckets privados; **acesso por URL temporária e curta**; validar tamanho/tipo/conteúdo …
 
-A Opção A (§4/§8) entrega por **stream sob sessão**, sem URL assinada. Logo **não há "URL temporária e curta"**:
-a cláusula fica **suspensa para arquivos**. Isto é **emenda**, não instanciação. Pendente do **workflow oficial de
-Arquitetura**.
+Texto autoritativo **vigente** (`ARCHITECTURE-SPINE.md:179`, AD-27 Rule, após a emenda de 2026-07-17):
 
-### DIV-2 — epics 3.7 AC#2 — **NÃO cumprido na primeira cláusula**
+> … buckets privados; **acesso por entrega autenticada sob a sessão do usuário (proxy/stream pela API)** [emenda
+> 2026-07-17 — OQ-47/Opção A; a redação original "acesso por URL temporária e curta" foi substituída …]; validar
+> tamanho/tipo/conteúdo …
 
-Texto autoritativo íntegro (`epics.md:1178`):
+A Opção A (§4/§8) entrega por **stream sob sessão**, sem URL assinada, e o AD-27 agora diz exatamente isso. **Resolvida.**
 
-> **Given** um download autorizado **When** solicitado **Then** ocorre por **URL temporária, de curta duração,
-> vinculada ao usuário, ao recurso e à finalidade**; a **chave interna do objeto nunca é usada como autorização**;
-> não há link público permanente.
+### DIV-2 — epics 3.7 AC#2 — **EMENDADA e RATIFICADA**
 
-A Opção A cumpre *"vinculada ao usuário, ao recurso e à finalidade"*, *"a chave nunca é autorização"* e *"não há link
-público permanente"* — e cumpre a **segunda** melhor que a alternativa rejeitada, porque uma URL pré-assinada é
-*bearer* e não se vincula a usuário nenhum. Mas **não cumpre** *"ocorre por URL temporária, de curta duração"*:
-não existe URL. Pendente de **emenda da epics pelo workflow BMAD**.
+Texto autoritativo **original** (o que o AC dizia antes da emenda):
 
-> **Por que isto está aqui, em bloco literal.** A v3 citou este AC **duas vezes** (§4 e Alternativas) cortando a
-> primeira cláusula, preservando a segunda e concluindo que a Opção A **"cumpre a epics 3.7 AC#2"**. Era falso, e o
-> Spine registrava o mesmo ponto como conflito aberto na mesma data. Pior: doze seções adiante, a §9.1 exigiu de si
-> mesma o oposto — *"a epics não foi emendada para acomodar a baseline; a baseline é que cedeu ao artefato
-> autoritativo"*. **Regra adotada daqui em diante: toda citação de artefato autoritativo nesta ADR é bloco literal
-> com `arquivo:linha`, nunca paráfrase nem recorte.** O DIV-2 não teria sobrevivido a essa regra.
+> **Then** ocorre por **URL temporária, de curta duração, vinculada ao usuário, ao recurso e à finalidade**; a chave
+> interna do objeto nunca é usada como autorização; não há link público permanente.
 
-### DIV-3 — decisões PENDENTES do dono (não são minhas)
+Texto autoritativo **vigente** (`epics.md:1178`, após a emenda de 2026-07-17):
 
-| # | Questão | Por que não decido |
+> **Then** ocorre por **entrega autenticada sob a sessão do usuário (stream pela API), vinculada ao usuário, ao recurso
+> e à finalidade**; a chave interna do objeto nunca é usada como autorização; não há link público permanente. *(Emenda
+> 2026-07-17 …)*
+
+A entrega sob sessão cumpre "vinculada ao usuário/recurso/finalidade" **melhor** que uma URL pré-assinada (que é
+*bearer* e não se vincula a usuário nenhum), e mantém "sem link público permanente". **Resolvida.**
+
+> **Por que o histórico fica registrado.** A v3 citou este AC cortando a primeira cláusula e concluindo que a Opção A
+> "cumpre a epics 3.7 AC#2" — era falso, e o Spine registrava o conflito. A correção **não** foi reescrever a ADR para
+> fingir conformidade: foi **emendar o artefato autoritativo pelo seu workflow**, preservando o original. **Regra
+> mantida: toda citação de artefato autoritativo nesta ADR é bloco literal com `arquivo:linha`, nunca paráfrase.**
+
+### DIV-3 — decisões do dono — **TOMADAS (2026-07-17)**
+
+| # | Questão | Decisão do dono |
 |---|---|---|
-| **Q1** | `epics.md:1175` diz *"tamanho máx por arquivo e **limite total por recurso** como config operacional global"*. **"Limite total" é soma de BYTES por recurso ou CONTAGEM de arquivos?** A v1–v3 leram "contagem" (10 arquivos). Pareado com *"tamanho máx **por arquivo**"*, "limite **total**" lê-se naturalmente como bytes — e a leitura por contagem permite 10 × 10 MiB = 100 MiB por recurso, sem teto agregado, que é o buraco deixado pela remoção da cota por tenant (§9.1). | Interpretação de artefato autoritativo. Recomendo **adotar os dois** (`FILE_MAX_PER_RESOURCE` + `FILE_MAX_BYTES_PER_RESOURCE`): ambos cabem na frase, ambos são "por recurso" (não por Org, que a epics exclui), e o segundo fecha o buraco. |
-| **Q2** | `epics.md:1193` põe *"rate limit e proteção contra abuso"* no escopo da **3.8**, não da 3.7. A §12 desta ADR o traz para a 3.7 como controle compensatório da cota removida. | Escopo de Story. Ver §12 e DEB-2. |
-| **Q3** | Allowlist de tipos: **`text/plain`, `text/csv`, `application/json` não têm magic bytes**, e a §4 torna magic bytes obrigatório. Incluí-los torna a regra inimplementável como escrita; excluí-los proíbe anexar `.txt`/`.csv`. Documentos Office são ZIP (`PK`) com risco de macro. | Decisão de Produto sobre o que o usuário pode anexar. Ver §4.1. |
+| **Q1** | `epics.md:1175`: *"tamanho máx por arquivo e limite total por recurso"* — bytes ou contagem? | **CONTAGEM: `FILE_MAX_PER_RESOURCE` = 10 arquivos/recurso**, configurável, faixa validada, fail-closed, **genérico** (não acopla a Card/Registro). A recomendação anterior de "adotar os dois" fica **revogada** — não há `FILE_MAX_BYTES_PER_RESOURCE` na Fase 1. Ver §9. |
+| **Q2** | `epics.md:1193` põe *"rate limit e proteção contra abuso"* no escopo da 3.8. | **A proteção genérica contra saturação (rate limit + semáforo de scan) pertence à 3.7** — "a capacidade nunca entra no ar desprotegida". A **extração do primitivo antiabuso é tech story pré-requisito da 3.7** (não trabalho embutido). A **3.8** acrescenta só limites do **consumidor/canal público**. Ver §12. |
+| **Q3** | `.txt`/`.csv`/`.json` não têm magic bytes; incluí-los quebraria o gate. | **FORA da allowlist inicial da 3.7. NÃO enfraquecer o gate de magic bytes** para aceitá-los. Entram no futuro só com validação de UTF-8, parser específico, limites estruturais e testes próprios. Ver §4.1. |
 
 ---
 
@@ -245,8 +254,8 @@ Consumidores (Card 3.8, Registro 3.8, E5, E6, avatar 3.10) chegam por **contrato
 
 ### 4. Upload — stream pela API (Opção A)
 
-**Não há URL pré-assinada.** Os bytes atravessam a API. Isto é o que torna as validações abaixo possíveis. Sobre a
-relação com a epics 3.7 AC#2, ver **DIV-2** — a Opção A **emenda** aquele AC, não o cumpre.
+**Não há URL pré-assinada.** Os bytes atravessam a API. Isto é o que torna as validações abaixo possíveis, e o AC#2 da
+epics 3.7 **já foi emendado** para descrever exatamente esta entrega (DIV-2, §0).
 
 Ordem obrigatória — **cada passo só roda se o anterior passou**:
 
@@ -285,8 +294,9 @@ T6 e T7 dependem **inteiramente** do conteúdo desta lista. Baseline técnico co
 `epics.md:1229` exige literalmente *"rejeitar SVG ativo e formatos com conteúdo executável"*.
 
 **Tipos sem magic bytes (`text/plain`, `text/csv`, `application/json`) e documentos Office (ZIP/`PK`, risco de macro)
-ficam FORA até decisão do dono — Q3 (§0).** Fail-closed: o que não está na lista é negado. Não simulo uma decisão de
-Produto para fechar a tabela.
+ficam FORA da allowlist inicial — decisão Q3 do dono (§0).** O gate de magic bytes **não é enfraquecido** para
+acomodá-los; eles entram no futuro só com validação de UTF-8, parser específico, limites estruturais e testes próprios.
+Fail-closed: o que não está na lista é negado.
 
 ### 5. Veredito de promoção — COMPOSTO
 
@@ -443,10 +453,11 @@ O motivo é **único de propósito**: distinguir "em quarentena" de "infectado" 
 | Tamanho por arquivo | 10 MiB (`10485760`) | `FILE_MAX_BYTES` |
 | Arquivos **por recurso** | 10 | **`FILE_MAX_PER_RESOURCE`** |
 
-**`FILE_MAX_PER_RESOURCE`, não "por Registro".** `epics.md:1175` é explícito: *"desacoplada de Card e Registro
-(ajuste 6)"*. "Por Registro" acoplaria a capacidade a um consumidor da 3.8, excluiria Card/Tarefa/e-mail/avatar — que
-esta ADR lista como consumidores — e o AC seria **intestável na 3.7**. Recurso = par opaco
-`(resourceType, resourceId)`. **Se "limite total" for bytes (Q1, §0), soma-se `FILE_MAX_BYTES_PER_RESOURCE`.**
+**`FILE_MAX_PER_RESOURCE` = CONTAGEM de arquivos, não bytes, não "por Registro" — decisão Q1 do dono (§0).**
+`epics.md:1175` é explícito: *"desacoplada de Card e Registro (ajuste 6)"*. "Por Registro" acoplaria a capacidade a um
+consumidor da 3.8, excluiria Card/Tarefa/e-mail/avatar — que esta ADR lista como consumidores — e o AC seria
+**intestável na 3.7**. Recurso = par opaco `(resourceType, resourceId)`. **Não há `FILE_MAX_BYTES_PER_RESOURCE` na
+Fase 1** (o dono decidiu "contagem"); a cota agregada por bytes segue como o débito DEB-1 (§9.1).
 
 #### 9.1 Cota por tenant NÃO entra na Fase 1 (decisão do dono, 2026-07-17)
 
@@ -536,12 +547,14 @@ clamd. A v1 sanitizava um lado da porta.
 
 ### 12. Antiabuso — extração do primitivo da 2.8 (decisão do dono, 2026-07-17)
 
-**"Reuso" era a palavra errada; a certa é EXTRAÇÃO.** O primitivo existe e é bom — `public-rate-limit.ts:31-39`,
-`INSERT … ON CONFLICT DO UPDATE … RETURNING` num único statement, atômico, fail-closed → 429 (verificado) — mas ele
-vive em `pipes/public-submissions/`, um **módulo de domínio**. Importá-lo de `files/` violaria o **AD-5**
-(`ARCHITECTURE-SPINE.md:69`: *"nenhum módulo acessa repositório/tabela interna de outro"*).
+**"Reuso" era a palavra errada; a certa é EXTRAÇÃO — e ela é uma TECH STORY pré-requisito da 3.7 (Q2 do dono, §0).**
+O primitivo existe e é bom — `public-rate-limit.ts:31-39`, `INSERT … ON CONFLICT DO UPDATE … RETURNING` num único
+statement, atômico, fail-closed → 429 (verificado) — mas ele vive em `pipes/public-submissions/`, um **módulo de
+domínio**. Importá-lo de `files/` violaria o **AD-5** (`ARCHITECTURE-SPINE.md:69`: *"nenhum módulo acessa
+repositório/tabela interna de outro"*). Por isso a extração **não** é trabalho embutido na 3.7: é a **tech story
+pré-requisito** que move o primitivo para o kernel; a 3.7 então consome o kernel já extraído, **sem tocar `pipes/`**.
 
-- **Extrair** para `kernel/antiabuso/`, preservando o statement atômico.
+- **Extrair** (na tech story) para `kernel/antiabuso/`, preservando o statement atômico.
 - **A 2.8 continua igual**, por **adapter compatível**: sem mudança de comportamento nem de contrato.
 - **O kernel expõe SÓ mecanismos, nunca política.** São **dois**, porque o rate limit e o semáforo **são mecanismos
   diferentes** (ver §12.1):
@@ -591,9 +604,18 @@ construído sobre ele **não teria como liberar o slot**: a única saída seria 
 por ~30 s** — o "semáforo" degradaria para um segundo rate limit, **muito mais apertado do que qualquer um pretendia**,
 e viraria **self-DoS de Org legítima**: exatamente o risco que o parágrafo seguinte diz evitar.
 
-`adquirirSlot` é uma linha de slot com `token` e `expiraEm`; `liberarSlot` a remove (a tabela de antiabuso é infra de
-plataforma, e o runtime já tem `DELETE` em `RateLimit` — `migrations/20260713000000_auth_e_antiabuso/migration.sql:125`).
-**O `liberarSlot` roda em `finally`** — um `throw` no scanner não pode vazar slot.
+**Persistência do slot — especificada (não é a `RateLimit`).** A `RateLimit` tem só `id/key/count/lastRequest`
+(`schema.prisma:263-273`) — **não guarda `token` nem `expiraEm`**, então o semáforo **não** a reusa; usá-la seria a
+mesma imprecisão que reprovou a v3 ("não especificou a persistência"). O slot vive numa tabela **global de plataforma
+`ScanSlot`** (sem RLS, como `RateLimit`/`Account`/`PublicFormRoute` — AD-10; a chave carrega o `<orgId>`, não a linha):
+colunas `key` (`scan:<orgId>`), `token` (uuid), `expiraEm` (timestamp). Vive em `kernel/antiabuso/`, ao lado do
+contador. **GRANT `SELECT/INSERT/DELETE`** (o `liberarSlot` apaga a linha — é infra de antiabuso, como a `RateLimit`,
+que o runtime já pode apagar: `migrations/20260713000000_auth_e_antiabuso/migration.sql:125`).
+
+- `adquirirSlot(chave, teto, ttl)` — statement **atômico** que conta os slots ativos (`expiraEm > now`) da chave e
+  insere um novo **só se** abaixo do teto, devolvendo o `token` ou `null` (fail-closed → 429). Sem read-then-write.
+- `liberarSlot(chave, token)` — `DELETE WHERE key AND token`. **Roda em `finally`** — um `throw` no scanner não pode
+  vazar slot.
 
 **Slots expiram** (`ttl` = `CLAMAV_TIMEOUT_MS` + margem) **como REDE, não como caminho normal**: uma réplica que morre
 no meio do scan vazaria o slot para sempre e **trancaria a Org fora da capacidade** — o fail-closed viraria self-DoS
@@ -603,12 +625,12 @@ permanente.
 (não espera o TTL — é o que separa semáforo de rate limit); slot de réplica morta expira; fail-closed; **ausência de
 regressão na 2.8**.
 
-> **Escopo (Q2, §0).** `epics.md:1193` põe *"rate limit e proteção contra abuso"* no escopo da **3.8**. A extração +
-> adapter + refatoração da 2.8 é trabalho sobre o Épico 2, e o Rollback da v3 afirmava que a 3.7 *"não toca `pipes/`"*
-> — contradição direta. **Resolução proposta:** a **extração e o rate limit** saem para **tech story própria**
-> (precedente `tech-d01-hop-web-api-autenticado.md`), da qual a 3.7 depende; o **semáforo de concorrência de scan
-> fica na 3.7**, por ser proteção do scanner que a 3.7 introduz (sem ele, T11 é real no primeiro upload autenticado).
-> **Depende do dono.**
+> **Escopo (Q2 — DECIDIDO pelo dono, §0).** A **proteção genérica contra saturação (rate limit + semáforo) pertence à
+> 3.7** — "a capacidade nunca entra no ar desprotegida". A **extração do primitivo antiabuso da 2.8 é tech story
+> pré-requisito da 3.7** (precedente `tech-d01-hop-web-api-autenticado.md`), não trabalho embutido — assim a 3.7 **não
+> toca** `pipes/` diretamente (consome o kernel já extraído). A **3.8** acrescenta só limites do **consumidor/canal
+> público** (`epics.md:1193`). Isto reconcilia a epics: o rate limit **base** é infraestrutura da 3.7 via a tech
+> story; o rate limit **do canal público** é da 3.8.
 
 ### 13. Proibições
 
@@ -646,7 +668,7 @@ regressão na 2.8**.
 
 | Alternativa | Por que **não** |
 |---|---|
-| **URL pré-assinada (a v1)** | **Rejeitada pelo dono.** É *bearer*: vincula-se à chave e ao relógio, **nunca ao usuário**. Impede `nosniff`, impede validar bytes na emissão, e a chave mutável abre TOCTOU entre scan e promoção. **Cumpre a cláusula "URL temporária" da epics 3.7 AC#2 que a Opção A não cumpre** — ver DIV-2; a escolha é do dono, e o conflito está registrado, não escondido |
+| **URL pré-assinada (a v1)** | **Rejeitada pelo dono.** É *bearer*: vincula-se à chave e ao relógio, **nunca ao usuário**. Impede `nosniff`, impede validar bytes na emissão, e a chave mutável abre TOCTOU entre scan e promoção. A cláusula "URL temporária" que ela cumpria **deixou de ser exigida**: a epics 3.7 AC#2 e o AD-27 foram emendados para descrever a entrega sob sessão (DIV-1/DIV-2, §0) |
 | Bytes no banco (`bytea`) | Infla backup/WAL; AD-27 já decidiu storage dedicado |
 | Prefixos em vez de dois buckets | Prefixo é convenção; policy errada expõe tudo |
 | Scan assíncrono com entrega otimista | Distribui malware na janela |
@@ -692,10 +714,9 @@ precedente exato de `podePublicarComArquivo` (2.4 declara, 2.6 consome).
 - **Rollback de aplicação NÃO apaga objeto nem dado.**
 - **Rollback de schema só após prova de ausência/migração dos dados.**
 
-> **Escopo de `pipes/`:** com a extração do antiabuso fora da 3.7 (§12, Q2), a 3.7 **não toca** `pipes/` nem
-> `databases/`, e suas dependências declaradas (`epics.md:1183`: 1.2/1.3/1.4/1.6) ficam intactas. **Se o dono mantiver
-> a extração dentro da 3.7, esta frase cai e a Story passa a depender da 2.8** — a v3 afirmava as duas coisas ao
-> mesmo tempo.
+> **Escopo de `pipes/`:** a extração do antiabuso é a **tech story pré-requisito** (Q2 do dono, §12), então a 3.7
+> **não toca** `pipes/` nem `databases/` — consome o `kernel/antiabuso/` já extraído. Suas dependências declaradas
+> (`epics.md:1183`: 1.2/1.3/1.4/1.6) ficam intactas, somadas à dependência da tech story de extração.
 
 ## Critérios de aceite
 
@@ -807,4 +828,5 @@ SSRF vira vetor real, e nada nesta ADR o cobre. Hoje isso está protegido **por 
 e-mail é a única coisa que o impede. Quando o e-mail destravar, o caminho de arquivo já estará aberto e ninguém
 revisará esta ADR de novo. **E6 exige decisão própria antes do destravamento do e-mail.**
 
-**Também não decide:** Q1, Q2 e Q3 (§0) — são do dono. E o provedor de staging/produção (DEB-2).
+**Também não decide:** o provedor de storage/scanner de staging/produção (DEB-2) e a implementação em si (a 3.7 é
+passo futuro, com seus gates de runtime). Q1/Q2/Q3 **já foram decididas** pelo dono (§0/DIV-3).
