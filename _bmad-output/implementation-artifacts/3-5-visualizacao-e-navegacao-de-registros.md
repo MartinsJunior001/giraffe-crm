@@ -1,7 +1,7 @@
 ---
 story_key: 3-5-visualizacao-e-navegacao-de-registros
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: ALTO
 baseline_commit: ba412d7
@@ -14,7 +14,7 @@ gate_arquitetura: Superfície de **LEITURA** (tabela/navegação) sobre `Record`
 **I want** consultar os Registros de um Database em tabela com filtros e ordenação,
 **So that** eu encontre os dados que preciso sem vazamento por agregação.
 
-**Status: ready-for-dev.** Quinta Story do **Épico 3**, risco **ALTO** — abre a superfície de **LEITURA** (tabela e
+**Status: done.** Quinta Story do **Épico 3**, risco **ALTO** — abre a superfície de **LEITURA** (tabela e
 navegação) sobre `Record` (3.4), **sem migration e sem GRANT novo**, espelhando o **Kanban read (2.9)**: cursor
 determinístico, projeção controlada, autorização por acesso de leitura ao Database. A **diferença** frente ao
 Kanban é que o **Registro É o dado** — a tabela **exibe os `valores`** (não há PII a esconder da lista como no
@@ -174,6 +174,19 @@ avançados (fora da Fase 1).
 | Data | Mudança |
 |------|---------|
 | 2026-07-16 | Story criada (E3, Wave 4) a partir de `epics.md` (Story 3.5) e da Spine (FR-20, D3.4, NFR-3/4, INV-REPORT-01). Risco **ALTO** (superfície de leitura/tabela sobre Registros; INV-REPORT-01). Escopo **congelado**: tabela/paginação/ordenação/filtros mínimos por tipo, ativos por padrão + arquivados sob opção, edição refletida — read-side puro (sem migration/GRANT), espelhando o Kanban read (2.9). Filtro de Arquivo gated (3.7/3.8, AD-28). Grupos complexos/filtros salvos/visualizações/fórmulas/agregações, Histórico read-side (3.6) e vínculo (3.9) = fora. Guard C3 congelado. Dependência 3.4 `done`. Status → **ready-for-dev** (após create-story). |
+| 2026-07-16 | Implementada, revisada (revisão adversarial CRÍTICA em 4 camadas sem achado CRÍTICO/ALTO; injeção fechada e provada), integrada pelo **PR #82** (merge `99f7bf9`) com CI **verde** nos 4 jobs. Read-side puro (**sem migration** — SC-206 N/A). Status → **done**. |
+
+## Review Findings
+
+Revisão adversarial CRÍTICA (4 camadas read-only sobre o diff da 3.5): **Segurança**, **Arquitetura/RLS**, **Edge Cases** e **Aceite**. **Nenhum achado CRÍTICO/ALTO de código.** Aceite **APROVADO** (AC1–AC7; guard C3 congelado confirmado por `git diff ba412d7 -- apps/api/src/kernel/authz/` vazio; sem migration/GRANT novo).
+
+- **Segurança:** listar exige `exigirLerDatabase` (404 não-enumerante; VIEWER lê — ler ≠ operar). **SQL injection fechada**: núcleo puro `record-query.core` valida por **allowlist** (Campo por `Field.id` da definição, operador e valor por tipo → 400 fail-closed); SQL **totalmente parametrizado** (`Prisma.raw` só para o literal `ASC`/`DESC` do plano tipado). **Prova por teste de injeção** (valor `'; DROP TABLE "Record"; --` tratado como literal → 0 linhas, tabela íntegra). **RLS em raw** pelo primitivo `$transaction([...definirContextoOrg, $queryRaw])` (cross-tenant invisível + contagem escopada — INV-REPORT-01). `orgId` fora da projeção; `valores` exibido por design (dado do Database, acesso por-Database). Data comparada como texto ISO (sem DoS de cast); número `::numeric` seguro. `FILE` gated (AD-28).
+- **Arquitetura/RLS:** read-side puro (sem migration/GRANT — runtime segue `SELECT`); núcleo puro testável; rota `GET /records` coexiste com `GET /records/:recordId` (regressão 3.4 verde); sem ciclo de módulo. INV-REPORT-01 **cai por construção** (acesso por-Database; sem agregação cross-Database).
+- **Edge Cases / Aceite:** produção correta (Database sem Formulário → colunas vazias/lista vazia; Database arquivado legível com `podeEditar` falso; NULLS LAST). **INFO** (não defeito): `colunas` inclui o Campo `FILE` (não funcional até 3.8) — honesto (o Campo existe) e o **filtro** sobre ele é rejeitado (gated).
+
+**Decisão registrada (não é descope):** a ordenação por Campo é **entregue** via raw parametrizado (o Prisma 6.19.3 não expressa `orderBy` sobre path JSON) — segura e provada.
+
+**Evidência de execução:** typecheck/lint/format verdes; testes-alvo em PostgreSQL real (unidade allowlist/fail-closed; RLS raw cross-tenant invisível/contagem escopada; HTTP AC1–AC7 + injeção); regressão 3.4 **11/11**; suíte serial **727/727**; CI do PR #82 verde nos 4 jobs.
 
 ## Dev Agent Record
 
