@@ -77,14 +77,19 @@ Se a senha for **gerada**, ela sai **uma vez** — capture com segurança e **n�
 **Reset da senha do Admin (se a senha de uso único se perder):** rodar o provision de novo **não**
 reseta (é idempotente e não sobrescreve a credencial). Use o reset dedicado — atualiza **só** a
 credencial (`AuthCredential`) do Account por e-mail, com hash do próprio Better Auth, **sem recriar o
-tenant** e com guarda de domínio `@staging.giraffedev.cloud`:
+tenant** e com guarda de domínio `@staging.giraffedev.cloud`. O script constrói a imagem one-shot a
+partir do **repo de trabalho atualizado** (`--build`) — não do commit implantado — e um **gate** prova
+que o `reset-admin-password.mjs` está **empacotado** na imagem antes de rodar (evita o
+`MODULE_NOT_FOUND` visto quando a imagem não continha o arquivo). Precisa só de `REDE` (não `DIR`):
 ```bash
-DIR="$DIR" REDE="$REDE" RESET_ADMIN_EMAIL="admin@staging.giraffedev.cloud" \
+git pull --ff-only                                     # o repo de trabalho PRECISA ter o .mjs
+REDE="$REDE" RESET_ADMIN_EMAIL="admin@staging.giraffedev.cloud" \
   bash scripts/ops/l6/reset-admin-password.sh          # senha nova sai UMA vez; não cole no relatório
 ```
-A senha nunca aparece em `ps`/log/arquivo (env herdado). Para fixar uma senha específica em vez de
-gerar, exporte `RESET_ADMIN_PASSWORD` antes (também herdada, nunca em argumento). Prova reproduzível:
-`bash scripts/ops/l6/test-reset-admin-e2e.sh` → `RESET_E2E_OK`.
+Espere `RESET_ADMIN_OK`. A senha nunca aparece em `ps`/log/arquivo (env herdado). Para fixar uma senha
+específica em vez de gerar, exporte `RESET_ADMIN_PASSWORD` antes (também herdada, nunca em argumento).
+Prova reproduzível pelo mesmo `docker compose run`: `bash scripts/ops/l6/test-reset-admin-e2e.sh` →
+`RESET_E2E_OK` (inclui o gate de empacotamento e o verify real NEW_OK/OLD_FAIL do Better Auth).
 
 ### Passo 7 — Backup pós-migration + segundo restore descartável
 ```bash
