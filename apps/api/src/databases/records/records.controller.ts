@@ -1,23 +1,36 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Requer } from '../../kernel/authz/requer.decorator';
 import { type CicloVidaRegistroVisao, RecordLifecycleService } from './record-lifecycle.service';
+import { parseListarQuery } from './records-query.dto';
+import { type RecordPaginaVisao, RecordsReadService } from './records-read.service';
 import { parseCriar, parseEditar, validarIdRota } from './records.dto';
 import { type RecordVisao, RecordsService } from './records.service';
 
 /**
- * Ciclo de vida do Registro (Story 3.4), API INTERNA. Rotas sob `databases/:databaseId` (o Registro pertence a 1
- * Database — RN-063; `Card ≠ Registro`). Todas `@Requer('ler','Database')` (guarda GROSSA, aberta na 3.2); a
- * guarda FINA (OPERAR o Database — VIEWER não opera; sem acesso → 404) vive nos serviços (DBT-AUTHZ-01).
+ * Ciclo de vida do Registro (Story 3.4) + visualização/tabela (Story 3.5), API INTERNA. Rotas sob
+ * `databases/:databaseId` (o Registro pertence a 1 Database — RN-063; `Card ≠ Registro`). Todas
+ * `@Requer('ler','Database')` (guarda GROSSA, aberta na 3.2); a guarda FINA (OPERAR o Database para mutar; LER
+ * para a tabela) vive nos serviços (DBT-AUTHZ-01).
  *
- * Criar → **201** (idempotente: um retry com a mesma `idempotencyKey` devolve o MESMO Registro). Obter/editar/
- * arquivar/restaurar → **200**. Sem rota de exclusão (runtime sem GRANT DELETE). Sem listagem/tabela (3.5) nem
- * timeline de Histórico (3.6).
+ * Criar → **201** (idempotente). Obter/editar/arquivar/restaurar/listar → **200**. Sem rota de exclusão (runtime
+ * sem GRANT DELETE). Sem timeline de Histórico (3.6).
  */
 @Controller('databases/:databaseId')
 export class RecordsController {
   constructor(
     private readonly records: RecordsService,
     private readonly lifecycle: RecordLifecycleService,
+    private readonly leitura: RecordsReadService,
   ) {}
 
   @Requer('ler', 'Database')
@@ -28,6 +41,17 @@ export class RecordsController {
   ): Promise<RecordVisao> {
     const dto = parseCriar(body);
     return this.records.criar(validarIdRota(databaseId, 'databaseId'), dto);
+  }
+
+  /** Tabela de Registros (Story 3.5): paginação/ordenação/filtros. Poder: ler (ler ≠ operar). */
+  @Requer('ler', 'Database')
+  @Get('records')
+  async listar(
+    @Param('databaseId') databaseId: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<RecordPaginaVisao> {
+    const entrada = parseListarQuery(query);
+    return this.leitura.listar(validarIdRota(databaseId, 'databaseId'), entrada);
   }
 
   @Requer('ler', 'Database')
