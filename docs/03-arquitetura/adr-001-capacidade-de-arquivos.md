@@ -274,7 +274,7 @@ clamd. A v1 sanitizava um lado da porta.
 | T8 | Injeção de header via nome de arquivo | Sanitização + `filename*` RFC 5987 |
 | T9 | Vazamento por log (assinatura/PII) | Chave opaca + sanitização **central** (§9). Sem presigned URL, não há assinatura a vazar |
 | T10 | Exaustão de storage / DoS por custo | Limites por arquivo/recurso/tenant contando **bytes físicos** |
-| T11 | **Exaustão do scanner compartilhado** | Rate limit por Org na admissão, fail-closed → 429, reusando o primitivo atômico da 2.8. Sem ele, saturar o ClamAV **nega arquivos a todos os tenants** — o fail-closed do T4 vira DoS da plataforma |
+| T11 | **Exaustão do scanner compartilhado** | **Rate limit atômico por Org** (§11) **+ limite de concorrência de scan por Org**. Sem os dois, saturar o ClamAV **nega arquivos a todos os tenants** — o fail-closed do T4 vira DoS da plataforma, **sem malware nenhum**. Rate limit conta *requisições*; a concorrência é que limita *carga* — 20 uploads de 10 MiB simultâneos passam por qualquer contador e prendem o clamd |
 | T12 | Retenção indevida (LGPD) | Soft-delete + expurgo ≤ 24 h idempotente, **inclusive de `QUARANTINED`/`INFECTED`** |
 | T13 | Bypass privilegiado (produto **e** operação) | §10 + credencial de storage de menor privilégio, do cofre (AD-31) |
 
@@ -314,7 +314,9 @@ segurança vira ajustável sem deploy — exatamente o que a v1 permitia.
 
 ## Rollback
 
-**Gate PRÓPRIO da capacidade: `FILES_ENABLED`.** A v1 alegava reuso de `podePublicarComArquivo` — **falso**: aquela
+**Gate PRÓPRIO da capacidade: `FILES_ENABLED`.** **A 3.7 DECLARA a constante de motivo e a função de gate; a 3.8 CONSOME** — o precedente exato de `podePublicarComArquivo` (2.4 declara, 2.6 consome). Assim a 3.7 **não toca** `pipes/` nem `databases/`, e suas dependências declaradas (1.2/1.3/1.4/1.6) e o "desacoplada de Card e Registro" da epics ficam intactos. O 409 sobre `FormVersion` legada é **AC da 3.8**, não desta Story.
+
+ A v1 alegava reuso de `podePublicarComArquivo` — **falso**: aquela
 função decide **publicabilidade de Formulário** (2.4 declara, 2.6 consome), não conhece rota/upload/download, e não
 tem chamador nenhum no caminho de arquivo.
 
@@ -357,14 +359,26 @@ Verdadeiros = podem **reprovar**. Os da v1 (2, 6, 7, 8) passariam verdes sobre u
 
 ## Provisionamento (AD-32)
 
-A 3.7 **deve** acrescentar `minio` e `clamav` ao **`docker-compose.yml`** — fonte única de provisionamento, pelo mesmo
-motivo pelo qual o banco do CI sobe por lá: reescrever no YAML do workflow criaria uma segunda verdade, e a que vale em
-produção seria a que ninguém testa. As 8 variáveis entram no `.env.example`.
+**MinIO e ClamAV NÃO entram na stack compartilhada com o Chatwoot** (decisão do dono, 2026-07-17).
 
-Sem isso o AC-18 é **auto-inexequível** (`CLAMAV_URL` ausente ⇒ nega ⇒ a 3.7 nasce impossível de rodar).
+| Ambiente | Onde | Fail-closed |
+|---|---|---|
+| **Dev / CI** | `docker-compose.override.yml` — que o **Coolify não carrega** (invoca `-f docker-compose.yml`) | `CLAMAV_URL` ausente ⇒ nega upload |
+| **Staging / Produção** | **capacidade externa ou dedicada**, nunca na stack coabitada — **AD-32/deploy** | idem: sem storage ou scanner ⇒ **nega**, nunca degrada |
 
-Provedor gerenciado, buckets por ambiente e topologia de produção são **AD-32/deploy** — não desta ADR. *(A v1 citava
-AD-11 aqui; errado: AD-11 é sobre referência entre entidades, não sobre provedor ou ambiente.)*
+**Por que isto é uma regra e não uma preferência — o que a v2 quase causou.** A v2 mandava acrescentá-los ao
+`docker-compose.yml`. Esse arquivo declara, no próprio comentário: *"Somados, os três serviços ficam sob **4 GB /
+2 vCPU** — o orçamento acordado para o CRM neste host compartilhado"* — e ele **já está no teto** (1.5 + 1.5 + 1 GB).
+O clamd carrega a base de assinaturas em memória (~1–2 GB), e o MinIO soma mais. O mesmo arquivo é o de deploy no
+Coolify, num host que **coabita com o Chatwoot**. A instrução da v2 era, na prática, um **OOM no sistema vizinho** que
+a ordem manda não tocar — causado pela ADR que deveria protegê-lo. Eu escrevi aquilo sem ler o comentário do arquivo
+que estava mandando alterar.
+
+O `.env.example` recebe as variáveis (documentação), mas **nenhum serviço novo** entra no compose base.
+
+Sem o override, o AC-18 é **auto-inexequível** em dev/CI (`CLAMAV_URL` ausente ⇒ nega ⇒ a 3.7 nasce impossível de
+rodar). Com ele, dev/CI têm MinIO e ClamAV **reais**, que é o que o AC-18 exige — e o host compartilhado não ganha
+nada. *(A v1 citava AD-11 aqui; errado: AD-11 é sobre referência entre entidades, não sobre provedor ou ambiente.)*
 
 ## O que esta ADR NÃO decide
 
@@ -382,3 +396,22 @@ revisará esta ADR de novo. **E6 exige decisão própria antes do destravamento 
     vermelho.)* **Por que separado do AC-3:** na v2 este AC ia pela rota HTTP, e a **RLS matava a requisição antes de
     o adapter existir no caminho** — ele passava com a guarda **deletada**. A integração HTTP/RLS continua como defesa
     adicional, **não como prova desta guarda**.
+
+## 11. Antiabuso — extração do primitivo da 2.8 (decisão do dono, 2026-07-17)
+
+**"Reuso" era a palavra errada; a certa é EXTRAÇÃO.** O primitivo existe e é bom — `public-rate-limit.ts:31`,
+`INSERT … ON CONFLICT DO UPDATE … RETURNING` num único statement, atômico, fail-closed → 429 — mas ele vive em
+`pipes/public-submissions/`, um **módulo de domínio**. Importá-lo de `files/` violaria o **AD-5** (*"nenhum módulo
+acessa repositório/tabela interna de outro"*) e contradiria a própria §2 desta ADR.
+
+- **Extrair** para um **kernel antiabuso genérico** (`kernel/antiabuso/`), preservando o statement atômico.
+- **A 2.8 continua igual**, por **adapter compatível**: sem mudança de comportamento nem de contrato.
+- **A 3.7 usa namespace próprio** — chave por **tenant + ator/recurso**, **nunca** o `publicId` hardcoded (a chave
+  atual é `pub:<ip>:<publicId>`, e a janela/teto são constantes no arquivo).
+- **Limite de concorrência de scan por Org** (semáforo), porque contar requisições não limita carga.
+
+**Provas exigidas:** concorrência; limite **não ultrapassado**; fail-closed; e **ausência de regressão na 2.8**.
+*(Mutação: trocar o statement atômico por read-modify-write ⇒ o teste de concorrência fica vermelho.)*
+
+Isto é **trabalho real, não "reuso"** — e estava fora do orçamento da v2, que dizia apenas "reusando o primitivo
+atômico da 2.8" como se fosse um import.
