@@ -154,6 +154,46 @@ criação do volume, então não reconcilia. **Não** retente o migrate nem prov
 4. **Após `AUTH_OK` (ou `ROLE_OK + AUTH_OK`):** repita o passo 4 (migrate one-shot) e o passo 5
    (zero pendências).
 
+## Troubleshooting — P3018 na migration inicial (`role "giraffe_app" does not exist`)
+
+Sintoma: o `giraffe_migrator` autentica e o migrate **começa**, mas a 1ª migration
+(`20260712000000_init_tenancy_rls`) falha com **P3018 / SQLSTATE 42704** no `GRANT ... TO giraffe_app`
+— o mesmo volume antigo também não criou o `giraffe_app`. Nenhuma migration posterior roda até
+recuperar esta falha. **Não** provisione, **não** repita o migrate cegamente, **não** use `resolve`
+sem provar o estado físico.
+
+1. **Diagnóstico (read-only, prova o estado físico):**
+   ```bash
+   bash scripts/ops/l6/diagnose-migration-failure.sh
+   ```
+   Confirma `giraffe_app` ausente, lê a linha da migration em `_prisma_migrations` (sem o campo
+   `logs`) e inventaria os objetos da migration. `VEREDITO=RECUPERAVEL_ROLLED_BACK` = causa presente,
+   migration FAILED e **zero** objetos parciais (rollback transacional completo). `PARCIAL_REQUER_DOWN_SQL`
+   = há objetos parciais (não marcar rolled-back direto).
+
+2. **Reconciliar o `giraffe_app`** (só após a falha comprovada do runtime):
+   ```bash
+   bash scripts/ops/l6/reconcile-app-role.sh
+   ```
+   Reproduz a parte do `giraffe_app` de `00-roles.sql`: `CREATE ... LOGIN` só se ausente; atributos
+   `LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT`; `GRANT CONNECT`/`USAGE`; senha
+   `APP_PASSWORD`. Idempotente, fail-closed, exige `ROLE_OK + AUTH_OK`. **Não** toca `giraffe_migrator`.
+
+3. **Recuperar a migration falha** (recaptura `DIR`/`REDE` do passo 1 do runbook):
+   ```bash
+   DIR="$DIR" REDE="$REDE" bash scripts/ops/l6/recover-failed-migration.sh
+   ```
+   Só marca `rolled-back` (via `db-migrate.mjs resolve-rolled-back`, **nunca** `--applied`) se provar
+   **zero** objetos parciais; com objeto parcial, bloqueia fail-closed e manda ensaiar o `down.sql`
+   autoritativo em banco descartável. Preserva o backup pré-migration.
+
+4. **Repetir o migrate** (passos 4–5) e exigir `MIGRATE_ONESHOT_OK`.
+
+Prova end-to-end reproduzível (build da imagem migrate; não toca o staging):
+`bash scripts/ops/l6/test-recovery-e2e.sh` → espera `RECOVERY_E2E_OK` (P3018 reproduzida → reconcilia
+→ recupera → migrate completo → zero pendências → idempotente). Reconciliação isolada do app:
+`bash scripts/ops/l6/test-app-role.sh` → `REGRESSAO_OK`.
+
 ## Gates de segurança (invioláveis)
 
 - **Nunca** imprimir/colar segredos ou senha do Admin no relatório.

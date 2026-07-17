@@ -114,6 +114,22 @@ function comandos(action, alvo) {
       return [{ args: ['migrate', 'deploy'] }];
     case 'status':
       return [{ args: ['migrate', 'status'] }];
+
+    // Marca uma migration FALHA (estado failed em `_prisma_migrations`, ex.: P3018 no meio da
+    // aplicação) como REVERTIDA, para que o `deploy` seguinte a REAPLIQUE do zero. Use SOMENTE depois
+    // de (a) remediar a causa da falha e (b) provar o estado físico — nenhum objeto parcial da
+    // migration existe (rollback transacional completo). NUNCA marca como `--applied`: isso mentiria
+    // que o schema foi criado. O Prisma exige que a migration esteja em estado FAILED (senão P3012).
+    case 'resolve-rolled-back': {
+      if (!alvo || !/^\d{14}_[a-z0-9_]+$/i.test(alvo)) {
+        console.error(
+          '[db] resolve-rolled-back exige o NOME da migration falha (ex.: 20260712000000_init_tenancy_rls).',
+        );
+        return undefined;
+      }
+      return [{ args: ['migrate', 'resolve', '--rolled-back', alvo] }];
+    }
+
     case 'seed':
       return [
         {
@@ -156,7 +172,7 @@ function comandos(action, alvo) {
   }
 }
 
-const ACOES = ['deploy', 'status', 'seed', 'rollback'];
+const ACOES = ['deploy', 'status', 'seed', 'rollback', 'resolve-rolled-back'];
 
 // Carrega `.env` (cwd e raiz do repositório) — o Prisma CLI faria isso sozinho, mas nós
 // precisamos de MIGRATION_DATABASE_URL *antes* de invocá-lo. Ausência do arquivo não é
