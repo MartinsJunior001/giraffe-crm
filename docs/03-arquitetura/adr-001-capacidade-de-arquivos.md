@@ -1,6 +1,6 @@
 # ADR-001 — Capacidade compartilhada de arquivos (resolve OQ-47, destrava AD-28 para arquivos)
 
-- **Status:** aprovada pelo dono em 2026-07-17. **Opção A (proxy pela API)** decidida pelo dono após revisão.
+- **Status:** **PROPOSTA** — Opção A e as decisões de escopo são do dono (2026-07-17); a v3 aguarda revisão independente de Arquitetura e Segurança. **Não é "aprovada"**: aprovar antes do `security-check` inverteria o gate da Constitution.
 - **Escopo:** **apenas arquivos.** E-mail outbound e IA **permanecem gated** pelo AD-28 (OQ-32, OQ-43..46 abertas).
 - **Rastreabilidade:** OQ-47 (Produto) · AD-4/AD-5 (fronteiras) · AD-6 (isolamento) · AD-9 (principal) · AD-13
   (transação) · **AD-24 (portas)** · AD-27 (Storage) · AD-28 (fail-closed) · AD-29 (observabilidade) · AD-30
@@ -49,17 +49,27 @@ Nome original vive **apenas** na linha de metadado, org-scoped, sob RLS.
 
 #### 1.2 A fronteira de tenant no storage (o AD-6 não alcança o MinIO)
 
-**O MinIO não tem RLS.** No banco há duas camadas (aplicação **e** banco); no storage há **uma**. Três defesas, em
-profundidade:
+**O MinIO não tem RLS, e o backend tem uma credencial ÚNICA.** Esta é a frase honesta, e ela substitui a da v1
+("negado pelo storage") e a da v2 ("só a STS torna aquilo verdadeiro, mas não há AC"). **Nenhuma das duas era
+sustentável.** No banco há duas camadas (aplicação **e** banco). **No storage há uma: a aplicação.** Dizer o
+contrário é o pior tipo de garantia — a que ninguém confere porque acha que já está conferida.
 
-1. **Chave opaca derivada da linha** (§1.1) — conhecê-la exige já ter passado pela RLS.
-2. **Guarda de prefixo no adapter:** a porta recebe o `TenantContext` e **recusa** qualquer chave cujo prefixo ≠
-   `<orgId>`. É o análogo mais próximo de um `WITH CHECK` do lado do cliente.
-3. **Credencial derivada por tenant** — STS `AssumeRole` com policy condicionada a `s3:prefix=<orgId>/`. **Só isto**
-   torna verdadeira a frase "negado pelo storage".
+**O isolamento entre Organizações no storage é garantido por:**
 
-A credencial da aplicação **não é** a raiz do MinIO: é de menor privilégio, escopada aos dois buckets, do cofre
-(AD-31) — o análogo exato de `giraffe_app` × `giraffe_migrator`, que a base pratica no banco e a v1 esqueceu no storage.
+1. **Autorização** — deny-by-default, antes de qualquer byte.
+2. **RLS** — a linha do `fileId` só é legível sob o contexto da Org dona.
+3. **Chave construída no servidor** (§1.1) — sai da linha, nunca de input; conhecê-la exige já ter passado pela RLS.
+4. **Guarda de prefixo no adapter** — a porta recebe o `TenantContext` e **recusa** qualquer chave cujo prefixo ≠
+   `<orgId>`, **antes** de tocar o cliente MinIO.
+
+**Controles compensatórios:** storage privado (nenhum bucket ou URL público), credencial de **menor privilégio**
+escopada aos dois buckets e vinda do cofre (AD-31 — a credencial da aplicação **não é** a raiz do MinIO), e nenhuma
+chave fornecida pelo cliente.
+
+**Hardening futuro, NÃO bloqueador da 3.7 (decisão do dono, 2026-07-17):** credenciais por prefixo via STS
+`AssumeRole` (`s3:prefix=<orgId>/`). Enquanto não existir, **nenhum AC promete isolamento imposto pelo storage** —
+porque nenhum componente pode reprovar esse teste, e um AC que não reprova nada é o defeito que esta base combate
+desde a Story 1.2.
 
 ### 2. Onde vive (AD-24/AD-4/AD-5)
 
@@ -85,13 +95,27 @@ Ordem obrigatória — cada passo só roda se o anterior passou:
 2. **Stream para `quarentena`**, sem carregar tudo em memória.
 3. **Contagem de bytes REAIS**, abortando acima de `FILE_MAX_BYTES`. **`Content-Length` não é confiável** — é um
    número que o cliente digita.
-4. **Magic bytes + MIME permitido (allowlist) + SHA-256**, sobre os bytes que chegaram. **Nunca a extensão**: é texto
-   que o cliente escolhe. Allowlist **positiva** — denylist é uma corrida que o atacante escolhe quando termina.
-5. **Só então o antivírus** (§4).
+4. **Magic bytes + MIME permitido (allowlist) + SHA-256 (nº 1)**, sobre os bytes que chegaram. **Nunca a extensão**: é
+   texto que o cliente escolhe. Allowlist **positiva** — denylist é uma corrida que o atacante escolhe quando termina.
+5. **Só então o antivírus** (§4) — que **relê os bytes REAIS da quarentena** e computa o **SHA-256 (nº 2)**.
 6. Estado inicial **`QUARANTINED`**. **Nunca disponível antes de `CLEAN`.**
 
-**Veredito de promoção é COMPOSTO:** `CLEAN && magicBytesOk && mimeOk && tamanhoOk && checksumOk`. Dizer só
-"scan `CLEAN` → promove" faria do antivírus a única condição — foi o erro da v1.
+#### 3.1 Dois SHA-256 independentes (decisão do dono, 2026-07-17)
+
+- **nº 1** — computado no **ingest**, sobre o stream que a API recebeu, e persistido.
+- **nº 2** — computado no **pipeline de scan**, relendo os **bytes reais do storage**.
+- **Só promove se os dois coincidirem.**
+
+**Por que dois:** a v2 computava **um** hash e ainda assim listava `checksumOk` no veredito — um hash comparado
+**consigo mesmo é sempre igual**. Aquele AC passava em **qualquer** sistema, inclusive num em que o objeto tivesse
+sido corrompido ou substituído entre a gravação e a promoção. Era exatamente a classe de defeito pela qual a v2
+reprovou a v1, reintroduzida por descuido.
+
+A releitura **não é custo extra**: o scanner precisa dos bytes de qualquer forma (o stream de ingestão já foi
+consumido pelo hash e pelos magic bytes). O segundo hash aproveita a passagem que já acontece.
+
+**Veredito de promoção é COMPOSTO:** `CLEAN && magicBytesOk && mimeOk && tamanhoOk && sha256Ingest === sha256Releitura`.
+Dizer só "scan `CLEAN` → promove" faria do antivírus a única condição — foi o erro da v1.
 
 **Modelo de execução:** o scan é **síncrono na requisição** de upload (`CLAMAV_TIMEOUT_MS`). Não há worker, fila nem
 callback — **e isso é a decisão, não uma omissão**. Um endpoint de veredito exposto (`POST /files/:id/verdict`) seria
@@ -143,7 +167,8 @@ contornando o fail-closed **sem derrubar o scanner**. `Heuristics.Limits.Exceede
 |---|---|---|
 | Tamanho por arquivo | 10 MiB (`10485760`) | `FILE_MAX_BYTES` |
 | Arquivos **por recurso** | 10 | **`FILE_MAX_PER_RESOURCE`** |
-| Total por tenant | 1 GiB (`1073741824`) | `FILE_MAX_TENANT_BYTES` |
+
+**Estes dois, e só estes.** A epics 3.7 autoriza literalmente *"tamanho máx por arquivo e limite total por recurso"*.
 
 **`FILE_MAX_PER_RESOURCE`, não "por Registro".** A epics 3.7 é explícita: *"desacoplada de Card e Registro (ajuste
 6)"*. "Registro" nesta base é a entidade `Record`, e `Card ≠ Registro` é invariante. "Por Registro" acoplaria a
@@ -151,12 +176,32 @@ capacidade a um consumidor da 3.8, excluiria Card/Tarefa/e-mail/avatar — que e
 AC seria **intestável na 3.7**, porque anexo de Registro só existe na 3.8. Recurso = par opaco
 `(resourceType, resourceId)`.
 
-**A cota conta bytes FISICAMENTE presentes:** `QUARANTINED` + `AVAILABLE` + `DELETED`-não-expurgado + `INFECTED`. Só o
-**expurgo confirmado** devolve cota. Qualquer outra definição falha aberta: se a cota contasse só `AVAILABLE`, subir
-1 GiB → soft-delete → repetir daria **~24× o limite por dia**, porque o expurgo é "em até 24 h" e os bytes continuam
-lá. "Um limite que falha aberto é a ausência de limite com um nome melhor".
+#### 6.1 Cota por tenant NÃO entra na Fase 1 (decisão do dono, 2026-07-17)
 
-**Reserva na admissão**, não na conclusão — senão N uploads simultâneos passam todos pela checagem (TOCTOU de contador).
+A v1 e a v2 traziam `FILE_MAX_TENANT_BYTES` (1 GiB/tenant). **Removido.** A epics 3.7 diz, no seu próprio
+"Fora do escopo": *"limites por Org/Formulário (**fora da Fase 1**)"* — e tenant **é** a Organização (AD-6/AD-10).
+Mantê-lo seria ampliar o escopo da Fase 1, que a Constitution II proíbe. **A epics não foi emendada para acomodar a
+baseline anterior** — a baseline é que cedeu ao artefato autoritativo.
+
+Com isso **caem também** os ACs que dependiam dele e a discussão de **reserva na admissão** — que, como as revisões
+apontaram, era internamente contraditória: só se pode reservar o `Content-Length`, que a §3.3 declara mentiroso.
+Sem cota por tenant, não há contador a reservar, e o TOCTOU some junto com o limite que o exigia.
+
+O que **fica** protegendo o mesmo risco na Fase 1: `FILE_MAX_BYTES`, `FILE_MAX_PER_RESOURCE`, **rate limit atômico**,
+**limite de concorrência do scanner**, **quarentena e expurgo**, **monitoramento dos bytes físicos com alertas
+operacionais**, e **fail-closed** quando storage ou scanner estiverem indisponíveis.
+
+**Débito registrado (pós-MVP):**
+
+| Campo | Valor |
+|---|---|
+| **Débito** | Cota de armazenamento por tenant (`FILE_MAX_TENANT_BYTES`) |
+| **Impacto** | Abuso de armazenamento e custo — um tenant pode crescer sem teto agregado |
+| **Mitigação atual** | Limites por arquivo e por recurso; rate limit atômico; expurgo ≤ 24 h; monitoramento de bytes físicos com alerta |
+| **Story-alvo** | Fase 2 — Story de cota/billing de armazenamento (a criar; não existe Story de Fase 1 que a comporte) |
+| **Responsável** | Dono do produto (escopo) + Arquitetura (contabilização) |
+| **Gatilho** | **Antes de self-service ou cobrança por uso** — enquanto o provisionamento for controlado, o abuso tem dono conhecido |
+| **Gate** | Teste de **concorrência** e **contabilização de bytes físicos** (`QUARANTINED` + `AVAILABLE` + `DELETED`-não-expurgado + `INFECTED`; só o expurgo confirmado devolve cota — contar apenas `AVAILABLE` daria ~24× o limite/dia via soft-delete em loop) |
 
 ### 7. Download — stream pela API (Opção A)
 
@@ -257,7 +302,6 @@ clamd. A v1 sanitizava um lado da porta.
 | `FILES_ENABLED` | `false` | capacidade **desabilitada e oculta** (é o próprio fail-closed) |
 | `FILE_MAX_BYTES` | `10485760` | nega upload |
 | `FILE_MAX_PER_RESOURCE` | `10` | nega upload |
-| `FILE_MAX_TENANT_BYTES` | `1073741824` | nega upload |
 | `FILE_QUARANTINE_MAX_HOURS` | `24` | nega upload |
 | `CLAMAV_URL` | — | **nega upload** |
 | `CLAMAV_TIMEOUT_MS` | `30000` | mantém quarentena |
@@ -291,7 +335,7 @@ Verdadeiros = podem **reprovar**. Os da v1 (2, 6, 7, 8) passariam verdes sobre u
 2. `FILES_ENABLED=false` + `FormVersion` publicada com Campo Arquivo ⇒ **409 `CAPACIDADE_ARQUIVO_INDISPONIVEL`**
    explícito (nunca 500, nunca aceite silencioso).
 3. **Cross-tenant:** upload/download com `fileId` de outra Org ⇒ **404 uniforme**; negado pelo banco (RLS+FORCE) **e**
-   pela guarda de prefixo do adapter. *(Regressão: quebrar a guarda ⇒ o teste falha.)*
+   pela RLS. **A guarda de prefixo tem AC PRÓPRIO (nº 19)** — este aqui prova a RLS, não a guarda.
 4. **Cross-recurso intra-tenant:** usuário com acesso ao recurso A e não ao B, mesma Org ⇒ **404**.
 5. **`Content-Length` mentiroso:** declara 1 MiB, envia 50 MiB ⇒ **abortado ao cruzar `FILE_MAX_BYTES`**, medido por
    bytes reais. *(Mutação: trocar a contagem real pelo header ⇒ o teste falha.)*
@@ -300,9 +344,9 @@ Verdadeiros = podem **reprovar**. Os da v1 (2, 6, 7, 8) passariam verdes sobre u
 8. **Zip bomb / `AlertExceedsMax`:** arquivo dentro de `FILE_MAX_BYTES` que estoura os limites do clamd ⇒
    **`INFECTED`**, nunca `CLEAN`. *(Regressão + mutação: sem `AlertExceedsMax`, o clamd responde `OK` e o teste falha.)*
 9. **`INFECTED`** ⇒ download impossível em qualquer papel, **inclusive Admin**.
-10. **Veredito composto:** `CLEAN` com checksum divergente ⇒ **não promove**.
-11. **Limites:** acima de `FILE_MAX_BYTES`; 11º no recurso (**genérico**, não Registro); tenant no teto ⇒ negados.
-12. **Cota conta bytes físicos:** subir até o teto → soft-delete → subir de novo **antes** do expurgo ⇒ **negado**.
+10. **Dois SHA-256 independentes:** corromper o objeto na `quarentena` entre o ingest e o scan ⇒ **não promove**. *(Mutação: comparar o hash consigo mesmo ⇒ o teste falha — era assim na v2, e passava em qualquer sistema.)*
+11. **Limites:** acima de `FILE_MAX_BYTES` e 11º no recurso (**genérico**, não Registro) ⇒ negados. **Não há AC de cota por tenant** — o limite não existe na Fase 1 (§6.1).
+12. **Rate limit atômico:** N+1 uploads da Org na janela ⇒ **429**; outra Org segue aceita. *(Mutação: trocar por read-modify-write não atômico ⇒ o teste falha sob concorrência.)* E a **2.8 não regride**.
 13. **Download:** `attachment` + `nosniff` + `private, no-store`, verificados **na resposta real da API**.
 14. **Nome hostil** (CRLF, aspas) ⇒ header íntegro, download preservado como `attachment`.
 15. **Substituição:** o anterior só sai **após** o novo virar `AVAILABLE`.
@@ -331,3 +375,10 @@ usuário**, com tenant resolvido por callback de provedor e, dependendo do prove
 SSRF vira vetor real, e nada nesta ADR o cobre. Hoje isso está protegido **por acidente**: o gate do AD-28 sobre
 e-mail é a única coisa que o impede. Quando o e-mail destravar, o caminho de arquivo já estará aberto e ninguém
 revisará esta ADR de novo. **E6 exige decisão própria antes do destravamento do e-mail.**
+
+19. **Guarda de prefixo — testada DIRETO no adapter, com spy (decisão do dono, 2026-07-17):** chamar o adapter com
+    `TenantContext` da Org A e chave `<orgB>/<uuid>` ⇒ **recusa antes de qualquer chamada ao cliente MinIO**, provado
+    por **fake/spy com zero interação**. *(Mutação: remover a guarda ⇒ o fake recebe a chamada e o teste fica
+    vermelho.)* **Por que separado do AC-3:** na v2 este AC ia pela rota HTTP, e a **RLS matava a requisição antes de
+    o adapter existir no caminho** — ele passava com a guarda **deletada**. A integração HTTP/RLS continua como defesa
+    adicional, **não como prova desta guarda**.
