@@ -41,7 +41,8 @@ export async function resetarSenhaAdmin({ prisma, hashSenha, email, senha }) {
   }
 
   const account = await prisma.account.findUnique({ where: { email: alvo } });
-  if (!account) throw new Error('reset: conta não encontrada (este script NÃO cria conta nem tenant).');
+  if (!account)
+    throw new Error('reset: conta não encontrada (este script NÃO cria conta nem tenant).');
 
   const cred = await prisma.authCredential.findFirst({
     where: { userId: account.id, providerId: 'credential' },
@@ -105,10 +106,13 @@ async function mainCli() {
       email,
       senha,
     });
-    console.log(`Senha do Admin RESETADA: ${r.emailMascarado} (${r.accountId}). Tenant NÃO recriado.`);
+    console.log(
+      `Senha do Admin RESETADA: ${r.emailMascarado} (${r.accountId}). Tenant NÃO recriado.`,
+    );
     if (senhaGerada) {
       console.log(
-        '\n⚠️  Nova senha gerada (mostrada UMA vez — troque no primeiro acesso):\n' + `    ${senha}\n`,
+        '\n⚠️  Nova senha gerada (mostrada UMA vez — troque no primeiro acesso):\n' +
+          `    ${senha}\n`,
       );
     } else {
       console.log('(Senha fornecida via RESET_ADMIN_PASSWORD aplicada.)');
