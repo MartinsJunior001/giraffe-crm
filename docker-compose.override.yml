@@ -10,6 +10,16 @@
 # already in use`), e o Traefik alcança a Web pela rede do Compose, sem precisar de porta publicada.
 #
 # Binds em `127.0.0.1`: acessíveis só pelo próprio host (dev usa `localhost`), nunca expostos externamente.
+# Devolve a rede `privada` para NÃO-interna neste cenário. Sem isto, nada abaixo funciona: com
+# `internal: true` (o default do compose base, que isola o staging), o Docker IGNORA `ports` em
+# SILÊNCIO — o container sobe, o `PortBindings` é aceito, e `NetworkSettings.Ports` volta vazio.
+# Nenhum erro é emitido; o teste simplesmente não acha o banco. Provado em teste local antes de
+# escrever isto. Dev/CI precisam do loopback; o deploy (que não carrega este arquivo) precisa do
+# isolamento — cada um tem o que precisa, e a diferença está declarada, não implícita.
+networks:
+  privada:
+    internal: false
+
 services:
   db:
     ports:
