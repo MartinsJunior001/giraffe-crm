@@ -48,8 +48,20 @@ echo "== [4] aplicando migrations pendentes (one-shot, giraffe_migrator) =="
 dc run --rm --build --no-deps migrate
 
 echo
-echo "== [5] conferindo que NÃO há migration pendente (mesma imagem one-shot) =="
-dc run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status
+echo "== [5] GATE: verificando ZERO migrations pendentes (mesma imagem one-shot) =="
+# `prisma migrate status` (via db-migrate.mjs) sai !=0 se há migration pendente ou drift. Capturamos
+# o código para transformar em VEREDITO explícito, em vez de uma falha crua do `set -e`.
+set +e
+STATUS_OUT=$(dc run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status 2>&1)
+STATUS_RC=$?
+set -e
+printf '%s\n' "${STATUS_OUT}"
 
 echo
-echo "MIGRATE_ONESHOT_DONE — confirme acima o estado 'up to date' / nenhuma pendente."
+if [ "${STATUS_RC}" -eq 0 ]; then
+  echo "MIGRATE_ONESHOT_OK — migrations aplicadas e ZERO pendentes (schema up to date)."
+else
+  echo "MIGRATE_ONESHOT_FALHOU — o status retornou pendência/drift (rc=${STATUS_RC}). NÃO prossiga" >&2
+  echo "  para o provisionamento do tenant; investigue a saída do status acima." >&2
+  exit 1
+fi
