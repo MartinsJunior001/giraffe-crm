@@ -79,8 +79,12 @@ elif [ "${AUTH}" = "AUTH_OK" ]; then
   echo "VEREDITO=OK — a autenticação funciona; o P1000 não é drift de senha do migrator."
 elif [ "${MP_PRESENTE}" = "nao" ]; then
   echo "VEREDITO=SEM_SENHA_NO_ENV — MIGRATOR_PASSWORD ausente/vazio; corrija o .env (não é reparo de banco)."
-elif [ "${ROLE_EXISTE}" = "nao" ]; then
-  echo "VEREDITO=SEM_PAPEL — giraffe_migrator não existe; o bootstrap não rodou (não criar papel aqui)."
+elif [ "${ROLE_EXISTE}" != "1" ]; then
+  echo "VEREDITO=SEM_PAPEL"
+  echo "  giraffe_migrator NÃO existe: o bootstrap (00-roles.sql) não rodou neste volume (volume"
+  echo "  persistente, anterior ao init script — o entrypoint só roda o initdb.d na 1ª criação)."
+  echo "  NÃO é drift de senha. Reconciliação de bootstrap (cria só se ausente, atributos/ownership"
+  echo "  autoritativos, idempotente): scripts/ops/l6/reconcile-migrator-role.sh"
 else
   echo "VEREDITO=INCONCLUSIVO — ver os campos acima."
 fi

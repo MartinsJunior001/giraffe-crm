@@ -128,7 +128,7 @@ criação do volume, então não reconcilia. **Não** retente o migrate nem prov
    que é `trust` e mascararia) e o `VEREDITO`. `DRIFT_CONFIRMADO` = papel existe, senha presente no
    `.env`, mas não autentica.
 
-2. **Reparo controlado (só com `DRIFT_CONFIRMADO`):**
+2. **`VEREDITO=DRIFT_CONFIRMADO`** (papel existe, senha do `.env` não autentica) — **reparo de senha:**
    ```bash
    bash scripts/ops/l6/repair-migrator-password.sh
    ```
@@ -137,7 +137,20 @@ criação do volume, então não reconcilia. **Não** retente o migrate nem prov
    fail-closed; re-testa a auth e exige `REPAIR_OK`. **Não** cria papel, **não** toca `giraffe_app`,
    `postgres`, Chatwoot nem produção.
 
-3. **Após `AUTH_OK`:** repita o passo 4 (migrate one-shot) e o passo 5 (zero pendências).
+3. **`VEREDITO=SEM_PAPEL`** (o papel **não existe** — volume anterior ao `00-roles.sql`, que só roda
+   na 1ª criação do volume) — **reconciliação de bootstrap:**
+   ```bash
+   bash scripts/ops/l6/reconcile-migrator-role.sh
+   ```
+   Reproduz fielmente a parte do `giraffe_migrator` de `apps/api/prisma/bootstrap/00-roles.sql`:
+   `CREATE ROLE ... LOGIN` **só se ausente**; atributos autoritativos `LOGIN NOSUPERUSER NOBYPASSRLS
+   NOCREATEROLE` (sem superuser/BYPASSRLS); ownership do `DATABASE giraffe` e do `SCHEMA public`; e a
+   senha do `.env`. **Idempotente por aspecto** (2ª execução não altera nada), fail-closed, exige
+   `ROLE_OK + AUTH_OK`. **Não** toca `giraffe_app`, `postgres`, Chatwoot nem produção. Regressão:
+   `bash scripts/ops/l6/test-reconcile-migrator.sh` (espera `REGRESSAO_OK`).
+
+4. **Após `AUTH_OK` (ou `ROLE_OK + AUTH_OK`):** repita o passo 4 (migrate one-shot) e o passo 5
+   (zero pendências).
 
 ## Gates de segurança (invioláveis)
 
