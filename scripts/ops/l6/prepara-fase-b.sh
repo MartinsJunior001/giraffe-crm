@@ -167,25 +167,59 @@ grep -qE '^[[:space:]]*migrate:[[:space:]]*$' "${MIG}" || stop "sem o serviço '
 grep -qE '^[[:space:]]*provision:[[:space:]]*$' "${MIG}" || stop "sem o serviço 'provision' nesse commit"
 
 # ---------------------------------------------------------------------------
-# 4. Rede — pelo alias `db` efetivamente conectado, não pelo nome
+# 4. Rede — três critérios cumulativos, não o nome
+#
+# O container `db` está em MAIS DE UMA rede, e o alias `db` sozinho não desempata. A inspeção de
+# 2026-07-16 na VPS achou duas:
+#
+#   enl623bli2h2ub5kmu4ygktd_interna  Internal=true   db, api, web        <- esta
+#   enl623bli2h2ub5kmu4ygktd          Internal=false  db, coolify-proxy   <- NUNCA esta
+#
+# A segunda é a rede de borda, onde vive o coolify-proxy. Colocar o one-shot de migração ali —
+# um container que carrega a credencial DONA do schema (giraffe_migrator, AD-6) — o exporia à
+# rede alcançável de fora. `Internal=true` é o que separa as duas, e é o critério que faltava:
+# uma rede interna do Docker não tem rota para fora, por definição.
+#
+# Os três critérios (todos obrigatórios):
+#   1. Internal=true;
+#   2. contém db E api;
+#   3. o container db tem o alias `db` nela (é o que faz `db:5432` resolver).
+# Exatamente uma candidata, ou para.
 # ---------------------------------------------------------------------------
-REDES=$(
+esta_na_rede() { # $1 = container, $2 = rede
+  docker inspect -f '{{range $n,$c := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}' "$1" |
+    grep -qx "$2"
+}
+
+REDES_COM_ALIAS_DB=$(
   docker inspect \
     -f '{{range $n,$c := .NetworkSettings.Networks}}{{$n}} {{range $c.Aliases}}{{.}},{{end}}{{"\n"}}{{end}}' \
     "${CT_DB}" | awk 'NF==2 && $2 ~ /(^|,)db(,|$)/ {print $1}' | sort -u
 )
-QTD_REDE=$(echo "${REDES}" | grep -c . || true)
+
+CANDIDATAS=""
+while read -r rede; do
+  [ -n "${rede:-}" ] || continue
+  [ "$(docker network inspect -f '{{.Internal}}' "${rede}" 2>/dev/null)" = "true" ] || continue
+  esta_na_rede "${CT_API}" "${rede}" || continue
+  CANDIDATAS="${CANDIDATAS}${rede}"$'\n'
+done < <(echo "${REDES_COM_ALIAS_DB}")
+
+QTD_REDE=$(echo "${CANDIDATAS}" | grep -c . || true)
 
 if [ "${QTD_REDE}" != "1" ]; then
-  echo "STOP: ${QTD_REDE} rede(s) com o alias 'db' no container db — ambíguo." >&2
-  echo "${REDES}" | sed '/^$/d' | sed 's/^/  candidata: /' >&2
+  echo "STOP: ${QTD_REDE} rede(s) atendem os três critérios (Internal=true + db e api + alias db)." >&2
+  echo "Redes do db com alias 'db', e por que cada uma passou ou não:" >&2
+  while read -r rede; do
+    [ -n "${rede:-}" ] || continue
+    interna=$(docker network inspect -f '{{.Internal}}' "${rede}" 2>/dev/null || echo "?")
+    if esta_na_rede "${CT_API}" "${rede}"; then com_api=sim; else com_api=nao; fi
+    echo "  ${rede}: Internal=${interna} api_presente=${com_api}" >&2
+  done < <(echo "${REDES_COM_ALIAS_DB}")
   exit 1
 fi
 
-REDE=$(echo "${REDES}" | head -1)
-
-docker inspect -f '{{range $n,$c := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}' "${CT_API}" |
-  grep -qx "${REDE}" || stop "o container api NÃO está na rede ${REDE}"
+REDE=$(echo "${CANDIDATAS}" | head -1)
 
 # ---------------------------------------------------------------------------
 # 5. Serviços declarados — `config --services` NUNCA renderiza valores
