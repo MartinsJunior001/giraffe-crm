@@ -57,12 +57,14 @@ bash scripts/ops/l6/test-restore-verify.sh   # espera REGRESSAO_OK
 ```
 Prova que um dump vazio fiel passa e que um manifest divergente fica vermelho.
 
-### Passo 4 e 5 — Migrations one-shot + zero pendências
+### Passo 4 e 5 — Migrations one-shot + gate de zero pendências
 ```bash
 DIR="$DIR" REDE="$REDE" bash scripts/ops/l6/migrate-oneshot.sh
 ```
-Confirme `up to date` / nenhuma migration pendente. É a etapa controlada (giraffe_migrator, AD-32),
-nunca no boot.
+Aplica as migrations (etapa controlada, giraffe_migrator/AD-32, nunca no boot) e roda o **gate**: o
+`prisma migrate status` sai `≠0` se houver pendência/drift, e o script converte isso no veredito
+**`MIGRATE_ONESHOT_OK`** (zero pendentes) ou **falha** (`MIGRATE_ONESHOT_FALHOU`, exit 1 — não
+prossiga). Só com `MIGRATE_ONESHOT_OK` avance ao passo 6.
 
 ### Passo 6 — Provisionar tenant/Admin (senha não exposta)
 ```bash
