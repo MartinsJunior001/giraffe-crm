@@ -75,6 +75,22 @@ export async function exigirLerDatabase(
 }
 
 /**
+ * Exige poder de **operar** o Database — criar/editar/arquivar/restaurar **Registros** (Story 3.4). É o gate que
+ * **acorda** o poder diferencial de MEMBER anunciado como dormente em 3.2/3.3: `gerenciar` (Admin da Org / Admin
+ * do Database) OU `operar` (MEMBER) passam; `ler` (VIEWER) → **403** (tem acesso, mas só lê); sem acesso → 404
+ * não-enumerante. Espelho de `exigirOperarPipe` (2.7); `Poder = gerenciar > operar > ler`.
+ */
+export async function exigirOperarDatabase(
+  db: DbComContexto,
+  principal: Principal,
+  databaseId: string,
+): Promise<void> {
+  if ((await resolverPoderNoDatabase(db, principal, databaseId)) === 'ler') {
+    throw new ForbiddenException();
+  }
+}
+
+/**
  * Exige poder de **gerenciar** o Database (Admin da Org OU Admin do Database); 403 se o principal só pode
  * operar/ler (tem acesso, mas não é Admin do Database/Org). Sem acesso → 404 (não-enumerante). É o gate de
  * LISTAR concessões (o roster do Database).

@@ -10,7 +10,7 @@ import { getEnv } from '../../kernel/config/env';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
-import { exigirGerenciarPipe, resolverPoderNoPipe } from '../pipe-authz';
+import { exigirGerenciarForm, resolverPoderNoForm } from './form-authz';
 import { type AlvoFormulario, acharForm, resolverContexto } from './form-locate';
 import {
   type CampoParaSnapshot,
@@ -98,13 +98,14 @@ export class FormPublicationService {
 
   /**
    * Publica o Formulário do contexto: valida o rascunho, monta o snapshot e cria uma `FormVersion` imutável,
-   * numerada monotonicamente, apontada pelo `Form`. Exige **gerenciar** (config do Pipe). 400 se o rascunho é
+   * numerada monotonicamente, apontada pelo `Form`. Exige **gerenciar** (roteado por contexto em `form-authz`:
+   * Pipe/Fase → config do Pipe; Database → Admin da Org/Admin do Database). 400 se o rascunho é
    * inválido (sem Campos ativos, Seleção sem opção, gate de Arquivo, `typeConfig` malformado); 409 em
    * concorrência de número; 404 se o Formulário ainda não foi materializado (não se publica o inexistente).
    */
   async publicar(alvo: AlvoFormulario): Promise<VersaoDetalhe> {
     const { contexto, db } = this.db();
-    await exigirGerenciarPipe(db, contexto, alvo.pipeId);
+    await exigirGerenciarForm(db, contexto, alvo);
     const form = await this.localizarForm(db, alvo);
 
     // Rascunho = Campos ATIVOS na ordem. Arquivados não entram na definição publicada.
@@ -134,7 +135,7 @@ export class FormPublicationService {
    */
   async despublicar(alvo: AlvoFormulario): Promise<EstadoPublicacao> {
     const { contexto, db } = this.db();
-    await exigirGerenciarPipe(db, contexto, alvo.pipeId);
+    await exigirGerenciarForm(db, contexto, alvo);
     const form = await this.localizarForm(db, alvo);
 
     const atual = await db.form.findUnique({
@@ -151,18 +152,18 @@ export class FormPublicationService {
     return this.montarEstado(db, form.id);
   }
 
-  /** Estado de publicação + histórico. Exige ao menos **leitura** do Pipe (senão 404 não-enumerante). */
+  /** Estado de publicação + histórico. Exige ao menos **leitura** do contexto (Pipe/Fase ou Database) — senão 404. */
   async estado(alvo: AlvoFormulario): Promise<EstadoPublicacao> {
     const { contexto, db } = this.db();
-    await resolverPoderNoPipe(db, contexto, alvo.pipeId);
+    await resolverPoderNoForm(db, contexto, alvo);
     const form = await this.localizarForm(db, alvo);
     return this.montarEstado(db, form.id);
   }
 
-  /** Snapshot integral de UMA versão publicada. Exige leitura do Pipe; 404 se a versão não existe. */
+  /** Snapshot integral de UMA versão publicada. Exige leitura do contexto; 404 se a versão não existe. */
   async versao(alvo: AlvoFormulario, version: number): Promise<VersaoDetalhe> {
     const { contexto, db } = this.db();
-    await resolverPoderNoPipe(db, contexto, alvo.pipeId);
+    await resolverPoderNoForm(db, contexto, alvo);
     const form = await this.localizarForm(db, alvo);
     const versao = await db.formVersion.findFirst({
       where: { formId: form.id, version },

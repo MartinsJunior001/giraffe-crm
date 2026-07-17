@@ -32,10 +32,9 @@ services:
       dockerfile: apps/api/Dockerfile
       target: migrate
     restart: 'no'
-    # O `db` vive na rede `interna` do compose base (D-01); o one-shot precisa entrar nela para
-    # resolver `db:5432` — a rede default do projeto não alcança mais o banco.
-    networks:
-      interna: {}
+    # Sem `networks:` custom (padrão nativo do Coolify — ver a nota no fim do `docker-compose.yml`):
+    # o one-shot entra na rede default do projeto (`<project>_default`), a MESMA onde o `db` está de
+    # pé, e `db:5432` resolve por ela.
     environment:
       # Papel DONO do schema (giraffe_migrator) — só aqui, nunca no runtime (AD-6). A URL é
       # montada pelo Compose a partir da MESMA variável do bootstrap; ninguém digita DSN.
@@ -61,8 +60,7 @@ services:
       dockerfile: apps/api/Dockerfile
       target: migrate
     restart: 'no'
-    networks:
-      interna: {}
+    # Sem `networks:` custom (ver `migrate`, acima): entra na rede default do projeto, onde o `db` está.
     environment:
       # Papel migrator: único que INSERE em Organization (o runtime tem só SELECT/UPDATE).
       MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public

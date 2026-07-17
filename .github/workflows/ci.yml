@@ -278,6 +278,12 @@ jobs:
       #
       # `--no-deps`: o `db` JÁ está de pé (subiu com a stack) e o `run` não deve tocá-lo — sem a
       # flag, o Compose poderia recriar o `db` com a config mesclada e derrubar a stack no meio.
+      #
+      # O one-shot roda com `base + migrate` (SEM o override) — exatamente o par que o Coolify usa
+      # no deploy. Como o compose base não declara mais rede customizada (padrão nativo), a stack
+      # (subida com base+override) e o one-shot compartilham a MESMA rede default do projeto
+      # (`<project>_default`): não há definição de rede divergente entre as invocações e, portanto,
+      # nenhuma remoção/recriação de rede que deixasse o migrate sem alcançar `db:5432`.
       - name: Aplicar migrations (one-shot conteinerizado — o caminho do deploy)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.migrate.yml \

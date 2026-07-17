@@ -43,8 +43,6 @@ services:
       timeout: 3s
       start_period: 10s
       retries: 5
-    networks:
-      interna: {}
 
   api:
     build:
@@ -87,18 +85,13 @@ services:
       # proxy com o G2 colapsado num balde único por esquecimento. Aqui a exposição direta é real e
       # declarada. A topologia com o proxy do Coolify é validada no gate de staging (débito D-01).
       ALLOW_DIRECT_EXPOSURE: ${ALLOW_DIRECT_EXPOSURE:-true}
-    # Sem `ports` no base (ver nota no serviço `db`): a API é interna, alcançada pela rede do
-    # Compose. A publicação em loopback para dev/CI vive em `docker-compose.override.yml`.
+    # Sem `ports` no base (ver nota no serviço `db`): a API é interna, alcançada pela rede que o
+    # Coolify gerencia para o stack, pelo nome de serviço `api`. A publicação em loopback para
+    # dev/CI vive em `docker-compose.override.yml`. Sem `networks:` custom (ver nota no fim do
+    # arquivo): db/api ficam privados por NÃO terem domínio, porta publicada nem label Traefik.
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      interna:
-        # Alias exclusivo desta rede (ver nota em `networks:`, no fim do arquivo). SEM IP fixo,
-        # de propósito: quem precisa de endereço estável é a WEB (é o peer que a API confia);
-        # um IP fixo aqui colidiria com o `docker compose run api` do CI (dois containers não
-        # podem ter o mesmo endereço estático na mesma rede).
-        aliases: [api-interna]
 
   web:
     build:
@@ -112,42 +105,51 @@ services:
           cpus: '0.5'
     environment:
       NODE_ENV: production
-      # Server-side (container) alcança a API pela rede INTERNA do Compose, pelo alias que só
-      # existe nela (`api-interna`) — assim a origem do tráfego é o IP FIXO da Web, que a API
-      # declara em TRUSTED_PROXY_IPS (D-01). Variável de servidor (não NEXT_PUBLIC).
-      API_BASE_URL: http://api-interna:3001
+      # Server-side (container) alcança a API pela rede que o Coolify gerencia para o stack, pelo
+      # nome de serviço `api`. Variável de servidor (não NEXT_PUBLIC). No padrão nativo o IP da Web
+      # é DINÂMICO (muda a cada recriação de container) — por isso a confiança da API não pode mais
+      # depender de um IP fixo dela em TRUSTED_PROXY_IPS; a substituição por um hop Web→API
+      # autenticado (HMAC) é o débito D-01 (tech story própria — ver nota de TRUSTED_PROXY_IPS).
+      API_BASE_URL: http://api:3001
       # Origem PÚBLICA da Web (a URL do browser). Atrás de proxy, `req.nextUrl.origin` é o bind
       # interno (0.0.0.0:3000) — o Origin do relay BFF e o fallback do CSRF usam ESTA variável, e
       # ela precisa constar em CORS_ALLOWED_ORIGINS da API. Sem default silencioso (`:?`): uma
       # origem errada quebra o login de forma opaca; melhor falhar no `up`, dizendo qual falta.
       WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?defina WEB_PUBLIC_ORIGIN (ver .env.example)}
     # Sem `ports` no base (ver nota no serviço `db`): o Traefik roteia o domínio para o container
-    # pela rede docker. A publicação em loopback para dev/CI vive em `docker-compose.override.yml`.
+    # pela rede que o Coolify gerencia (a Web é o ÚNICO serviço com domínio). A publicação em
+    # loopback para dev/CI vive em `docker-compose.override.yml`.
     depends_on:
       - api
-    networks:
-      interna:
-        # IP FIXO da Web — é ELE que a API declara em TRUSTED_PROXY_IPS (D-01): a confiança da
-        # cadeia Traefik → Web → API não pode depender de um endereço que muda a cada redeploy.
-        ipv4_address: 10.201.77.10
 
 volumes:
   db-data:
 
-# Rede INTERNA com endereçamento fixo — o substrato do D-01 (cadeia de proxy confiável).
+# SEM redes customizadas — PADRÃO NATIVO do Coolify (decisão do dono, 2026-07-17).
 #
-# `TRUSTED_PROXY_IPS` da API só funciona se o peer da Web for um endereço ESTÁVEL: numa rede
-# default do Compose/Coolify o IP muda a cada recriação de container, e a confiança evaporaria
-# no primeiro redeploy. Aqui a Web tem IP fixo (10.201.77.10) e a API o declara confiável.
+# **Por que abandonamos a rede custom.** As tentativas anteriores (`interna` bridge comum, depois
+# `privada` `internal: true`, PR #84) declaravam rede própria para forçar isolamento e um IP fixo
+# da Web para `TRUSTED_PROXY_IPS`. A documentação oficial do Coolify (v4, build pack Docker Compose
+# — "Do Not Define Custom Networks") desaconselha isso EXPLICITAMENTE: redes customizadas levam o
+# Traefik a escolher o IP de container ERRADO de forma NÃO determinística, causando indisponibilidade
+# intermitente por HTTPS (504/gateway-timeout). Num host que COABITA com o Chatwoot, esse risco não
+# se justifica. Convergimos com a doc: o Coolify cria e gerencia UMA rede para o stack, à qual o
+# reverse proxy é conectado, e os serviços se falam pelo nome (`db`, `api`, `web`).
 #
-# O alias `api-interna` existe SÓ nesta rede: `API_BASE_URL=http://api-interna:3001` força o
-# tráfego Web→API a sair POR ELA (com o IP fixo como origem), mesmo que o Coolify conecte os
-# containers a outras redes — o nome `api` resolveria em qualquer uma, o alias não.
+# **Como db/api ficam privados no padrão nativo:** por AUSÊNCIA de superfície pública, não por rede
+# separada — nenhum domínio, nenhuma porta publicada (o `ports` de loopback vive só no override de
+# dev/CI, que o Coolify não carrega) e nenhuma regra/label Traefik. Só a `web` tem domínio, então só
+# ela é roteável de fora; a `api` é alcançada apenas pelo BFF da Web (`API_BASE_URL=http://api:3001`).
 #
-# A sub-rede 10.201.77.0/24 evita o espaço 172.16.0.0/12 dos pools default do Docker
-# (colisão com as redes das outras stacks do host compartilhado).
-networks:
-  interna:
-    ipam:
-      config:
-        - subnet: 10.201.77.0/24
+# **Risco residual ACEITO e documentado:** o `coolify-proxy` tem CONECTIVIDADE de rede até `db`/`api`
+# (está na mesma rede gerenciada do stack), mas NÃO há ROTA PÚBLICA para eles (sem domínio/porta/label).
+# Isolamento de rede em nível de L3 seria a topologia multi-rede — rejeitada pelo custo de HTTPS
+# intermitente acima. A prova de fechamento externo (3001/5432/5434 inacessíveis de fora) é feita por
+# teste, não por topologia.
+#
+# **TRUSTED_PROXY_IPS / D-01:** sem IP fixo da Web, a confiança da API não pode depender de um endereço
+# estático (ele muda a cada recriação de container). NÃO afrouxar a variável nem confiar cegamente em
+# XFF: a substituição da dependência de IP por um hop Web→API AUTENTICADO (headers internos assinados
+# com HMAC + timestamp + dados da requisição, segredo separado e rotacionável, nunca exposto ao browser)
+# é o débito D-01, tratado em tech story própria — ver
+# `_bmad-output/implementation-artifacts/tech-d01-hop-web-api-autenticado.md`.

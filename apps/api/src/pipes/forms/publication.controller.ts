@@ -111,7 +111,7 @@ export class FormPublicationController {
 }
 
 /** Valida `:version` de rota como inteiro positivo antes de tocar o banco. */
-function validarVersao(version: string): number {
+export function validarVersao(version: string): number {
   const n = Number(version);
   if (!Number.isInteger(n) || n < 1) throw new BadRequestException('version inválida');
   return n;
