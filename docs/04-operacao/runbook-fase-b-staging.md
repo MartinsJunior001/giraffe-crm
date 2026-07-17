@@ -57,14 +57,24 @@ bash scripts/ops/l6/test-restore-verify.sh   # espera REGRESSAO_OK
 ```
 Prova que um dump vazio fiel passa e que um manifest divergente fica vermelho.
 
-### Passo 4 e 5 — Migrations one-shot + gate de zero pendências
+### Passo 4 e 5 — Migrations one-shot + verificação NO DB REAL por label
 ```bash
 DIR="$DIR" REDE="$REDE" bash scripts/ops/l6/migrate-oneshot.sh
 ```
-Aplica as migrations (etapa controlada, giraffe_migrator/AD-32, nunca no boot) e roda o **gate**: o
-`prisma migrate status` sai `≠0` se houver pendência/drift, e o script converte isso no veredito
-**`MIGRATE_ONESHOT_OK`** (zero pendentes) ou **falha** (`MIGRATE_ONESHOT_FALHOU`, exit 1 — não
-prossiga). Só com `MIGRATE_ONESHOT_OK` avance ao passo 6.
+Aplica as migrations (etapa controlada, giraffe_migrator/AD-32, nunca no boot). **Correção do falso
+verde (cenário D):** o veredito **não** confia mais só no que o one-shot vê. Antes de aplicar, prova
+que o container alcançado por `db:5432` na REDE é o **mesmo cluster** que o **db real por label**
+(compara `system_identifier`) — se divergir, **aborta** (`DIVERGÊNCIA DE CLUSTER`) sem migrar; e exige
+**exatamente 1** container `db` do projeto. Depois de aplicar, **verifica de fora** (docker exec no db
+real por label): `MIGRATE_ONESHOT_OK` só sai se `apply` exit 0 **e** `status` sem pendências **e**
+`_prisma_migrations` = nº de migrations esperado **e** `Account`/`AuthCredential` presentes **no db
+real**. Caso contrário `MIGRATE_ONESHOT_FALHOU` (exit 1). Só com `MIGRATE_ONESHOT_OK` avance ao passo 6.
+Regressão: `bash scripts/ops/l6/test-migrate-verify.sh` → `MIGRATE_VERIFY_REGRESSAO_OK`.
+
+**Inventário de escopo (para localizar em qual banco/container algo rodou):**
+```bash
+bash scripts/ops/l6/inventory-scope.sh   # read-only; só o project UUID autorizado; sem senha/DSN/PII
+```
 
 ### Passo 6 — Provisionar tenant/Admin (senha não exposta)
 ```bash
