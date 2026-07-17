@@ -223,12 +223,18 @@ gerada** (o preflight aborta antes). **Não** repita o reset nem o provisionamen
    REDE="$REDE" RESET_ADMIN_EMAIL="admin@staging.giraffedev.cloud" \
      bash scripts/ops/l6/diagnose-db-target.sh
    ```
-   Compara três pontos de vista sobre `giraffe`: `[1]` `DATABASE_URL` (giraffe_app) na rede, `[2]`
-   `MIGRATION_DATABASE_URL` (giraffe_migrator) na rede, `[3]` o container `db` por label. Reporta
-   `current_database`/`current_schema`/`current_user`, `to_regclass` de `Account`/`AuthCredential`,
-   migrations finalizadas e a contagem do Account do Admin — **sem** DSN/senha/PII. A leitura ao final
-   distingue **A** (reset no banco errado), **B** (migrations no banco errado), **C** (schema/search_path)
-   e **D** (`MIGRATE_ONESHOT_OK` falso positivo).
+   Sonda **três** pontos de vista sobre `giraffe`, de forma **independente e tolerante** (uma falha em
+   `[1]` nunca impede `[2]`/`[3]`): `[1]` `DATABASE_URL` (giraffe_app) na rede, `[2]`
+   `MIGRATION_DATABASE_URL` (giraffe_migrator) na rede, `[3]` o container `db` por label. Cada bloco
+   emite `QUERY_OK` (com `current_database`/`current_schema`/`current_user`, `to_regclass` de
+   `Account`/`AuthCredential`, migrations finalizadas) ou `QUERY_FAIL` com uma **categoria sanitizada**
+   (`AUTH`/`PERMISSION`/`TABLE_MISSING`/`NETWORK`/`CONFIG`/`UNKNOWN`) — **sem** DSN/senha/SQL bruto/PII.
+   O **veredito é sempre emitido**, mesmo com falhas, e distingue **A** (reset no banco errado), **B**
+   (migrations no banco errado), **C** (schema/search_path) e **D** (`MIGRATE_ONESHOT_OK` falso positivo).
+   **Guarda de escopo:** o script **aborta** se `PROJ` não for o UUID autorizado (`enl623…`) — seleciona
+   recursos só pela **label exata**, nunca pelo texto "giraffe" (`giraffe_app` é papel, não projeto).
+   Regressão: `bash scripts/ops/l6/test-diagnose-db-target.sh` → `DIAG_REGRESSAO_OK` (prova `[1]` falho
+   com `[2]`/`[3]` seguindo, em ambiente limpo — nunca no host).
 
 2. **Proteção já ativa:** o `reset-admin-password.mjs` roda um **preflight fail-closed** — confirma
    `Account`/`AuthCredential` e o Account do Admin **no destino real** antes de gerar/aplicar qualquer
