@@ -74,6 +74,18 @@ DIR="$DIR" REDE="$REDE" \
 ```
 Se a senha for **gerada**, ela sai **uma vez** — capture com segurança e **não** cole no relatório.
 
+**Reset da senha do Admin (se a senha de uso único se perder):** rodar o provision de novo **não**
+reseta (é idempotente e não sobrescreve a credencial). Use o reset dedicado — atualiza **só** a
+credencial (`AuthCredential`) do Account por e-mail, com hash do próprio Better Auth, **sem recriar o
+tenant** e com guarda de domínio `@staging.giraffedev.cloud`:
+```bash
+DIR="$DIR" REDE="$REDE" RESET_ADMIN_EMAIL="admin@staging.giraffedev.cloud" \
+  bash scripts/ops/l6/reset-admin-password.sh          # senha nova sai UMA vez; não cole no relatório
+```
+A senha nunca aparece em `ps`/log/arquivo (env herdado). Para fixar uma senha específica em vez de
+gerar, exporte `RESET_ADMIN_PASSWORD` antes (também herdada, nunca em argumento). Prova reproduzível:
+`bash scripts/ops/l6/test-reset-admin-e2e.sh` → `RESET_E2E_OK`.
+
 ### Passo 7 — Backup pós-migration + segundo restore descartável
 ```bash
 bash scripts/ops/l6/backup-pre-migration.sh      # agora com schema: MODE=pos no manifest
