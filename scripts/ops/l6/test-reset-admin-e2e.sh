@@ -128,5 +128,20 @@ else
   echo "  PASSOU (recusado)"
 fi
 
+echo "== [6] host-equivalent: MIGRATION_DATABASE_URL para database SEM schema → PREFLIGHT vermelho, SEM senha =="
+# Simula divergência de destino: um database vazio (sem migrations/Account), como se o reset apontasse
+# para o banco errado. O preflight fail-closed deve ABORTAR antes de gerar/aplicar qualquer senha.
+MIGPW=$(sed -n 's/^MIGRATOR_PASSWORD=//p' "${ENVF}" | head -1)
+docker exec "${CT}" psql -U postgres -q -c "create database giraffe_wrong owner giraffe_migrator" >/dev/null 2>&1 || true
+if MIGRATION_DATABASE_URL="postgresql://giraffe_migrator:${MIGPW}@db:5432/giraffe_wrong?schema=public" \
+   RESET_ADMIN_EMAIL="${EMAIL}" RESET_ADMIN_PASSWORD="senha_divergente_zzz9" \
+   dc run --rm --no-deps -e MIGRATION_DATABASE_URL -e RESET_ADMIN_EMAIL -e RESET_ADMIN_PASSWORD provision node prisma/reset-admin-password.mjs >"${WORK}/wrong" 2>&1; then
+  echo "  FALHOU (deveria abortar no preflight):"; cat "${WORK}/wrong"; FALHAS=$((FALHAS+1))
+elif grep -qiE "preflight|NENHUMA senha|does not exist|P2021" "${WORK}/wrong"; then
+  echo "  PASSOU (abortou fail-closed, sem gerar senha)"
+else
+  echo "  FALHOU (saiu != 0 mas sem preflight claro):"; cat "${WORK}/wrong"; FALHAS=$((FALHAS+1))
+fi
+
 echo
 if [ "${FALHAS}" -eq 0 ]; then echo "RESET_E2E_OK"; else echo "RESET_E2E_FALHOU (${FALHAS})" >&2; exit 1; fi
