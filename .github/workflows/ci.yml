@@ -278,14 +278,26 @@ jobs:
       #
       # `--no-deps`: o `db` JÁ está de pé (subiu com a stack) e o `run` não deve tocá-lo — sem a
       # flag, o Compose poderia recriar o `db` com a config mesclada e derrubar a stack no meio.
+      #
+      # O `-f docker-compose.override.yml` NÃO é decoração: a stack subiu com `docker compose up`,
+      # que carrega o override AUTOMATICAMENTE. Se o `run` omitisse o override, a definição da rede
+      # `privada` divergiria da que está no ar (`internal: true` no base × `false` no override) — e
+      # o Compose responde a essa divergência REMOVENDO E RECRIANDO a rede. Os containers já de pé
+      # ficam presos à rede antiga, o one-shot entra numa nova e vazia, e o migrate morre com
+      # `P1001: Can't reach database server at db:5432`. Não é hipótese: aconteceu neste CI, e o log
+      # dizia `Network giraffe-crm_privada Removed / Creating` no passo do migrate.
+      #
+      # A regra geral: TODA invocação do Compose sobre uma stack em execução precisa enxergar a
+      # MESMA definição de rede que a subiu. No deploy (staging) isso já vale de graça — Coolify e
+      # o one-shot usam o mesmo par base+migrate, sem override. Aqui, é preciso dizer.
       - name: Aplicar migrations (one-shot conteinerizado — o caminho do deploy)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.migrate.yml \
             run --rm --build --no-deps migrate
 
       - name: Conferir que não há migration pendente (mesma imagem one-shot)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.migrate.yml \
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.migrate.yml \
             run --rm --no-deps migrate node ../../scripts/db-migrate.mjs status
 
       - name: Esperar api e web ficarem healthy

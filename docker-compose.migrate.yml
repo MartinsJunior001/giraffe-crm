@@ -32,10 +32,10 @@ services:
       dockerfile: apps/api/Dockerfile
       target: migrate
     restart: 'no'
-    # O `db` vive na rede `interna` do compose base (D-01); o one-shot precisa entrar nela para
+    # O `db` vive na rede `privada` do compose base (D-01); o one-shot precisa entrar nela para
     # resolver `db:5432` — a rede default do projeto não alcança mais o banco.
     networks:
-      interna: {}
+      privada: {}
     environment:
       # Papel DONO do schema (giraffe_migrator) — só aqui, nunca no runtime (AD-6). A URL é
       # montada pelo Compose a partir da MESMA variável do bootstrap; ninguém digita DSN.
@@ -62,7 +62,7 @@ services:
       target: migrate
     restart: 'no'
     networks:
-      interna: {}
+      privada: {}
     environment:
       # Papel migrator: único que INSERE em Organization (o runtime tem só SELECT/UPDATE).
       MIGRATION_DATABASE_URL: postgresql://giraffe_migrator:${MIGRATOR_PASSWORD:?defina MIGRATOR_PASSWORD (ver .env.example)}@db:5432/giraffe?schema=public
