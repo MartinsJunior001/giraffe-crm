@@ -34,14 +34,28 @@ Se o script **parar** (ambiguidade de SHA/rede), siga a instrução que ele impr
 ```bash
 bash scripts/ops/l6/backup-pre-migration.sh
 ```
-Guarde `ARQUIVO` e `SHA256`. Um backup só vale se for restaurável — é o passo 3 que prova isso.
+Gera o dump **e** um `MANIFEST` sanitizado (SHA-256 + contagens da origem, sem PII). Guarde `ARQUIVO`,
+`MANIFEST` e `SHA256`. O `MODE` é derivado do estado real: **0 tabelas ⇒ `pre`** (vazio esperado,
+porque as migrations só rodam no passo 4). Um backup só vale se for restaurável — é o passo 3 que prova.
 
-### Passo 3 — Restore efetivo em banco descartável + validação
+### Passo 3 — Restore efetivo em banco descartável + comparação origem × restaurado
 ```bash
-bash scripts/ops/l6/restore-verify.sh <ARQUIVO_do_passo_2>
+bash scripts/ops/l6/restore-verify.sh <ARQUIVO_do_passo_2>   # lê o .manifest ao lado
 ```
-Espere `VEREDITO=RESTAURAVEL_OK` (tabelas restauradas e `Organization` presente). O container de
-verificação é efêmero e removido no fim, **não** toca o staging.
+Não exige schema fixo: **compara** o restaurado com o manifest. No `MODE=pre`, **0 na origem e 0
+restaurado = fiel** → `VEREDITO=RESTORE_OK`. No `MODE=pos`, a comparação é **estrita** (tabelas,
+migrations, RLS/FORCE, policies, grants, tenant + sanidade ≥1). Divergência → `RESTORE_FALHOU`
+(vermelho). O container de verificação é efêmero, com **guarda de nome** (`giraffe-restore-check-*`),
+removido no fim — **nunca** toca o database `giraffe` nem o container do banco.
+
+> **GATE:** não prossiga para as migrations (passo 4) enquanto o restore pré-migration não retornar
+> `VEREDITO=RESTORE_OK`.
+
+**Regressão do próprio verificador** (opcional, mas recomendada uma vez):
+```bash
+bash scripts/ops/l6/test-restore-verify.sh   # espera REGRESSAO_OK
+```
+Prova que um dump vazio fiel passa e que um manifest divergente fica vermelho.
 
 ### Passo 4 e 5 — Migrations one-shot + zero pendências
 ```bash
@@ -60,10 +74,11 @@ Se a senha for **gerada**, ela sai **uma vez** — capture com segurança e **n�
 
 ### Passo 7 — Backup pós-migration + segundo restore descartável
 ```bash
-bash scripts/ops/l6/backup-pre-migration.sh      # roda de novo: gera o dump PÓS-migration
+bash scripts/ops/l6/backup-pre-migration.sh      # agora com schema: MODE=pos no manifest
 bash scripts/ops/l6/restore-verify.sh <novo_ARQUIVO>
 ```
-Prova que o estado migrado também é restaurável.
+Agora o `MODE=pos`: o restore exige schema, migrations, RLS/FORCE, policies, grants e tenant, com as
+contagens **iguais** às da origem. Espere `VEREDITO=RESTORE_OK`.
 
 ### Passo 8 — Validar schema, RLS/FORCE, grants e tenant (read-only)
 ```bash
