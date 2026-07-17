@@ -167,24 +167,20 @@ grep -qE '^[[:space:]]*migrate:[[:space:]]*$' "${MIG}" || stop "sem o serviço '
 grep -qE '^[[:space:]]*provision:[[:space:]]*$' "${MIG}" || stop "sem o serviço 'provision' nesse commit"
 
 # ---------------------------------------------------------------------------
-# 4. Rede — três critérios cumulativos, não o nome
+# 4. Rede — critérios cumulativos, não o nome
 #
-# O container `db` está em MAIS DE UMA rede, e o alias `db` sozinho não desempata. A inspeção de
-# 2026-07-16 na VPS achou duas:
+# ATUALIZADO para o PADRÃO NATIVO do Coolify (decisão 2026-07-17): NÃO há mais rede customizada
+# `internal: true`. A stack usa UMA rede gerenciada pelo Coolify (Internal=false), onde vivem db,
+# api, web E o coolify-proxy. A inspeção de 2026-07-17 confirmou: db=10.0.4.3, api=10.0.4.4, proxy
+# conectado — risco lateral residual ACEITO para o staging provisório (db/api sem porta, domínio ou
+# router Traefik; a rede tem conectividade, não rota pública).
 #
-#   enl623bli2h2ub5kmu4ygktd_interna  Internal=true   db, api, web        <- esta
-#   enl623bli2h2ub5kmu4ygktd          Internal=false  db, coolify-proxy   <- NUNCA esta
-#
-# A segunda é a rede de borda, onde vive o coolify-proxy. Colocar o one-shot de migração ali —
-# um container que carrega a credencial DONA do schema (giraffe_migrator, AD-6) — o exporia à
-# rede alcançável de fora. `Internal=true` é o que separa as duas, e é o critério que faltava:
-# uma rede interna do Docker não tem rota para fora, por definição.
-#
-# Os três critérios (todos obrigatórios):
-#   1. Internal=true;
-#   2. contém db E api;
-#   3. o container db tem o alias `db` nela (é o que faz `db:5432` resolver).
-# Exatamente uma candidata, ou para.
+# Consequência: NÃO se filtra mais por `Internal=true` — não existe rede assim agora, e o filtro
+# antigo pararia o script por engano (zero candidatas). O que identifica a rede do stack sem
+# depender do nome que o Coolify escolhe:
+#   1. contém db E api (ambos os containers do stack);
+#   2. o container db tem o alias `db` nela (é o que faz `db:5432` resolver no one-shot).
+# Exatamente uma candidata, ou para. O migrate/provision entram NESSA rede.
 # ---------------------------------------------------------------------------
 esta_na_rede() { # $1 = container, $2 = rede
   docker inspect -f '{{range $n,$c := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}' "$1" |
@@ -200,7 +196,6 @@ REDES_COM_ALIAS_DB=$(
 CANDIDATAS=""
 while read -r rede; do
   [ -n "${rede:-}" ] || continue
-  [ "$(docker network inspect -f '{{.Internal}}' "${rede}" 2>/dev/null)" = "true" ] || continue
   esta_na_rede "${CT_API}" "${rede}" || continue
   CANDIDATAS="${CANDIDATAS}${rede}"$'\n'
 done < <(echo "${REDES_COM_ALIAS_DB}")
@@ -208,8 +203,8 @@ done < <(echo "${REDES_COM_ALIAS_DB}")
 QTD_REDE=$(echo "${CANDIDATAS}" | grep -c . || true)
 
 if [ "${QTD_REDE}" != "1" ]; then
-  echo "STOP: ${QTD_REDE} rede(s) atendem os três critérios (Internal=true + db e api + alias db)." >&2
-  echo "Redes do db com alias 'db', e por que cada uma passou ou não:" >&2
+  echo "STOP: ${QTD_REDE} rede(s) atendem os critérios (contém db e api + alias db)." >&2
+  echo "Redes do db com alias 'db', e se a api está em cada uma:" >&2
   while read -r rede; do
     [ -n "${rede:-}" ] || continue
     interna=$(docker network inspect -f '{{.Internal}}' "${rede}" 2>/dev/null || echo "?")
