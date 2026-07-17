@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
+import { AntiabusoModule } from './kernel/antiabuso/antiabuso.module';
 import { AuthModule } from './kernel/auth/auth.module';
 import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
@@ -68,6 +69,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
       },
     }),
     DbModule,
+    // Primitivos antiabuso transversais (rate limiter genérico). Global: consumido hoje pela submissão
+    // pública (2.8, em pipes/) e reutilizável pelos demais baldes antiabuso sem importar o domínio.
+    AntiabusoModule,
     // Antes de HealthModule/OrganizationsModule: registra o guard global e o middleware que abre
     // o escopo de contexto. O guard é deny-by-default — rota nova nasce protegida.
     ContextModule,
