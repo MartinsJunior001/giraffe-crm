@@ -7,7 +7,7 @@ paradigm: 'monólito modular (NestJS por domínio) + frontend Next.js; domínio 
 scope: 'Núcleo operacional interno da Fase 1 (FR-1..FR-33); Super Admin apenas como fronteira preparada (FR-34)'
 status: final
 created: '2026-07-11'
-updated: '2026-07-11'
+updated: '2026-07-17'
 binds: [FR-1..FR-33, NFR-1..NFR-42, INV-FORM-01, INV-WORK-01, INV-WORK-02, INV-NOTIF-01, INV-REPORT-01, INV-REPORT-02, INV-ADMIN-01, INV-ADMIN-02, INV-AUDIT-01]
 sources:
   - 'PRD final: _bmad-output/planning-artifacts/prds/prd-giraffe-crm-2026-07-11/prd.md'
@@ -177,11 +177,13 @@ graph TD
 - **Binds:** MinIO; arquivos/anexos (OQ-47, Produto)
 - **Prevents:** acesso cruzado a arquivos; buckets públicos
 - **Rule:** capacidade de arquivos condicional a Produto; metadados e autorização na aplicação/banco; buckets privados; acesso por URL temporária e curta; validar tamanho/tipo/conteúdo, checksum, quarentena e verificação de arquivo malicioso; impedir acesso cruzado mesmo conhecendo a chave do objeto; ciclo de vida definido (upload incompleto, órfão, substituição, exclusão lógica/física, retenção, restauração/backup).
+- **Materialização (2026-07-17, OQ-47 decidida):** `docs/03-arquitetura/adr-001-capacidade-de-arquivos.md` fixa o que faltava para sair do fail-closed — os **números** (10 MiB/arquivo, 10 arquivos/Registro, 1 GiB/tenant, URL assinada ≤ 60 s), o **antivírus nomeado** (ClamAV, obrigatório) e a **máquina de estados** (`QUARANTINED → AVAILABLE` só com veredito `CLEAN`; erro/timeout **mantém** quarentena; `INFECTED` terminal). **Áreas separadas** (quarentena × liberados) como buckets distintos, não prefixos. Validação por **magic bytes + allowlist**, nunca por extensão. Download com `attachment` + `nosniff`. **Sem bypass administrativo, sem storage local, sem entrega antes do scan.** Esta regra AD-27 não muda: a ADR a instancia.
 
 ### AD-28 — Fail-closed para capacidades gated
 - **Binds:** e-mail real, IA, arquivos
 - **Prevents:** capacidade ativa sem decisão aprovada
 - **Rule:** sem decisão de Produto/Jurídico aprovada, e-mail real, IA e arquivos permanecem desabilitados por configuração e ocultos na UX.
+- **Estado do gate (2026-07-17):** **arquivos — DESTRAVADO.** A OQ-47 foi decidida pelo dono e os limites numéricos exigidos pela epics foram fixados; ver `docs/03-arquitetura/adr-001-capacidade-de-arquivos.md` (ameaça, alternativas, defaults configuráveis, rollback e critérios de aceite). O fail-closed **permanece em runtime**: `FILE_UPLOAD_ENABLED` default `false`, e ausência/ilegibilidade de qualquer limite ou do scanner **nega**. **E-mail outbound e IA seguem GATED** (OQ-32, OQ-43..46 abertas) — o destravamento é por capacidade, não do AD-28 inteiro.
 
 ### AD-29 — Observabilidade
 - **Binds:** todos os serviços (Pino/Sentry como ferramentas)
