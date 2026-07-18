@@ -122,6 +122,37 @@ const EnvSchema = z
       z.coerce.number().int().positive().optional(),
     ),
 
+    // ── Débito D-01 — hop Web→API autenticado (substitui a confiança por IP estático) ──────────
+    /**
+     * Segredo do HMAC que autentica o hop Web→API (`kernel/auth/internal-hop.ts`). **Opcional**, e a
+     * ausência é o "modo direto": sem ele, a API resolve o IP como sempre (socket + `TRUSTED_PROXY_IPS`)
+     * — é assim que dev/teste/CI rodam, sem regressão. PRESENTE (staging/produção atrás do proxy do
+     * Coolify), a API passa a EXIGIR a prova assinada na rota de auth: um `X-Forwarded-For` sem
+     * assinatura válida é recusado (fail-closed), e o IP do cliente vem do envelope assinado.
+     *
+     * Separado do `BETTER_AUTH_SECRET`/`LOGIN_HMAC_SECRET` de propósito (comprometer um não é
+     * comprometer os outros). Variável de SERVIDOR na Web e na API — jamais `NEXT_PUBLIC_`, jamais em log.
+     */
+    INTERNAL_HMAC_SECRET: vazioComoAusente(
+      z.string().min(32, 'INTERNAL_HMAC_SECRET deve ter ao menos 32 caracteres').optional(),
+    ),
+
+    /** Versão da chave atual do hop (para rotação com janela de sobreposição, como o HMAC de login). */
+    INTERNAL_HMAC_KEY_VERSION: z.coerce.number().int().positive().default(1),
+
+    /** Segredo ANTERIOR do hop, durante a janela de rotação (AC6). Opcional. */
+    INTERNAL_HMAC_PREVIOUS_SECRET: vazioComoAusente(
+      z
+        .string()
+        .min(32, 'INTERNAL_HMAC_PREVIOUS_SECRET deve ter ao menos 32 caracteres')
+        .optional(),
+    ),
+
+    /** Versão do segredo anterior do hop. Obrigatória quando há segredo anterior. */
+    INTERNAL_HMAC_PREVIOUS_KEY_VERSION: vazioComoAusente(
+      z.coerce.number().int().positive().optional(),
+    ),
+
     /**
      * IPs dos PROXIES confiáveis, separados por vírgula. **Vazio por padrão** — e isso é a decisão,
      * não um esquecimento.
@@ -301,6 +332,36 @@ const EnvSchema = z
         code: 'custom',
         message:
           'LOGIN_HMAC_PREVIOUS_KEY_VERSION não pode ser igual a LOGIN_HMAC_KEY_VERSION (a rotação ficaria irrastreável)',
+      });
+    }
+  })
+  /**
+   * Coerência da rotação do hop Web→API (D-01) — o mesmo contrato do HMAC de login: segredo e versão
+   * anteriores andam juntos, e nenhum dos dois pode coincidir com o atual (senão a rotação seria
+   * irrastreável ou aceitaria a chave "anterior" como se fosse a atual). Mensagens só com NOMES.
+   */
+  .superRefine((env, ctx) => {
+    const temSegredo = env.INTERNAL_HMAC_PREVIOUS_SECRET !== undefined;
+    const temVersao = env.INTERNAL_HMAC_PREVIOUS_KEY_VERSION !== undefined;
+    if (temSegredo !== temVersao) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'INTERNAL_HMAC_PREVIOUS_SECRET e INTERNAL_HMAC_PREVIOUS_KEY_VERSION devem ser definidas juntas',
+      });
+    }
+    if (!temSegredo) return;
+    if (env.INTERNAL_HMAC_PREVIOUS_SECRET === env.INTERNAL_HMAC_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'INTERNAL_HMAC_PREVIOUS_SECRET não pode ser igual a INTERNAL_HMAC_SECRET',
+      });
+    }
+    if (env.INTERNAL_HMAC_PREVIOUS_KEY_VERSION === env.INTERNAL_HMAC_KEY_VERSION) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'INTERNAL_HMAC_PREVIOUS_KEY_VERSION não pode ser igual a INTERNAL_HMAC_KEY_VERSION (a rotação ficaria irrastreável)',
       });
     }
   })

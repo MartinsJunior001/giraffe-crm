@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getApiBaseUrl, getPublicOrigin } from '@/lib/env';
+import { getApiBaseUrl, getInternalHmac, getPublicOrigin } from '@/lib/env';
 import { loginNaApi } from '@/lib/auth';
 import { derivarIpValidadoDoXff } from '@/lib/client-ip';
 import { ehMesmaOrigem } from '@/lib/session';
@@ -45,7 +45,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   // que o Traefik escreveu vendo o socket; a ponta esquerda é a que um atacante controla. Sem
   // ele, o rate limit do login (G2) contaria a Web como origem única.
   const ipCliente = derivarIpValidadoDoXff(req.headers.get('x-forwarded-for'));
-  const resultado = await loginNaApi(getApiBaseUrl(), email, senha, origemPublica, ipCliente);
+  const resultado = await loginNaApi(
+    getApiBaseUrl(),
+    email,
+    senha,
+    origemPublica,
+    ipCliente,
+    getInternalHmac(),
+  );
 
   if (!resultado.ok) {
     return redirecionar(`/login?erro=${resultado.motivo}`);

@@ -77,6 +77,16 @@ services:
       LOGIN_HMAC_PREVIOUS_SECRET: ${LOGIN_HMAC_PREVIOUS_SECRET:-}
       LOGIN_HMAC_PREVIOUS_KEY_VERSION: ${LOGIN_HMAC_PREVIOUS_KEY_VERSION:-}
 
+      # Hop Web→API autenticado (D-01). VAZIO = modo direto (dev/CI): a API resolve o IP pelo socket
+      # + TRUSTED_PROXY_IPS. PREENCHIDO (staging/produção atrás do proxy do Coolify): a API passa a
+      # EXIGIR a prova assinada na rota de auth — um X-Forwarded-For sem assinatura válida é recusado
+      # (fail-closed), e o IP do cliente vem do envelope assinado. O MESMO segredo vai à Web (abaixo).
+      # Segredo de SERVIDOR, jamais NEXT_PUBLIC_/log. Rotação com janela: PREVIOUS_* (ver rotacao-hmac).
+      INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-}
+      INTERNAL_HMAC_KEY_VERSION: ${INTERNAL_HMAC_KEY_VERSION:-1}
+      INTERNAL_HMAC_PREVIOUS_SECRET: ${INTERNAL_HMAC_PREVIOUS_SECRET:-}
+      INTERNAL_HMAC_PREVIOUS_KEY_VERSION: ${INTERNAL_HMAC_PREVIOUS_KEY_VERSION:-}
+
       # VAZIO por padrão: sem proxy confiável declarado, o IP vem do SOCKET e o
       # `X-Forwarded-For` do cliente é ignorado (ver kernel/auth/client-ip.ts).
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
@@ -116,6 +126,12 @@ services:
       # ela precisa constar em CORS_ALLOWED_ORIGINS da API. Sem default silencioso (`:?`): uma
       # origem errada quebra o login de forma opaca; melhor falhar no `up`, dizendo qual falta.
       WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:?defina WEB_PUBLIC_ORIGIN (ver .env.example)}
+
+      # Hop Web→API autenticado (D-01): a Web ASSINA o IP do cliente (validado do X-Forwarded-For do
+      # Traefik) num cabeçalho interno por requisição. MESMO segredo/versão da API. Vazio = modo direto
+      # (dev): a Web manda o IP como X-Forwarded-For cru. Segredo de SERVIDOR — jamais NEXT_PUBLIC_.
+      INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-}
+      INTERNAL_HMAC_KEY_VERSION: ${INTERNAL_HMAC_KEY_VERSION:-1}
     # Sem `ports` no base (ver nota no serviço `db`): o Traefik roteia o domínio para o container
     # pela rede que o Coolify gerencia (a Web é o ÚNICO serviço com domínio). A publicação em
     # loopback para dev/CI vive em `docker-compose.override.yml`.

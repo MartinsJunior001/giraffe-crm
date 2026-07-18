@@ -13,6 +13,25 @@ export function getApiBaseUrl(raw: string | undefined = process.env.API_BASE_URL
 }
 
 /**
+ * Segredo do hop Web→API autenticado (D-01). Variável de SERVIDOR (`INTERNAL_HMAC_SECRET`) —
+ * jamais `NEXT_PUBLIC_`, jamais no bundle do browser. **Opcional**: ausente = modo direto (dev/CI), a
+ * Web não assina e a API resolve o IP pelo socket. Presente (staging/produção) = a Web assina cada
+ * chamada BFF→API que carrega o IP do cliente, e a API passa a exigir a prova.
+ *
+ * Devolve `undefined` quando ausente/vazio; caso contrário `{ secret, keyVersion }`.
+ */
+export function getInternalHmac(
+  raw: string | undefined = process.env.INTERNAL_HMAC_SECRET,
+  versaoRaw: string | undefined = process.env.INTERNAL_HMAC_KEY_VERSION,
+): { secret: string; keyVersion: number } | undefined {
+  const secret = (raw ?? '').trim();
+  if (!secret) return undefined;
+  const versao = Number(versaoRaw ?? '1');
+  const keyVersion = Number.isInteger(versao) && versao > 0 ? versao : 1;
+  return { secret, keyVersion };
+}
+
+/**
  * Origem PÚBLICA da Web (`WEB_PUBLIC_ORIGIN`) — a URL pela qual o BROWSER nos alcança.
  *
  * Existe porque `req.nextUrl.origin` NÃO é confiável atrás de proxy: no standalone do Next, ele

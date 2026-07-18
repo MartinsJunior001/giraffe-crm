@@ -111,9 +111,12 @@ if (g1ok) {
     : bad(`G1: 6ª tentativa → ${r6.status} (esperado 429 com X-Retry-After)`);
 }
 
-// 6. X-Forwarded-For forjado/inválido: ignorado, sem 500.
-const rXff = await login(sintetico(), 'senha-errada', { 'x-forwarded-for': 'nao-e-ip, ,,, 999.999.999.999' });
-rXff.status === 401 ? ok('X-Forwarded-For forjado/inválido → 401 (ignorado, não 500)') : bad(`XFF forjado → ${rXff.status} (esperado 401, não 500)`);
+// 6. X-Forwarded-For forjado sem prova: não é honrado e não derruba (nunca 500). Com o hop LIGADO
+//    (D-01) a API recusa quem declara IP sem assinatura → 403; em modo direto o header é ignorado → 401.
+const rXff = await login(sintetico(), 'senha-errada', { 'x-forwarded-for': '203.0.113.55' });
+[401, 403].includes(rXff.status)
+  ? ok(`X-Forwarded-For forjado → ${rXff.status} (não honrado; 403 = hop D-01 ativo, 401 = modo direto)`)
+  : bad(`XFF forjado → ${rXff.status} (esperado 401 ou 403, nunca 500/2xx)`);
 
 // 7. logout revoga a sessão: o cookie antigo volta a 401.
 const rOut = await fetch(`${BASE}/api/auth/sign-out`, { method: 'POST', headers: { 'content-type': 'application/json', cookie, origin: ORIGIN }, body: '{}' });

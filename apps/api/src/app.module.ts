@@ -60,6 +60,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
                 'req.headers.authorization',
                 'req.headers.cookie',
                 'res.headers["set-cookie"]',
+                // Hop Web→API (D-01): o envelope assinado não é o segredo, mas fora de log por higiene —
+                // um leitor de log não deve poder reusar uma prova ainda dentro da janela.
+                'req.headers["x-internal-hop"]',
               ],
               remove: true,
             },
