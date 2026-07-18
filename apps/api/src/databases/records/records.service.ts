@@ -10,7 +10,12 @@ import { type ContextoOrganizacional, RequestContext } from '../../kernel/contex
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
 import { getEnv } from '../../kernel/config/env';
-import { SubmissaoInvalidaError, validarSubmissao } from '../../pipes/cards/submission';
+import {
+  extrairArquivosReferenciados,
+  SubmissaoInvalidaError,
+  validarSubmissao,
+  type OpcoesSubmissao,
+} from '../../pipes/cards/submission';
 import { snapshotExigeCapacidadeArquivo } from '../../pipes/forms/file-gate';
 import { exigirLerDatabase, exigirOperarDatabase } from '../database-authz';
 import type { CriarRegistroDTO, EditarRegistroDTO } from './records.dto';
@@ -154,7 +159,10 @@ export class RecordsService {
     });
     if (!versao) throw new ConflictException('versão do Registro indisponível');
 
-    const valores = this.validar(versao.snapshot, dto.valores);
+    // Edição: o Registro já existe (e o arquivo já foi enviado e vinculado a ele), então Campo Arquivo é aceito
+    // como REFERÊNCIA tipada (Story 3.8, Opção 1). O vínculo é conferido contra ESTE Registro.
+    const valores = this.validar(versao.snapshot, dto.valores, { arquivo: 'referencia' });
+    await this.exigirArquivosVinculados(db, versao.snapshot, valores, recordId);
 
     let atualizado: RecordVisao | null;
     try {
@@ -209,17 +217,52 @@ export class RecordsService {
   // ── Internos ─────────────────────────────────────────────────────────────────────────────────
 
   /** Valida os valores contra o snapshot (400 determinístico), reusando o núcleo puro da 2.7. */
-  private validar(snapshot: Prisma.JsonValue, valores: unknown): Record<string, unknown> {
+  private validar(
+    snapshot: Prisma.JsonValue,
+    valores: unknown,
+    opcoes?: OpcoesSubmissao,
+  ): Record<string, unknown> {
     // Gate de CONSUMO (Story 3.8, RF-3 / ADR AC-2): snapshot publicado exige Campo Arquivo mas a capacidade
     // está desligada ⇒ 409 honesto. Vale para criar E editar (ambos passam por aqui). Fail-closed.
     if (snapshotExigeCapacidadeArquivo(snapshot) && !getEnv().FILE_UPLOAD_ENABLED) {
       throw new ConflictException({ motivo: 'CAPACIDADE_ARQUIVO_INDISPONIVEL' });
     }
     try {
-      return validarSubmissao(snapshot, valores);
+      return validarSubmissao(snapshot, valores, opcoes);
     } catch (err) {
       if (err instanceof SubmissaoInvalidaError) throw new BadRequestException(err.message);
       throw err;
+    }
+  }
+
+  /**
+   * Confere que cada arquivo referenciado nos `valores` (Campo `FILE`, Story 3.8) está DISPONIVEL e **vinculado
+   * a ESTE Registro** (`resourceType='RECORD'`, `resourceId=recordId`). Herda a 3.7: RLS escopa `FileObject` ao
+   * tenant, então um `fileId` de outro tenant simplesmente não é encontrado; um `fileId` de OUTRO Registro ou em
+   * QUARENTENA/removido não casa o vínculo. Qualquer falha ⇒ 400 uniforme (não-enumerante — não distingue
+   * "inexistente" de "de outro recurso"). Só de LEITURA; roda antes da transação de escrita.
+   */
+  private async exigirArquivosVinculados(
+    db: Db,
+    snapshot: Prisma.JsonValue,
+    valores: Record<string, unknown>,
+    recordId: string,
+  ): Promise<void> {
+    const ids = extrairArquivosReferenciados(snapshot, valores);
+    if (ids.length === 0) return;
+    const arquivos = await db.fileObject.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, state: true, resourceType: true, resourceId: true },
+    });
+    const validos = new Set(
+      arquivos
+        .filter(
+          (a) => a.state === 'DISPONIVEL' && a.resourceType === 'RECORD' && a.resourceId === recordId,
+        )
+        .map((a) => a.id),
+    );
+    for (const id of ids) {
+      if (!validos.has(id)) throw new BadRequestException('referência de arquivo inválida');
     }
   }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Prisma } from '../generated/prisma';
-import { SubmissaoInvalidaError, validarSubmissao } from '../src/pipes/cards/submission';
+import {
+  extrairArquivosReferenciados,
+  SubmissaoInvalidaError,
+  validarSubmissao,
+} from '../src/pipes/cards/submission';
 
 /**
  * Núcleo PURO da submissão (Story 2.7): valida os `valores` contra o snapshot da versão publicada. Sem banco.
@@ -81,5 +85,63 @@ describe('validarSubmissao', () => {
     expect(() => validarSubmissao({ fields: 'x' } as Prisma.JsonValue, {})).toThrow(
       SubmissaoInvalidaError,
     );
+  });
+});
+
+// ── Campo FILE (Story 3.8, Opção 1): referência tipada, não texto ──────────────────────────────
+const F_FILE = 'aaaaaaaa-0000-0000-0000-0000000000f1';
+const FID_1 = '11111111-2222-3333-4444-555555555551';
+const FID_2 = '11111111-2222-3333-4444-555555555552';
+const SNAP_FILE = snap([{ id: F_FILE, type: 'FILE', label: 'Anexo', typeConfig: {} }]);
+const SNAP_FILE_MULTI = snap([
+  { id: F_FILE, type: 'FILE', label: 'Anexos', typeConfig: { multiplo: true } },
+]);
+
+describe('validarSubmissao — Campo FILE', () => {
+  it('default (rejeitar): valor para Campo FILE não é aceito nesta via', () => {
+    expect(() => validarSubmissao(SNAP_FILE, { [F_FILE]: FID_1 })).toThrow(SubmissaoInvalidaError);
+    // Valor AUSENTE é permitido mesmo com FILE no snapshot (sem obrigatoriedade).
+    expect(validarSubmissao(SNAP_FILE, {})).toEqual({});
+  });
+
+  it('referencia: aceita fileId UUID; rejeita não-UUID e tipo errado', () => {
+    expect(validarSubmissao(SNAP_FILE, { [F_FILE]: FID_1 }, { arquivo: 'referencia' })[F_FILE]).toBe(
+      FID_1,
+    );
+    expect(() =>
+      validarSubmissao(SNAP_FILE, { [F_FILE]: 'não-uuid' }, { arquivo: 'referencia' }),
+    ).toThrow(SubmissaoInvalidaError);
+    expect(() =>
+      validarSubmissao(SNAP_FILE, { [F_FILE]: 42 }, { arquivo: 'referencia' }),
+    ).toThrow(SubmissaoInvalidaError);
+    // single não aceita array
+    expect(() =>
+      validarSubmissao(SNAP_FILE, { [F_FILE]: [FID_1] }, { arquivo: 'referencia' }),
+    ).toThrow(SubmissaoInvalidaError);
+  });
+
+  it('referencia + multiplo: lista de UUIDs sem repetição', () => {
+    expect(
+      validarSubmissao(SNAP_FILE_MULTI, { [F_FILE]: [FID_1, FID_2] }, { arquivo: 'referencia' })[
+        F_FILE
+      ],
+    ).toEqual([FID_1, FID_2]);
+    expect(() =>
+      validarSubmissao(SNAP_FILE_MULTI, { [F_FILE]: [FID_1, FID_1] }, { arquivo: 'referencia' }),
+    ).toThrow(SubmissaoInvalidaError); // repetido
+    expect(() =>
+      validarSubmissao(SNAP_FILE_MULTI, { [F_FILE]: FID_1 }, { arquivo: 'referencia' }),
+    ).toThrow(SubmissaoInvalidaError); // não-array
+  });
+
+  it('extrairArquivosReferenciados achata os fileIds dos Campos FILE (sem repetição)', () => {
+    const v = validarSubmissao(
+      SNAP_FILE_MULTI,
+      { [F_FILE]: [FID_1, FID_2] },
+      { arquivo: 'referencia' },
+    );
+    expect(extrairArquivosReferenciados(SNAP_FILE_MULTI, v)).toEqual([FID_1, FID_2]);
+    // Campo não-FILE não contribui.
+    expect(extrairArquivosReferenciados(SNAP, { [F_TEXTO]: 'x' })).toEqual([]);
   });
 });
