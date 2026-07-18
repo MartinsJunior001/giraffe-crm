@@ -72,6 +72,12 @@ CREATE INDEX "ScanSlot_key_expiraEm_idx" ON "ScanSlot"("key", "expiraEm");
 -- AddForeignKey (FileObject)
 ALTER TABLE "FileObject" ADD CONSTRAINT "FileObject_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- Defesa em profundidade: o PRIMEIRO segmento de `bucketKey` DEVE ser o `orgId` (a chave é sempre gerada no
+-- servidor como `<orgId>/<uuid>` por `montarChave`). O `WITH CHECK` da RLS valida a coluna `orgId`, mas não que
+-- a chave opaca aponte para o prefixo da própria Org — este CHECK fecha isso no banco. `orgId` é UUID (sem `%`/`_`),
+-- então o LIKE é literal e seguro.
+ALTER TABLE "FileObject" ADD CONSTRAINT "FileObject_bucketKey_prefix_ck" CHECK ("bucketKey" LIKE "orgId"::text || '/%');
+
 -- AddForeignKey (FileScan)
 ALTER TABLE "FileScan" ADD CONSTRAINT "FileScan_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "FileScan" ADD CONSTRAINT "FileScan_fileId_fkey" FOREIGN KEY ("fileId") REFERENCES "FileObject"("id") ON DELETE CASCADE ON UPDATE CASCADE;

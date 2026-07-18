@@ -203,9 +203,18 @@ const EnvSchema = z
      * é RECUSADO (fail-closed): um scanner com base velha é um scanner cego. Default conservador.
      */
     CLAMAV_DB_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
+    /**
+     * Timeout (ms) do scan do clamd. O TTL do slot (`SCAN_SLOT_TTL_SECONDS`) DEVE ser maior que isto, ou um slot
+     * ainda em uso expiraria durante o scan e outra requisição entraria acima do teto — coerência no superRefine.
+     */
+    CLAMAV_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
 
-    /** Tamanho máximo por arquivo (bytes). Limita também o buffer de upload (DoS). Default 10 MiB. */
-    FILE_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+    /**
+     * Tamanho máximo por arquivo (bytes). Limita também o buffer de upload (DoS). Default 10 MiB. O teto (50 MiB)
+     * casa com a barreira dura do multer (`MULTER_MAX_BYTES`); acima disso o limite "configurável" seria capado
+     * silenciosamente pelo multer.
+     */
+    FILE_MAX_BYTES: z.coerce.number().int().positive().max(52_428_800).default(10_485_760),
     /** Contagem máxima de arquivos por recurso (Q1 = 10). Validado por faixa, fail-closed. */
     FILE_MAX_PER_RESOURCE: z.coerce.number().int().positive().max(1000).default(10),
     /** Teto de verificações concorrentes por Organização (semáforo `ScanSlot`). Fail-closed no teto (429). */
@@ -323,6 +332,17 @@ const EnvSchema = z
           'FILE_UPLOAD_ENABLED=true exige storage configurado — variáveis ausentes: ' +
           faltando.join(', ') +
           ' (a capacidade não pode ligar sem onde guardar o binário — fail-closed AD-28)',
+      });
+    }
+
+    // O slot do semáforo é segurado durante o scan SÍNCRONO. Se o TTL expirar antes do scan terminar, o slot é
+    // coletado e outra requisição entra ACIMA do teto de concorrência. Exige margem sobre o timeout do clamd.
+    if (env.SCAN_SLOT_TTL_SECONDS * 1000 <= env.CLAMAV_TIMEOUT_MS) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'SCAN_SLOT_TTL_SECONDS (em ms) deve ser MAIOR que CLAMAV_TIMEOUT_MS — senão um slot em uso expira ' +
+          'durante o scan e a concorrência ultrapassa SCAN_MAX_CONCURRENT_PER_ORG',
       });
     }
   });

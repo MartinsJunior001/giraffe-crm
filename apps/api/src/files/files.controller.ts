@@ -51,7 +51,13 @@ export class FilesController {
    */
   @Post('resource/:resourceType/:resourceId')
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MULTER_MAX_BYTES } }))
+  @UseInterceptors(
+    // Limites do multipart APERTADOS (bound de DoS de memória por usuário autenticado): 1 arquivo, poucos
+    // campos/partes, além do teto de bytes. Sem isto, `files/fields/parts` ficam Infinity.
+    FileInterceptor('file', {
+      limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 5, parts: 10 },
+    }),
+  )
   async enviar(
     @Param('resourceType') resourceType: string,
     @Param('resourceId') resourceId: string,

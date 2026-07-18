@@ -81,7 +81,10 @@ export function assinar(e: EntradaAssinatura): Record<string, string> {
     .map((n) => n.toLowerCase())
     .sort();
   const mapaLower: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers)) mapaLower[k.toLowerCase()] = String(v).trim();
+  // Canonicalização AWS: trim das pontas E colapso de espaços sequenciais internos num único espaço.
+  for (const [k, v] of Object.entries(headers)) {
+    mapaLower[k.toLowerCase()] = String(v).trim().replace(/\s+/g, ' ');
+  }
 
   const canonicalHeaders = nomes.map((n) => `${n}:${mapaLower[n]}\n`).join('');
   const signedHeaders = nomes.join(';');

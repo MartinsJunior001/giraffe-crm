@@ -52,6 +52,9 @@ const ALLOWLIST: readonly AssinaturaTipo[] = [
   { mime: 'application/pdf', casa: (b) => prefixo(b, [0x25, 0x50, 0x44, 0x46, 0x2d]) },
 ];
 
+/** Mimes permitidos, derivados da ALLOWLIST — fonte ÚNICA para "exibir antes do envio" (evita lista duplicada). */
+export const MIMES_PERMITIDOS: readonly string[] = ALLOWLIST.map((a) => a.mime);
+
 /**
  * Detecta o tipo por conteúdo real. Devolve o mime canônico se casar com a allowlist, ou `null` (rejeitado).
  * `null` cobre tudo que não está na allowlist — inclusive executáveis (MZ/ELF), scripts e ZIP/office.

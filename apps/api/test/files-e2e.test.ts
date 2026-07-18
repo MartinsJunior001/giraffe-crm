@@ -35,15 +35,18 @@ const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} }
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 const EXE = Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03]); // executável renomeado.
 
-/** Storage FALSO em memória. `trocarNaReleitura` simula troca de bytes entre aceite e verificação. */
+/** Storage FALSO em memória. `trocarNaReleitura` simula troca de bytes; `lancarNaReleitura` simula falha parcial. */
 class FakeStorage {
   objetos = new Map<string, Buffer>();
   trocarNaReleitura = false;
+  lancarNaReleitura = false;
   put(key: string, body: Buffer): Promise<{ etag: string | undefined }> {
     this.objetos.set(key, body);
     return Promise.resolve({ etag: `"${createHash('md5').update(body).digest('hex')}"` });
   }
   getBytes(key: string): Promise<Uint8Array> {
+    if (this.lancarNaReleitura)
+      return Promise.reject(new Error('storage indisponível (releitura)'));
     if (this.trocarNaReleitura) return Promise.resolve(Buffer.from('CONTEUDO TROCADO'));
     return Promise.resolve(this.objetos.get(key) ?? Buffer.alloc(0));
   }
@@ -199,10 +202,30 @@ afterAll(async () => {
 
 beforeEach(() => {
   storage.trocarNaReleitura = false;
+  storage.lancarNaReleitura = false;
   scanner.resultado = 'LIMPO';
   scanner.base = new Date();
   scanner.canario = true;
 });
+
+/** POST simples (remove/purge). */
+async function acaoPost(conta: string, fileId: string, verbo: string): Promise<Response> {
+  return fetch(`${baseUrl}/files/${fileId}/${verbo}`, {
+    method: 'POST',
+    headers: { [HEADER_CONTA]: conta },
+  });
+}
+
+/** Lê o FileObject cru (com bucketKey/state) pelo migrator — para asserções que a API não expõe. */
+async function lerCru(
+  fileId: string,
+): Promise<{ state: string; bucketKey: string; purgedAt: Date | null } | null> {
+  const db = withTenantContext(migrator, { orgId: ORG_C }, semLog);
+  return db.fileObject.findUnique({
+    where: { id: fileId },
+    select: { state: true, bucketKey: true, purgedAt: true },
+  });
+}
 
 describe('US1 — quarentena e verificação fail-closed', () => {
   it('PNG benigno com scanner LIMPO → DISPONIVEL', async () => {
@@ -279,6 +302,68 @@ describe('US5 — validação server-side', () => {
   it('executável renomeado .png → 400 (conteúdo real)', async () => {
     const { status } = await upload(CONTA_C, randomUUID(), EXE, 'foto.png');
     expect(status).toBe(400);
+  });
+});
+
+describe('US4 — remoção lógica → expurgo físico (LGPD)', () => {
+  it('remover torna indisponível; expurgar remove o binário mas PRESERVA a linha de metadados', async () => {
+    const { body } = await upload(CONTA_C, randomUUID(), PNG);
+    expect(body.state).toBe('DISPONIVEL');
+    const cru0 = await lerCru(body.id);
+    expect(cru0).not.toBeNull();
+    expect(storage.objetos.has(cru0!.bucketKey)).toBe(true); // binário final presente.
+
+    // Remoção lógica → indisponível para download.
+    const rem = await acaoPost(CONTA_C, body.id, 'remove');
+    expect(rem.status).toBe(200);
+    expect((await lerCru(body.id))!.state).toBe('REMOVIDO_LOGICO');
+    expect((await baixar(CONTA_C, body.id)).status).toBe(404);
+
+    // Expurgo → binário removido do storage, mas a LINHA persiste (sem exclusão física — LGPD).
+    const exp = await acaoPost(CONTA_C, body.id, 'purge');
+    expect(exp.status).toBe(200);
+    const cru1 = await lerCru(body.id);
+    expect(cru1).not.toBeNull(); // linha preservada.
+    expect(cru1!.state).toBe('EXPURGADO');
+    expect(cru1!.purgedAt).not.toBeNull();
+    expect(storage.objetos.has(cru0!.bucketKey)).toBe(false); // binário expurgado.
+  });
+
+  it('remover/expurgar são idempotentes', async () => {
+    const { body } = await upload(CONTA_C, randomUUID(), PNG);
+    await acaoPost(CONTA_C, body.id, 'remove');
+    expect((await acaoPost(CONTA_C, body.id, 'remove')).status).toBe(200); // idempotente.
+    await acaoPost(CONTA_C, body.id, 'purge');
+    expect((await acaoPost(CONTA_C, body.id, 'purge')).status).toBe(200); // idempotente.
+  });
+});
+
+describe('falha parcial — compensação fail-closed (não deixa linha presa em QUARENTENA)', () => {
+  it('erro na releitura do storage → o arquivo NÃO fica DISPONIVEL nem preso na cota (compensado para BLOCKED)', async () => {
+    const resourceId = randomUUID();
+    storage.lancarNaReleitura = true;
+    const res = await fetch(`${baseUrl}/files/resource/teste/${resourceId}`, {
+      method: 'POST',
+      headers: { [HEADER_CONTA]: CONTA_C },
+      body: (() => {
+        const f = new FormData();
+        f.append('file', new Blob([PNG]), 'x.png');
+        return f;
+      })(),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(500); // a operação falha honestamente.
+    storage.lancarNaReleitura = false;
+
+    // Compensação: nenhuma linha em QUARENTENA/DISPONIVEL ocupando a cota do recurso.
+    const db = withTenantContext(migrator, { orgId: ORG_C }, semLog);
+    const presos = await db.fileObject.count({
+      where: { resourceType: 'teste', resourceId, state: { in: ['QUARENTENA', 'DISPONIVEL'] } },
+    });
+    expect(presos).toBe(0);
+
+    // E o recurso continua aceitando uploads (cota não esgotada).
+    const ok = await upload(CONTA_C, resourceId, PNG);
+    expect(ok.body.state).toBe('DISPONIVEL');
   });
 });
 

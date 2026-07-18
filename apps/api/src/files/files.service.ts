@@ -19,7 +19,7 @@ import { chaveQuarentena, montarChave, pertenceAoTenant } from '../kernel/storag
 import { ClamavService } from '../kernel/scanner/clamav.service';
 import { FILE_AUTHZ_CONTRACT, type FileAuthzContract } from './file-authz.contract';
 import { estaDisponivel, planejarTransicao, type EstadoFile } from './file-states.core';
-import { validarUpload } from './file-validation.core';
+import { MIMES_PERMITIDOS, validarUpload } from './file-validation.core';
 import { baseFresca, computarVeredito } from './file-verdict.core';
 
 type Db = ReturnType<typeof withTenantContext>;
@@ -157,6 +157,9 @@ export class FilesService {
 
     const bucketKey = montarChave(contexto.orgId);
     const qKey = chaveQuarentena(bucketKey);
+    // Rastreia a linha criada para a COMPENSAÇÃO fail-closed: qualquer throw entre criar e promover não pode
+    // deixar o FileObject preso em QUARENTENA (que conta para o teto — DoS de cota) nem binário órfão no storage.
+    let criadoId: string | undefined;
 
     try {
       const sha256Ingest = sha256(arquivo.buffer);
@@ -176,6 +179,7 @@ export class FilesService {
         },
         select: { id: true },
       });
+      criadoId = criado.id;
 
       // 3) Verificação composta fail-closed sobre a RELEITURA (anti-troca-de-bytes).
       const releitura = Buffer.from(await this.storage.getBytes(qKey));
@@ -199,8 +203,14 @@ export class FilesService {
       let veredito: 'CLEAN' | 'BLOCKED' = pre.veredito;
       if (pre.veredito === 'CLEAN') {
         // 4) Promoção if-match: copia quarentena → chave final SÓ se o ETag não mudou (byte-a-byte o verificado).
-        const copiou = await this.storage.copyIfMatch(qKey, bucketKey, etag ?? '');
-        if (!copiou) veredito = 'BLOCKED';
+        // ETag ausente ⇒ NÃO dá para provar integridade ⇒ fail-closed BLOCKED (nunca if-match vazio, que alguns
+        // servidores S3 tratam como "sem condição" e copiariam incondicionalmente).
+        if (!etag) {
+          veredito = 'BLOCKED';
+        } else {
+          const copiou = await this.storage.copyIfMatch(qKey, bucketKey, etag);
+          if (!copiou) veredito = 'BLOCKED';
+        }
       }
 
       // 5) Persiste o FATO (FileScan) + o estado do FileObject na MESMA transação atômica (AD-13).
@@ -212,9 +222,11 @@ export class FilesService {
         sha256Releitura,
         veredito,
       });
+      criadoId = undefined; // promovido/bloqueado com sucesso — não há mais o que compensar.
 
-      // 6) Limpa o objeto de quarentena (o binário válido já foi copiado para a chave final; o inválido não fica).
-      await this.storage.remove(qKey);
+      // 6) Limpa o objeto de quarentena — BEST-EFFORT: a promoção já é o ponto de verdade; um qKey remanescente é
+      // lixo, não uma falha da operação (não pode virar 500 com o arquivo já DISPONIVEL).
+      await this.removerSilencioso(qKey);
 
       const visao = await db.fileObject.findUnique({
         where: { id: criado.id },
@@ -222,8 +234,46 @@ export class FilesService {
       });
       if (!visao) throw new NotFoundException();
       return visao as FileVisao;
+    } catch (err) {
+      // Compensação fail-closed: sem linha presa em QUARENTENA (libera a cota) e sem binário órfão.
+      await this.compensarFalha(contexto, criadoId, qKey, bucketKey);
+      throw err;
     } finally {
       await this.semaphore.liberar(token);
+    }
+  }
+
+  /** Remove um objeto do storage best-effort — nunca lança (usado em limpeza/compensação). */
+  private async removerSilencioso(key: string): Promise<void> {
+    try {
+      await this.storage.remove(key);
+    } catch {
+      /* lixo remanescente é aceitável; não pode mascarar o resultado real da operação */
+    }
+  }
+
+  /**
+   * Compensa uma falha no meio do upload: marca a linha órfã QUARENTENA→BLOCKED (some do teto por recurso) e
+   * remove os binários (quarentena + eventual final, se o if-match já copiou). Best-effort e nunca lança — a
+   * exceção original é o que importa; a compensação só evita o estado preso.
+   */
+  private async compensarFalha(
+    contexto: ContextoOrganizacional,
+    criadoId: string | undefined,
+    qKey: string,
+    bucketKey: string,
+  ): Promise<void> {
+    await this.removerSilencioso(qKey);
+    await this.removerSilencioso(bucketKey);
+    if (!criadoId) return;
+    try {
+      const db = withTenantContext(this.prisma, contexto, this.logger);
+      await db.fileObject.updateMany({
+        where: { id: criadoId, state: 'QUARENTENA' },
+        data: { state: 'BLOCKED' },
+      });
+    } catch {
+      /* best-effort: se nem isto der, a linha fica em QUARENTENA, mas nunca vira DISPONIVEL (fail-closed) */
     }
   }
 
@@ -243,9 +293,21 @@ export class FilesService {
     },
   ): Promise<void> {
     const alvo: EstadoFile = dados.veredito === 'CLEAN' ? 'DISPONIVEL' : 'BLOCKED';
+    let promovido = false;
     try {
       await this.prisma.$transaction(async (tx) => {
         for (const p of definirContextoOrg(tx, contexto)) await p;
+
+        // Guarda otimista PRIMEIRO: só promove/bloqueia a partir de QUARENTENA (uma vez). Se o estado já não é
+        // QUARENTENA (não deveria acontecer — id recém-criado), NÃO grava FileScan nem audita (evita fato/auditoria
+        // falsos); a transação faz rollback e o chamador compensa (409).
+        const upd = await tx.fileObject.updateMany({
+          where: { id: dados.fileId, state: 'QUARENTENA' },
+          data: { state: alvo },
+        });
+        if (upd.count === 0) {
+          throw new ConflictException('estado mudou durante a verificação; repita a requisição');
+        }
 
         await tx.fileScan.create({
           data: {
@@ -258,20 +320,18 @@ export class FilesService {
             veredito: dados.veredito,
           },
         });
-
-        // Guarda otimista: só promove/bloqueia a partir de QUARENTENA (uma vez).
-        await tx.fileObject.updateMany({
-          where: { id: dados.fileId, state: 'QUARENTENA' },
-          data: { state: alvo },
-        });
+        promovido = true;
       });
     } catch (err) {
+      if (err instanceof ConflictException) throw err;
       if (isConflito(err))
         throw new ConflictException('verificação concorrente; repita a requisição');
       throw err;
     }
-    this.auditar(contexto, 'create', 'FileScan');
-    this.auditar(contexto, 'update', 'FileObject');
+    if (promovido) {
+      this.auditar(contexto, 'update', 'FileObject');
+      this.auditar(contexto, 'create', 'FileScan');
+    }
   }
 
   /** Download por stream sob sessão. Só DISPONIVEL; autz de LEITURA; a chave nunca é autorização. */
@@ -383,7 +443,8 @@ export class FilesService {
     return {
       maxBytes: env.FILE_MAX_BYTES,
       maxPorRecurso: env.FILE_MAX_PER_RESOURCE,
-      tiposPermitidos: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf'],
+      // Derivado da allowlist real (fonte única) — o que o cliente vê aqui é exatamente o que a validação aceita.
+      tiposPermitidos: [...MIMES_PERMITIDOS],
     };
   }
 }

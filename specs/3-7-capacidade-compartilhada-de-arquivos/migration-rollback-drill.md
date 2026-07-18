@@ -18,7 +18,18 @@
 Tabelas **novas e vazias** → **sem backfill** (diferente da 2.12, que precisou popular a 1ª entrada antes de
 FORCE). Nada a migrar de dados existentes.
 
-## Drill (executado)
+## Mecanismo de rollback
+
+O `db:rollback` do projeto (`scripts/db-migrate.mjs`) exige um `.down.sql` do **topo da pilha** de migrations. Este
+foi entregue: **`apps/api/prisma/rollback/20260717120000_files_capability.down.sql`** (DROP de policies + tabelas na
+ordem de FK + tipos). Sem ele, o `db:rollback` recusaria (fail-closed) por o alvo não ser o topo da pilha.
+
+## Drill
+
+A aplicação da migration em banco vazio foi **exercitada de verdade** (CI job "Testes" verde + aplicação no banco
+de dev local via `prisma migrate deploy`). O passo destrutivo (`db:rollback`) NÃO foi executado contra um banco
+compartilhado; ele está coberto pelo `.down.sql` acima e pelo fallback manual abaixo, e deve ser exercitado num
+banco descartável quando necessário.
 
 ```bash
 # 1. Aplicar em banco com as migrations anteriores.

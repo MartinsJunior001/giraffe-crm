@@ -81,6 +81,13 @@ export class StorageService {
     });
   }
 
+  /** Lê o corpo da resposta como string (para inspecionar o XML do CopyObject). Consome o stream. */
+  private async lerCorpo(res: RespostaS3): Promise<string> {
+    const partes: Buffer[] = [];
+    for await (const chunk of res.body) partes.push(chunk as Buffer);
+    return Buffer.concat(partes).toString('utf8');
+  }
+
   /** Drena e descarta o corpo da resposta (evita vazar socket em respostas que não consumimos). */
   private descartar(res: RespostaS3): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -141,8 +148,13 @@ export class StorageService {
         },
       });
       const status = res.status;
-      await this.descartar(res);
-      if (status === 200) return true;
+      // O CopyObject do S3 pode responder 200 e mesmo assim FALHAR com um <Error> no corpo (quirk conhecido);
+      // se o if-match não casou, alguns retornam 412. Só é sucesso se 200 E o corpo confirma <CopyObjectResult>
+      // sem <Error> — fail-closed contra o 200-com-erro.
+      const corpo = await this.lerCorpo(res);
+      if (status === 200 && corpo.includes('<CopyObjectResult') && !corpo.includes('<Error')) {
+        return true;
+      }
       this.logger.warn(
         { event: 'storage.copyIfMatch.falha', status },
         'if-match da promoção falhou',

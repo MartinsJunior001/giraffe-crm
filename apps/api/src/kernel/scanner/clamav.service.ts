@@ -102,7 +102,7 @@ export class ClamavService {
     return new Promise<string>((resolve, reject) => {
       const socket = connect({ host: env.CLAMAV_HOST, port: env.CLAMAV_PORT });
       const partes: Buffer[] = [];
-      socket.setTimeout(60_000);
+      socket.setTimeout(env.CLAMAV_TIMEOUT_MS);
 
       socket.on('connect', () => escrever(socket));
       socket.on('data', (d) => partes.push(d));
