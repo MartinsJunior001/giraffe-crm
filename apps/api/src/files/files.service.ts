@@ -305,7 +305,7 @@ export class FilesService {
    */
   async expurgar(fileId: string): Promise<FileVisao> {
     this.exigirCapacidade();
-    const { contexto, db } = this.db();
+    const { db } = this.db();
     const file = await this.carregarParaEditar(db, fileId);
 
     const plano = planejarTransicao('expurgar', file.state as EstadoFile);
