@@ -19,7 +19,9 @@ import { ClamavService } from '../src/kernel/scanner/clamav.service';
  */
 
 // EICAR — string-padrão de teste de antivírus (inofensiva). Fragmentada para não disparar scanners no repositório.
-const EICAR = ['X5O!P%@AP[4\\PZX54(P^)7CC)7}', '$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'].join('');
+const EICAR = ['X5O!P%@AP[4\\PZX54(P^)7CC)7}', '$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'].join(
+  '',
+);
 
 describe('smoke real — StorageService (SigV4 sobre node:http) contra MinIO', () => {
   const storage = new StorageService();

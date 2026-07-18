@@ -46,7 +46,9 @@ class FakeStorage {
     return Promise.resolve(this.objetos.get(key) ?? Buffer.alloc(0));
   }
   getStream(key: string): Promise<IncomingMessage> {
-    return Promise.resolve(Readable.from([this.objetos.get(key) ?? Buffer.alloc(0)]) as IncomingMessage);
+    return Promise.resolve(
+      Readable.from([this.objetos.get(key) ?? Buffer.alloc(0)]) as IncomingMessage,
+    );
   }
   copyIfMatch(srcKey: string, destKey: string): Promise<boolean> {
     const b = this.objetos.get(srcKey);
@@ -100,7 +102,12 @@ let textFieldId = '';
 let fileFieldId = '';
 const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-async function req(method: string, path: string, conta?: string, body?: unknown): Promise<Response> {
+async function req(
+  method: string,
+  path: string,
+  conta?: string,
+  body?: unknown,
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (conta !== undefined) headers[HEADER_CONTA] = conta;
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -111,7 +118,11 @@ async function req(method: string, path: string, conta?: string, body?: unknown)
   });
 }
 
-async function anexar(recordId: string, conta: string = adminConta, bytes = PNG): Promise<FileResp> {
+async function anexar(
+  recordId: string,
+  conta: string = adminConta,
+  bytes = PNG,
+): Promise<FileResp> {
   const form = new FormData();
   form.append('file', new Blob([bytes]), 'anexo.png');
   const res = await fetch(`${baseUrl}/databases/${dbId}/records/${recordId}/files`, {
@@ -175,7 +186,10 @@ beforeAll(async () => {
   baseUrl = await app.getUrl();
 
   // Formulário de Database com um Campo TEXT + um Campo FILE, publicado (capacidade ligada permite publicar FILE).
-  await req('POST', `/databases/${dbId}/form/fields`, adminConta, { label: 'Nome', type: 'TEXT_SHORT' });
+  await req('POST', `/databases/${dbId}/form/fields`, adminConta, {
+    label: 'Nome',
+    type: 'TEXT_SHORT',
+  });
   await req('POST', `/databases/${dbId}/form/fields`, adminConta, { label: 'Anexo', type: 'FILE' });
   const form = (await (await req('GET', `/databases/${dbId}/form`, adminConta)).json()) as FormResp;
   textFieldId = form.fields.find((f) => f.type === 'TEXT_SHORT')!.id;
@@ -311,10 +325,12 @@ describe('Campo Arquivo no Registro (F2) — referência tipada com vínculo', (
     expect(corpo).not.toContain(ORG_C);
 
     // FILE segue gated para filtro (3.5/record-query.core): filtrar por Campo Arquivo → 400.
-    const filtro = encodeURIComponent(JSON.stringify([{ fieldId: fileFieldId, op: 'igual', valor: f.id }]));
-    expect((await req('GET', `/databases/${dbId}/records?filtros=${filtro}`, adminConta)).status).toBe(
-      400,
+    const filtro = encodeURIComponent(
+      JSON.stringify([{ fieldId: fileFieldId, op: 'igual', valor: f.id }]),
     );
+    expect(
+      (await req('GET', `/databases/${dbId}/records?filtros=${filtro}`, adminConta)).status,
+    ).toBe(400);
   });
 
   it('cross-tenant no anexo (Ana/Org A) → 404 não-enumerante', async () => {

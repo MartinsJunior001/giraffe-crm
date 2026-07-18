@@ -105,15 +105,15 @@ describe('validarSubmissao — Campo FILE', () => {
   });
 
   it('referencia: aceita fileId UUID; rejeita não-UUID e tipo errado', () => {
-    expect(validarSubmissao(SNAP_FILE, { [F_FILE]: FID_1 }, { arquivo: 'referencia' })[F_FILE]).toBe(
-      FID_1,
-    );
+    expect(
+      validarSubmissao(SNAP_FILE, { [F_FILE]: FID_1 }, { arquivo: 'referencia' })[F_FILE],
+    ).toBe(FID_1);
     expect(() =>
       validarSubmissao(SNAP_FILE, { [F_FILE]: 'não-uuid' }, { arquivo: 'referencia' }),
     ).toThrow(SubmissaoInvalidaError);
-    expect(() =>
-      validarSubmissao(SNAP_FILE, { [F_FILE]: 42 }, { arquivo: 'referencia' }),
-    ).toThrow(SubmissaoInvalidaError);
+    expect(() => validarSubmissao(SNAP_FILE, { [F_FILE]: 42 }, { arquivo: 'referencia' })).toThrow(
+      SubmissaoInvalidaError,
+    );
     // single não aceita array
     expect(() =>
       validarSubmissao(SNAP_FILE, { [F_FILE]: [FID_1] }, { arquivo: 'referencia' }),

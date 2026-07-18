@@ -44,7 +44,9 @@ class FakeStorage {
     return Promise.resolve(this.objetos.get(key) ?? Buffer.alloc(0));
   }
   getStream(key: string): Promise<IncomingMessage> {
-    return Promise.resolve(Readable.from([this.objetos.get(key) ?? Buffer.alloc(0)]) as IncomingMessage);
+    return Promise.resolve(
+      Readable.from([this.objetos.get(key) ?? Buffer.alloc(0)]) as IncomingMessage,
+    );
   }
   copyIfMatch(srcKey: string, destKey: string): Promise<boolean> {
     const b = this.objetos.get(srcKey);
@@ -93,7 +95,12 @@ let publicId = '';
 let baseOrfaos = 0; // órfãos pré-existentes (execuções anteriores): a asserção é RELATIVA a esta baseline.
 const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-async function req(method: string, path: string, conta?: string, body?: unknown): Promise<Response> {
+async function req(
+  method: string,
+  path: string,
+  conta?: string,
+  body?: unknown,
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (conta !== undefined) headers[HEADER_CONTA] = conta;
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -123,7 +130,10 @@ function db() {
   return withTenantContext(migrator, { orgId: ORG_C }, semLog);
 }
 async function cardsDoPipe(): Promise<{ id: string; valores: Record<string, unknown> }[]> {
-  const cards = await db().card.findMany({ where: { pipeId }, select: { id: true, valores: true } });
+  const cards = await db().card.findMany({
+    where: { pipeId },
+    select: { id: true, valores: true },
+  });
   return cards as { id: string; valores: Record<string, unknown> }[];
 }
 /** Todo FileObject DISPONIVEL(CARD) da Org tem um Card correspondente? (nenhum órfão DISPONIVEL). */
@@ -134,7 +144,10 @@ async function orfaosDisponiveis(): Promise<number> {
   });
   let orfaos = 0;
   for (const a of arquivos) {
-    const existe = await db().card.findUnique({ where: { id: a.resourceId }, select: { id: true } });
+    const existe = await db().card.findUnique({
+      where: { id: a.resourceId },
+      select: { id: true },
+    });
     if (!existe) orfaos += 1;
   }
   return orfaos;
@@ -172,23 +185,35 @@ beforeAll(async () => {
   baseUrl = await app.getUrl();
 
   // Pipe + Fase + Form inicial (TEXT + FILE) publicado, público DIRECT.
-  pipeId = ((await (await req('POST', '/pipes', adminConta, { name: 'Público com arquivo' })).json()) as Ident).id;
+  pipeId = (
+    (await (
+      await req('POST', '/pipes', adminConta, { name: 'Público com arquivo' })
+    ).json()) as Ident
+  ).id;
   await req('POST', `/pipes/${pipeId}/phases`, adminConta, { name: 'A Fazer' });
   textFieldId = (
-    (await (await req('POST', `/pipes/${pipeId}/forms/initial/fields`, adminConta, {
-      label: 'Nome',
-      type: 'TEXT_SHORT',
-    })).json()) as Ident
+    (await (
+      await req('POST', `/pipes/${pipeId}/forms/initial/fields`, adminConta, {
+        label: 'Nome',
+        type: 'TEXT_SHORT',
+      })
+    ).json()) as Ident
   ).id;
   fileFieldId = (
-    (await (await req('POST', `/pipes/${pipeId}/forms/initial/fields`, adminConta, {
-      label: 'Anexo',
-      type: 'FILE',
-    })).json()) as Ident
+    (await (
+      await req('POST', `/pipes/${pipeId}/forms/initial/fields`, adminConta, {
+        label: 'Anexo',
+        type: 'FILE',
+      })
+    ).json()) as Ident
   ).id;
-  expect((await req('POST', `/pipes/${pipeId}/forms/initial/publish`, adminConta)).status).toBe(201);
+  expect((await req('POST', `/pipes/${pipeId}/forms/initial/publish`, adminConta)).status).toBe(
+    201,
+  );
   const est = (await (
-    await req('POST', `/pipes/${pipeId}/forms/initial/public/enable`, adminConta, { mode: 'DIRECT' })
+    await req('POST', `/pipes/${pipeId}/forms/initial/public/enable`, adminConta, {
+      mode: 'DIRECT',
+    })
   ).json()) as EstadoPublico;
   publicId = est.publicId!;
   // Rate limit é DB-backed com janela de 10min; execuções repetidas acumulariam a chave por Org (`pub-files:`)
@@ -207,8 +232,12 @@ afterAll(async () => {
         where: { resourceType: 'CARD', resourceId: { in: cards.map((c) => c.id) } },
       })
       .catch(() => {});
-    await db().pipe.deleteMany({ where: { id: pipeId } }).catch(() => {});
-    await db().membership.deleteMany({ where: { id: adminMemb } }).catch(() => {});
+    await db()
+      .pipe.deleteMany({ where: { id: pipeId } })
+      .catch(() => {});
+    await db()
+      .membership.deleteMany({ where: { id: adminMemb } })
+      .catch(() => {});
     await migrator.account.deleteMany({ where: { id: adminConta } }).catch(() => {});
   }
   await app?.close();
@@ -217,7 +246,9 @@ afterAll(async () => {
 
 describe('canal público com arquivo inline (F6)', () => {
   it('submissão multipart bem-sucedida: reserva cardId, sobe arquivo e cria Card com a referência', async () => {
-    const res = await submitMultipart({ [textFieldId]: 'Alice' }, [{ campoId: fileFieldId, bytes: PNG }]);
+    const res = await submitMultipart({ [textFieldId]: 'Alice' }, [
+      { campoId: fileFieldId, bytes: PNG },
+    ]);
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ ok: true });
 
@@ -240,7 +271,9 @@ describe('canal público com arquivo inline (F6)', () => {
 
   it('scan bloqueia (INFECTADO) → 400, sem Card parcial e sem órfão DISPONIVEL (compensação)', async () => {
     const antes = (await cardsDoPipe()).length;
-    const res = await submitMultipart({ [textFieldId]: 'Mallory' }, [{ campoId: fileFieldId, bytes: VIRUS }]);
+    const res = await submitMultipart({ [textFieldId]: 'Mallory' }, [
+      { campoId: fileFieldId, bytes: VIRUS },
+    ]);
     expect(res.status).toBe(400);
     expect((await cardsDoPipe()).length).toBe(antes); // nenhum Card criado
     expect(await orfaosDisponiveis()).toBe(baseOrfaos); // nenhum FileObject DISPONIVEL órfão
@@ -256,18 +289,24 @@ describe('canal público com arquivo inline (F6)', () => {
   });
 
   it('parte de arquivo em Campo não-Arquivo → 400 (allowlist de Campo)', async () => {
-    expect(
-      (await submitMultipart({}, [{ campoId: textFieldId, bytes: PNG }])).status,
-    ).toBe(400);
+    expect((await submitMultipart({}, [{ campoId: textFieldId, bytes: PNG }])).status).toBe(400);
     expect(await orfaosDisponiveis()).toBe(baseOrfaos);
   });
 
   it('idempotência: mesma chave duas vezes cria 1 Card só', async () => {
     const chave = randomUUID();
-    const r1 = await submitMultipart({ [textFieldId]: 'Bob' }, [{ campoId: fileFieldId, bytes: PNG }], chave);
+    const r1 = await submitMultipart(
+      { [textFieldId]: 'Bob' },
+      [{ campoId: fileFieldId, bytes: PNG }],
+      chave,
+    );
     expect(r1.status).toBe(201);
     const depois1 = (await cardsDoPipe()).length;
-    const r2 = await submitMultipart({ [textFieldId]: 'Bob' }, [{ campoId: fileFieldId, bytes: PNG }], chave);
+    const r2 = await submitMultipart(
+      { [textFieldId]: 'Bob' },
+      [{ campoId: fileFieldId, bytes: PNG }],
+      chave,
+    );
     expect(r2.status).toBe(201);
     expect((await cardsDoPipe()).length).toBe(depois1); // retry não criou 2º Card
     expect(await orfaosDisponiveis()).toBe(baseOrfaos);

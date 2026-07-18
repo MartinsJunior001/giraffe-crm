@@ -96,7 +96,12 @@ let migrator: PrismaClient;
 const pipesCriados: string[] = [];
 const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-async function req(method: string, path: string, conta?: string, body?: unknown): Promise<Response> {
+async function req(
+  method: string,
+  path: string,
+  conta?: string,
+  body?: unknown,
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (conta !== undefined) headers[HEADER_CONTA] = conta;
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -117,8 +122,13 @@ async function anexar(
   form.append('file', new Blob([bytes]), nome);
   const headers: Record<string, string> = {};
   if (conta !== undefined) headers[HEADER_CONTA] = conta;
-  const res = await fetch(`${baseUrl}/cards/${cardId}/files`, { method: 'POST', headers, body: form });
-  const body = res.status < 500 ? ((await res.json().catch(() => ({}))) as FileResp) : ({} as FileResp);
+  const res = await fetch(`${baseUrl}/cards/${cardId}/files`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  const body =
+    res.status < 500 ? ((await res.json().catch(() => ({}))) as FileResp) : ({} as FileResp);
   return { status: res.status, body };
 }
 

@@ -107,7 +107,8 @@ function validarReferenciaArquivo(campo: CampoSnapshot, valor: unknown): string 
     return v;
   };
   if (campo.typeConfig.multiplo) {
-    if (!Array.isArray(valor)) throw new SubmissaoInvalidaError(`"${campo.label}" deve ser uma lista`);
+    if (!Array.isArray(valor))
+      throw new SubmissaoInvalidaError(`"${campo.label}" deve ser uma lista`);
     if (valor.length > ARQUIVOS_POR_CAMPO_MAX) {
       throw new SubmissaoInvalidaError(`"${campo.label}" excede o número máximo de arquivos`);
     }
@@ -124,7 +125,11 @@ function validarReferenciaArquivo(campo: CampoSnapshot, valor: unknown): string 
 }
 
 /** Valida UM valor contra o tipo do Campo. Lança `SubmissaoInvalidaError` (sem ecoar o valor). */
-function validarValor(campo: CampoSnapshot, valor: unknown, opcoes: Required<OpcoesSubmissao>): unknown {
+function validarValor(
+  campo: CampoSnapshot,
+  valor: unknown,
+  opcoes: Required<OpcoesSubmissao>,
+): unknown {
   const idsOpcoes = new Set((campo.typeConfig.options ?? []).map((o) => o.id));
 
   if (campo.type === 'FILE') {

@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
-import type {
-  ContextoEvento,
-  EventoArquivo,
-  FileEventSink,
-} from '../files/file-event-sink';
+import type { ContextoEvento, EventoArquivo, FileEventSink } from '../files/file-event-sink';
 
 /** `resourceType`s concretos que a 3.8 liga (allowlist; tipo desconhecido → não emite, sem falhar a operação). */
 const RESOURCE_CARD = 'CARD';

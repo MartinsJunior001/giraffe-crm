@@ -165,7 +165,8 @@ export class PublicSubmissionService {
       where: { id: destino.formId, context: 'PIPE_INITIAL', publicEnabled: true },
       select: { id: true, pipeId: true, publishedVersion: true, publicMode: true },
     });
-    if (!form || form.pipeId == null || form.publishedVersion == null) throw new NotFoundException();
+    if (!form || form.pipeId == null || form.publishedVersion == null)
+      throw new NotFoundException();
 
     const versao = await db.formVersion.findFirst({
       where: { formId: form.id, version: form.publishedVersion },
@@ -221,9 +222,13 @@ export class PublicSubmissionService {
       }
 
       // Valores finais = não-arquivo + referências; valida o shape (referencia). O vínculo é por construção.
-      const valores = validarSubmissao(versao.snapshot, { ...valoresBase, ...refs }, {
-        arquivo: 'referencia',
-      });
+      const valores = validarSubmissao(
+        versao.snapshot,
+        { ...valoresBase, ...refs },
+        {
+          arquivo: 'referencia',
+        },
+      );
 
       const submissao = await this.criarSubmissao(db, {
         orgId: destino.orgId,
@@ -312,7 +317,8 @@ export class PublicSubmissionService {
       if (f && typeof f === 'object') {
         const obj = f as { id?: unknown; type?: unknown; typeConfig?: unknown };
         if (obj.type === 'FILE' && typeof obj.id === 'string') {
-          const multiplo = (obj.typeConfig as { multiplo?: unknown } | undefined)?.multiplo === true;
+          const multiplo =
+            (obj.typeConfig as { multiplo?: unknown } | undefined)?.multiplo === true;
           mapa.set(obj.id, { multiplo });
         }
       }
@@ -368,7 +374,8 @@ export class PublicSubmissionService {
       // `arquivo: 'rejeitar'` (default): não há valor FILE aqui; qualquer um seria recusado (defesa em profundidade).
       return validarSubmissao(snapshot, valores);
     } catch (err) {
-      if (err instanceof SubmissaoInvalidaError) throw new BadRequestException('submissão inválida');
+      if (err instanceof SubmissaoInvalidaError)
+        throw new BadRequestException('submissão inválida');
       throw err;
     }
   }

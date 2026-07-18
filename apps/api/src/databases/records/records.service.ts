@@ -275,7 +275,8 @@ export class RecordsService {
     const validos = new Set(
       arquivos
         .filter(
-          (a) => a.state === 'DISPONIVEL' && a.resourceType === 'RECORD' && a.resourceId === recordId,
+          (a) =>
+            a.state === 'DISPONIVEL' && a.resourceType === 'RECORD' && a.resourceId === recordId,
         )
         .map((a) => a.id),
     );
@@ -295,14 +296,22 @@ export class RecordsService {
     valoresNovos: Record<string, unknown>,
   ): string[] {
     const antigos =
-      valoresAntigos !== null && typeof valoresAntigos === 'object' && !Array.isArray(valoresAntigos)
+      valoresAntigos !== null &&
+      typeof valoresAntigos === 'object' &&
+      !Array.isArray(valoresAntigos)
         ? (valoresAntigos as Record<string, unknown>)
         : {};
     const trocas: string[] = [];
     for (const fieldId of camposArquivo(snapshot)) {
       const antes = antigos[fieldId];
       const agora = valoresNovos[fieldId];
-      if (typeof antes === 'string' && typeof agora === 'string' && antes !== '' && agora !== '' && antes !== agora) {
+      if (
+        typeof antes === 'string' &&
+        typeof agora === 'string' &&
+        antes !== '' &&
+        agora !== '' &&
+        antes !== agora
+      ) {
         trocas.push(agora);
       }
     }
