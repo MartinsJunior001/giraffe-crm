@@ -1,7 +1,7 @@
 ---
 story_key: 3-7-capacidade-compartilhada-de-arquivos
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: ALTO
 baseline_commit: 04e8b21
@@ -36,7 +36,7 @@ gate_arquitetura: >-
 **I want** uma capacidade única e fail-closed de arquivos,
 **So that** Campos Arquivo, anexos e avatares sejam seguros e reutilizáveis, sem acesso cruzado.
 
-**Status: ready-for-dev.** Sétima Story do **Épico 3**, risco **ALTO** — estabelece, **uma única vez**, a base segura de
+**Status: done.** Sétima Story do **Épico 3**, risco **ALTO** — estabelece, **uma única vez**, a base segura de
 arquivos reutilizada por vários recursos (E5 anexos de Tarefa/Solicitação, E6 anexos de e-mail, avatar 3.10). É
 **infraestrutura compartilhada, DESACOPLADA de Card e Registro** (ajuste 6): Card e Registro são **consumidores
 integrados em 3.8**, não requisitos-base deste serviço. Tudo governado pela **ADR-001 ratificada** (v5, PR #93) — este
@@ -222,9 +222,10 @@ stream, §9 Limites/expurgo/LGPD, §10 Gate, §11 Observabilidade/LGPD, §12 Ant
 | Data | Autor | Mudança |
 |---|---|---|
 | 2026-07-17 | Dev (agente) | Criação da Story via `bmad-create-story` (workflow oficial); status → `ready-for-dev`; governada pela ADR-001 ratificada. |
+| 2026-07-18 | Dev (agente) | Implementação zero-dependência (SigV4 próprio + clamd via `node:net`), CI 4/4 verde, PR #103 mergeado; code review adversarial (4 revisores, 0 CRITICAL) com correções HIGH+MEDIUM aplicadas e revalidadas; status → `done`. |
 
 ## Review Findings
-_(preenchido pelos revisores read-only de Segurança/Arquitetura/Edge Cases/Aceite após a implementação)_
+Code review adversarial read-only (Segurança · RLS/Migration · Arquitetura/Concorrência · Aceite/Operação) — **0 CRITICAL**. Achados HIGH (rollback `.down.sql`; compensação de órfãos em QUARENTENA; teste de integração da US4) e MEDIUM/LOW seguros corrigidos com regressão/mutação. Débitos registrados em `specs/3-7-capacidade-compartilhada-de-arquivos/review-and-debts.md` (TOCTOU do teto, janela de retenção, smoke real de MinIO/ClamAV antes da 3.8, métricas). Detalhe completo no PR #103.
 
 ## Dev Agent Record
 
