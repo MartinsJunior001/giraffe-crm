@@ -11,6 +11,9 @@ import { RecordHistoryReadService } from './records/history/record-history-read.
 import { RecordLifecycleService } from './records/record-lifecycle.service';
 import { RecordsController } from './records/records.controller';
 import { RecordFilesController } from './records/files/record-files.controller';
+import { CardRecordLinksController } from './records/links/card-record-links.controller';
+import { RecordCardLinksController } from './records/links/record-card-links.controller';
+import { CardRecordLinkService } from './records/links/card-record-link.service';
 import { RecordsReadService } from './records/records-read.service';
 import { RecordsService } from './records/records.service';
 
@@ -42,6 +45,8 @@ import { RecordsService } from './records/records.service';
     RecordsController,
     RecordHistoryController,
     RecordFilesController,
+    CardRecordLinksController,
+    RecordCardLinksController,
   ],
   providers: [
     DatabasesService,
@@ -50,6 +55,7 @@ import { RecordsService } from './records/records.service';
     RecordLifecycleService,
     RecordsReadService,
     RecordHistoryReadService,
+    CardRecordLinkService,
   ],
 })
 export class DatabasesModule {}
