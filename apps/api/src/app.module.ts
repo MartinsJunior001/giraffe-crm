@@ -9,6 +9,7 @@ import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { DatabasesModule } from './databases/databases.module';
+import { FilesModule } from './files/files.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PipesModule } from './pipes/pipes.module';
 
@@ -86,6 +87,7 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     OrganizationsModule,
     PipesModule,
     DatabasesModule,
+    FilesModule,
   ],
 })
 export class AppModule {}
