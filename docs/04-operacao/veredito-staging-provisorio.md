@@ -15,7 +15,7 @@
 | D-01 hop Web→API | `gates-autenticados.sh` pós-redeploy | XFF forjado → **403** (hop ativo); `GATES_AUTH_OK` |
 | D-05 coleta antiabuso (execução manual) | `gate-d05-cleanup.sh` | `D05_CLEANUP_OK` (código 0 + idempotência; válidos preservados) |
 | Smoke pós-redeploy (com D-01 ativo) | `gates-borda-interna.sh` | `GATES_BORDA_OK` (health/ready/casca/BFF íntegros) |
-| D-05 agendamento (Scheduled Task Coolify) | `*/15 * * * *`, serviço `api` | *(a comprovar — pré-requisito do merge do registro; ver runbook)* |
+| D-05 agendamento (Scheduled Task Coolify) | `db-cleanup-antiabuso`, `*/15 * * * *`, container `api`, `node /repo/scripts/db-cleanup.mjs` | **ATIVADO** — execução manual `Success` (1s), log `[cleanup] LoginFailure: 0 · RateLimit: 0 (expirados)`, sem PII/segredo |
 
 Todos os PRs do ciclo (#104, #106, #107, #108, #110) fecharam com **CI verde** (Qualidade, Testes em
 PostgreSQL real, Containers boot+smoke, Trivy).
@@ -67,18 +67,18 @@ PostgreSQL real, Containers boot+smoke, Trivy).
 - **Pendências para PRODUÇÃO (não bloqueiam o staging provisório):** S1 (hardening de borda), M1
   (Scheduled Task D-05 + backup periódico), R1 (segmentação L3), e a **revisão formal por humano** de
   Segurança+Rede do D-01 (a automática/adversarial foi conduzida).
-- **Veredito:** **STAGING PROVISÓRIO APROVADO.** Os gates finais foram confirmados no staging real
-  (`D05_CLEANUP_OK`, `GATES_BORDA_OK`, com health/ready/Web/BFF íntegros após o redeploy com o D-01).
-  Resta comprovar o **agendamento** (Scheduled Task `*/15 * * * *` no serviço `api`) — pré-requisito do
-  merge deste registro, não da aprovação funcional.
+- **Veredito:** **STAGING PROVISÓRIO APROVADO** (definitivo). Todos os gates finais confirmados no
+  staging real (`D05_CLEANUP_OK`, `GATES_BORDA_OK`, `GATES_AUTH_OK`, D-01 ativo, backup/restore
+  aprovado, schema/RLS/migrations aprovados, health/ready/Web/BFF íntegros) **e o D-05 agendado**
+  (Scheduled Task ativo, execução manual `Success`, log sanitizado).
 
 ## Veredito consolidado
 
-**STAGING PROVISÓRIO APROVADO — com ressalvas que são bloqueadores de PRODUÇÃO, não do staging.**
-Todos os gates funcionais fecharam verdes no staging real (banco/RLS, borda, autenticação, D-01 hop
-ativo, D-05 execução manual). As ressalvas abaixo estão documentadas e nenhuma compromete o
-isolamento, a autenticação ou a integridade dos dados no uso provisório; a promoção a **produção**
-exige tratá-las explicitamente:
+**STAGING PROVISÓRIO APROVADO (DEFINITIVO) — com ressalvas que são bloqueadores de PRODUÇÃO, não do
+staging.** Todos os gates funcionais fecharam verdes no staging real (banco/RLS, borda, autenticação,
+D-01 hop ativo, D-05 execução manual **e agendamento ativo**). As ressalvas abaixo estão documentadas
+e nenhuma compromete o isolamento, a autenticação ou a integridade dos dados no uso provisório; a
+promoção a **produção** exige tratá-las explicitamente:
 
 - **S1** — hardening de cabeçalhos de borda (HSTS, `X-Content-Type-Options`, `X-Frame-Options`, CSP;
   remover `X-Powered-By`).
@@ -86,5 +86,6 @@ exige tratá-las explicitamente:
 - **Backup periódico** agendado + retenção (o backup pós-migration e o restore foram provados pontualmente).
 - **Revisão humana formal** de Segurança + Rede do D-01 (a adversarial/automática foi conduzida).
 
-O **agendamento do D-05** (Scheduled Task) deixa de ser bloqueador de produção assim que ativado e
-comprovado no Coolify — é o último passo operacional deste ciclo.
+O **agendamento do D-05** foi **ativado e comprovado** no Coolify (Scheduled Task `db-cleanup-antiabuso`,
+`*/15 * * * *`, container `api`) — último passo operacional deste ciclo, agora **fechado**. A lane L6
+está **encerrada**.
