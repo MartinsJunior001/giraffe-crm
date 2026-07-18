@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { podePublicarComArquivo, tipoArquivoDisponivel } from '../src/pipes/forms/file-gate';
+import {
+  podePublicarComArquivo,
+  snapshotExigeCapacidadeArquivo,
+  tipoArquivoDisponivel,
+} from '../src/pipes/forms/file-gate';
 import type { CampoParaGate } from '../src/pipes/forms/file-gate';
 
 /**
@@ -32,5 +36,32 @@ describe('tipoArquivoDisponivel', () => {
   it('reflete a capacidade: indisponível por padrão (fail-closed), disponível só quando habilitada', () => {
     expect(tipoArquivoDisponivel(false)).toBe(false);
     expect(tipoArquivoDisponivel(true)).toBe(true);
+  });
+});
+
+/**
+ * Base do gate de CONSUMO (Story 3.8, RF-3 / ADR AC-2). Detecta Campo FILE num snapshot de FormVersion já
+ * publicada — o serviço compõe com `!FILE_UPLOAD_ENABLED` para o 409 `CAPACIDADE_ARQUIVO_INDISPONIVEL`.
+ */
+describe('snapshotExigeCapacidadeArquivo (base do gate de consumo)', () => {
+  it('detecta um Campo FILE no snapshot da FormVersion publicada', () => {
+    const snapshot = {
+      fields: [
+        { id: 'a', type: 'TEXT_SHORT' },
+        { id: 'b', type: 'FILE' },
+      ],
+    };
+    expect(snapshotExigeCapacidadeArquivo(snapshot)).toBe(true);
+  });
+
+  it('é falso quando não há Campo FILE', () => {
+    expect(snapshotExigeCapacidadeArquivo({ fields: [{ id: 'a', type: 'NUMBER' }] })).toBe(false);
+  });
+
+  it('fail-closed em snapshot malformado (não bloqueia por formato desconhecido)', () => {
+    expect(snapshotExigeCapacidadeArquivo(null)).toBe(false);
+    expect(snapshotExigeCapacidadeArquivo({})).toBe(false);
+    expect(snapshotExigeCapacidadeArquivo({ fields: 'x' })).toBe(false);
+    expect(snapshotExigeCapacidadeArquivo({ fields: [null, 42] })).toBe(false);
   });
 });

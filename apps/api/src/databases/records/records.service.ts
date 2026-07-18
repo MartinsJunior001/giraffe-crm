@@ -9,7 +9,9 @@ import { Prisma } from '../../../generated/prisma';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
+import { getEnv } from '../../kernel/config/env';
 import { SubmissaoInvalidaError, validarSubmissao } from '../../pipes/cards/submission';
+import { snapshotExigeCapacidadeArquivo } from '../../pipes/forms/file-gate';
 import { exigirLerDatabase, exigirOperarDatabase } from '../database-authz';
 import type { CriarRegistroDTO, EditarRegistroDTO } from './records.dto';
 
@@ -208,6 +210,11 @@ export class RecordsService {
 
   /** Valida os valores contra o snapshot (400 determinístico), reusando o núcleo puro da 2.7. */
   private validar(snapshot: Prisma.JsonValue, valores: unknown): Record<string, unknown> {
+    // Gate de CONSUMO (Story 3.8, RF-3 / ADR AC-2): snapshot publicado exige Campo Arquivo mas a capacidade
+    // está desligada ⇒ 409 honesto. Vale para criar E editar (ambos passam por aqui). Fail-closed.
+    if (snapshotExigeCapacidadeArquivo(snapshot) && !getEnv().FILE_UPLOAD_ENABLED) {
+      throw new ConflictException({ motivo: 'CAPACIDADE_ARQUIVO_INDISPONIVEL' });
+    }
     try {
       return validarSubmissao(snapshot, valores);
     } catch (err) {
