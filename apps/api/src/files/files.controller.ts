@@ -45,8 +45,11 @@ export class FilesController {
     return this.files.limites();
   }
 
-  /** Upload (multipart). 201 com o arquivo já verificado (DISPONIVEL ou BLOCKED — verificação síncrona). */
-  @Post(':resourceType/:resourceId')
+  /**
+   * Upload (multipart). 201 com o arquivo já verificado (DISPONIVEL ou BLOCKED — verificação síncrona).
+   * O prefixo literal `resource/` evita que este padrão de 2 params engula rotas como `:fileId/remove`.
+   */
+  @Post('resource/:resourceType/:resourceId')
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MULTER_MAX_BYTES } }))
   async enviar(
