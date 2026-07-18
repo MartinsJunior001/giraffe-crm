@@ -52,7 +52,7 @@ Este repositório é governado por `.specify/memory/constitution.md`, cuja vers�
 - **Verificação documental antes de escrever código — obrigatória:** sempre que a implementação envolver biblioteca, framework, SDK, API, CLI ou serviço da stack, execute o `context7-check` antes de codificar, mesmo que a API pareça conhecida. Use como baseline a versão efetivamente declarada ou instalada no projeto, conforme `package.json`, `packageManager`, lockfile, Dockerfile ou configuração equivalente. Consulte preferencialmente o MCP do Context7 (`resolve-library-id` → `query-docs`). Quando o Context7 estiver indisponível ou não cobrir a tecnologia, consulte a documentação oficial atual e registre a fonte utilizada. Não invente assinaturas, opções de configuração ou versões. Quando a documentação atual contradisser o plano ou a arquitetura, registre a divergência e escale antes de implementar.
 - **Sem antecipar escopo:** nada de Fase 2, nada de abstração especulativa (módulo vazio, repositório genérico, event bus) sem consumidor concreto. Proibição registrada explicitamente em `apps/api/src/kernel/README.md`.
 - **Artefatos autoritativos não são editados diretamente pela implementação:** PRD, UX, Architecture Spine, `epics.md` e readiness report só mudam por seus workflows oficiais. O `sprint-status.yaml` e o status da Story só podem ser atualizados pelo workflow BMAD responsável, nunca por edição manual ou por uma implementação fora desse fluxo.
-- **Commit:** não commitar antes do `commit-check`; nunca fazer push/deploy sem autorização explícita. Ver **Commit automático por seção**, abaixo.
+- **Commit:** não commitar antes do `commit-check`. Push, PR, merge e deploy em **staging** são pré-autorizados pelo **Protocolo Autônomo de Aceleração** (abaixo); **produção** exige a aprovação consolidada de go/no-go. Ver **Commit automático por seção**, abaixo.
 
 Referências de decisão: `AD-*` (decisões de arquitetura) e invariantes vivem em `_bmad-output/planning-artifacts/architecture/*/ARCHITECTURE-SPINE.md`; a documentação de produto da Fase 1 está em `docs/01-documentacao-base/` (índice: `00-indice-fase-1.md`). `docs/_arquivo-legado/` **não é fonte oficial**; o protótipo HTML em `08-referencias-visuais/prototypes/` é referência visual, **não** modelo de dados nem arquitetura final.
 
@@ -66,7 +66,7 @@ Ao concluir cada seção, etapa ou Story com alterações versionáveis:
 4. crie um commit pequeno, atômico e com mensagem em português no padrão do projeto;
 5. não inclua arquivos fora do escopo, temporários, segredos ou configurações locais;
 6. não faça commit de trabalho parcial, bloqueado ou com testes vermelhos;
-7. nunca execute `push`, merge, deploy ou mudança de branch sem autorização explícita.
+7. `push`, PR, merge de PR verde e deploy em **staging** seguem o **Protocolo Autônomo de Aceleração** (abaixo) e não exigem autorização caso a caso; **produção** exige a aprovação consolidada de go/no-go.
 
 Se a seção não gerar uma entrega versionável, não crie commit e registre apenas:
 
@@ -78,6 +78,88 @@ Se a seção não gerar uma entrega versionável, não crie commit e registre ap
 - **Integração por Pull Request**, com o CI verde. O PR é o ponto em que a verificação deixa de ser local.
 - **Merge commit (`--no-ff`), não squash.** Os commits desta base são atômicos e cada um carrega o _porquê_ no corpo — o commit que corrige um vazamento cross-tenant explica como ele foi reproduzido. Squash funde tudo numa mensagem só e joga fora exatamente a informação que um `git bisect` ou uma investigação de incidente vai procurar. Rebase reescreveria história já publicada.
 - **Nunca `--force`** em história compartilhada, e nunca `--no-verify`.
+
+## Protocolo Autônomo de Aceleração
+
+Obrigatório para todas as sessões e agentes. Ele define **ritmo, autonomia e continuidade** — não redefine os gates: quais skills rodam e quando continua sendo o que diz **Processo obrigatório**, e o que nunca pode ser cortado continua sendo **Isolamento multi-tenant** e **Convenções que o código já assume**.
+
+### Objetivo operacional
+
+Implementar o MVP com a maior velocidade **segura**, priorizando: caminho crítico P0 → código funcional → testes e correções → integração e CI → staging → segurança/LGPD/backup/observabilidade/rollback → documentação necessária. P1 só quando não prejudicar o P0. Planejamento e relatórios servem à implementação; não a substituem.
+
+### Autonomia
+
+Até staging, trabalhe de forma autônoma. Não peça autorização para ações rotineiras dentro do escopo aprovado: investigar código/banco/testes/logs/CI; criar e editar arquivos; implementar Stories; corrigir bugs; criar e executar testes; rodar lint, typecheck, build e smoke; criar commits atômicos; fazer push; abrir e atualizar PRs; corrigir revisões; repetir CI até verde; **fazer merge de PR verde e aprovado**; executar closure; atualizar status e checkpoints; fazer deploy e validações **em staging**; avançar para a próxima Story P0 elegível.
+
+Checkpoints são **informativos**, não pedidos de autorização — depois de apresentar um, continue automaticamente. **Produção exige uma única aprovação consolidada de go/no-go.**
+
+A autonomia é de **ritmo**, não de alçada: restrições de segurança e de permissão da ferramenta continuam valendo, e nada aqui autoriza ação destrutiva ou bypass de controle.
+
+### Fonte de verdade
+
+Reconcilie nesta ordem: `origin/main` → código efetivamente mergeado → `sprint-status` → PRD/UX/Arquitetura/Épicos/Stories → Spec Kit → PRs e CI → branches e worktrees → MEMORY e checkpoints.
+
+Evidência real prevalece sobre checkpoint antigo. **Nunca sobrescreva código mergeado com informação histórica desatualizada.**
+
+### Fluxo obrigatório
+
+Cada Story percorre, proporcionalmente ao risco: BMAD/create-story (ou validação da Story) → Spec Kit (`specify` → `clarify` **só para ambiguidade material** → `plan` → `checklist` → `tasks` → `analyze`) → `pre-implementation-check` → implementação → testes → revisão adversarial → checks aplicáveis de security/LGPD/observability/migration/backup → correções → `commit-check` → PR → CI → merge → closure → atualização de status → checkpoint durável → próxima Story elegível.
+
+Etapas podem ser **consolidadas** quando seguro, mas suas **evidências não podem ser eliminadas**. Não pare depois de produzir apenas plano, spec, auditoria ou relatório quando houver trabalho executável.
+
+A atualização de `sprint-status.yaml` e do status da Story é automática **pelo workflow BMAD responsável** — a autonomia acelera o disparo do workflow, **não** autoriza edição manual desses artefatos (ver **Processo obrigatório**).
+
+### Ownership e worktrees
+
+- Um único Writer funcional **por Story** e um único Writer **por worktree**; uma Story em andamento por Writer.
+- Ownership registrado **antes** da escrita. Nenhum arquivo ou contrato crítico com Writers concorrentes; nenhuma migration concorrente sem coordenação do Lead Integrator.
+- Antes de editar, confira branches, worktrees, Writers e alterações existentes. Se outro Writer estiver ativo, **não duplique o trabalho** e preserve as alterações dele.
+- **Não** use `force`, `reset`, `clean` nem remoção de worktree para resolver colisão — conflito se resolve **semanticamente**, sem apagar trabalho válido.
+- Sessão sem ownership funcional assume Orquestração, revisão, planejamento ou outra lane comprovadamente independente.
+
+### Paralelismo seguro
+
+Paralelize somente Stories **realmente** independentes. Lane 0: orquestração, integração, `main`, CI, staging e release. Lane 1: caminho crítico. Lanes adicionais: fluxos P0 independentes. Lane de qualidade: E2E, segurança, LGPD, migrations, backup, observabilidade e rollback.
+
+WIP máximo de uma Story por Writer; planejamento no máximo uma Story à frente; branches curtas; PRs pequenos e verticais; integração frequente; `main` sempre verde. Nenhum paralelismo artificial e nenhuma edição concorrente do mesmo contrato.
+
+### Decisões técnicas
+
+Havendo mais de uma solução válida, escolha autonomamente a que respeita PRD e Arquitetura, reutiliza padrões existentes, produz a **menor mudança correta**, é reversível, preserva compatibilidade, tem testes, reduz risco de integração e acelera a entrega. Registre decisões relevantes, mas **não espere aprovação para continuar** — e não reabra decisão já aprovada.
+
+### Falhas e correções
+
+Teste, build, revisão ou CI vermelho: investigue → identifique a causa → corrija → adicione regressão quando necessário → reexecute → siga até o gate ficar verde. Não peça autorização para corrigir problema dentro do escopo. Achados **CRITICAL e HIGH** são corrigidos **antes do merge**.
+
+### Foco de execução
+
+Evite relatório extenso durante a implementação, reconstrução de contexto já registrado, confirmação para decisão reversível, refatoração ampla, melhoria cosmética sem impacto P0, abstração nova sem necessidade, dependência ou upgrade amplo sem justificativa, e marcar Story como done sem evidência no `main`.
+
+Prefira mudanças verticais pequenas, padrões existentes, testes direcionados durante o desenvolvimento, suíte proporcional ao risco antes do PR, suíte completa nos gates de integração, correção imediata, checkpoints curtos e avanço automático.
+
+### Regra de merge e closure
+
+Ordem obrigatória: implementação → **todos** os testes obrigatórios → revisão → CI verde → merge da implementação **completa** → confirmação da evidência em `origin/main` → closure → atualização do `sprint-status`.
+
+**Nunca faça closure enquanto código ou teste obrigatório estiver apenas em outra branch ou na fila de merge.** Havendo múltiplos PRs dependentes, coordene explicitamente a ordem.
+
+### Gates que não podem ser cortados
+
+Nunca reduzir nem eliminar: isolamento multi-tenant, RLS, autorização, testes negativos, segurança, LGPD, migrations seguras, rollback, backup, restauração, observabilidade, health checks, smoke tests e evidências de aceite.
+
+**P0 não pode ser escondido por feature flag** — flags só para P1 não essencial.
+
+### Condições de parada
+
+Pare e peça decisão **somente** diante de: dois Writers na mesma Story ou worktree; conflito capaz de apagar trabalho; migration destrutiva ou irreversível; risco real de perda de dados; secret ou credencial indispensável indisponível; decisão de produto que altere materialmente o contrato de dados; vulnerabilidade CRITICAL/HIGH sem mitigação segura; indisponibilidade externa que bloqueie todo o caminho; aprovação final para produção.
+
+Antes de parar: preserve o estado → registre o bloqueio → **continue todas as lanes independentes** → apresente recomendação objetiva → ofereça no máximo duas opções, destacando a recomendada.
+
+### Continuidade
+
+Ao concluir uma Story: merge e closure → atualizar status e checkpoint → encontrar a próxima Story P0 elegível → atribuir ownership exclusivo → continuar automaticamente. **Não espere o usuário mandar "continue".**
+
+Antes de compactar ou encerrar uma sessão, registre: SHA do `main`; branch, worktree e owner; PR, CI e testes; alterações não publicadas; decisões e bloqueios; a **próxima ação exata** e a instrução de retomada. A próxima sessão continua do checkpoint, sem reconstruir o projeto do zero.
 
 ## Invariantes conceituais (nunca erodir)
 
