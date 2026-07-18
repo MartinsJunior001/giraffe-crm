@@ -9,7 +9,9 @@ import { Prisma } from '../../../generated/prisma';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
+import { getEnv } from '../../kernel/config/env';
 import { exigirOperarPipe } from '../pipe-authz';
+import { snapshotExigeCapacidadeArquivo } from '../forms/file-gate';
 import { registrarEntradaNaFase } from './phase-entry/card-phase-entry';
 import { SubmissaoInvalidaError, validarSubmissao } from './submission';
 
@@ -110,6 +112,13 @@ export class CardSubmissionService {
       select: { id: true, snapshot: true },
     });
     if (!versao) throw new ConflictException('versão publicada indisponível');
+
+    // Gate de CONSUMO (Story 3.8, RF-3 / ADR AC-2): a versão publicada exige Campo Arquivo mas a capacidade
+    // está desligada ⇒ 409 honesto, nunca aceite silencioso nem erro opaco (o Formulário foi publicado com a
+    // capacidade ligada e ela foi desligada depois — a definição congelada ainda pede arquivo).
+    if (snapshotExigeCapacidadeArquivo(versao.snapshot) && !getEnv().FILE_UPLOAD_ENABLED) {
+      throw new ConflictException({ motivo: 'CAPACIDADE_ARQUIVO_INDISPONIVEL' });
+    }
 
     // Valida os valores contra o snapshot (400 determinístico).
     let valores: Record<string, unknown>;

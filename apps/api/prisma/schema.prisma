@@ -321,6 +321,8 @@ model Organization {
   movementEvents    MovementEvent[]
   records           Record[]
   recordHistories   RecordHistory[]
+  fileObjects       FileObject[]
+  fileScans         FileScan[]
 
   @@map("Organization")
 }
@@ -1158,4 +1160,114 @@ enum RecordLifecycleState {
 /// `AUTOMACAO` (E4) e público entram com suas Stories (AD-11 — sem antecipar valores sem consumidor).
 enum RecordOrigin {
   NOVO_REGISTRO
+}
+
+/// FileObject — ciclo de vida do arquivo (Story 3.7, capacidade compartilhada; ADR-001). Dado org-owned (AD-10),
+/// **desacoplado** de Card/Registro: o recurso dono é referenciado de forma genérica (`resourceType`/`resourceId`),
+/// e a autorização vem do recurso via a porta `FileAuthzContract` — a 3.7 NÃO conhece Card/Registro (3.8/3.10 ligam).
+///
+/// Entidade MUTÁVEL só nas colunas de ciclo de vida. Máquina de estados fail-closed (AD-28):
+/// `QUARENTENA → DISPONIVEL → REMOVIDO_LOGICO → EXPURGADO` (+ `BLOCKED` terminal). O arquivo nasce em quarentena e
+/// só fica disponível após veredito CLEAN (INSERT de `FileScan` + UPDATE do `state` na MESMA transação — promoção
+/// atômica). `bucketKey` é referência OPACA ao objeto no storage (`<orgId>/<uuidv4>`) e **nunca** é autorização.
+///
+/// Isolamento pelo BANCO (RLS ENABLE+FORCE + WITH CHECK). GRANT column-scoped: o runtime pode UPDATE **só**
+/// `state`/`nomeOriginal`/`updatedAt`/`purgedAt`; `bucketKey`/`resourceType`/`resourceId`/`orgId` ficam SEM UPDATE
+/// (não transferível — provado por `permission denied`). **Sem DELETE** — remover é `state` (LGPD; expurgo é do
+/// binário no storage, não da linha). Em `MODELOS_AUDITADOS`.
+model FileObject {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @db.Uuid
+  /// Chave OPACA do objeto no storage (`<orgId>/<uuidv4>`). Nunca é autorização; guarda de tenant é por SEGMENTO.
+  bucketKey    String    @unique
+  /// Nome original do arquivo. **PII** — fora de log; mascarável. Coluna de ciclo de vida (editável no substituir).
+  nomeOriginal String
+  /// Tipo do recurso dono (genérico — texto, não enum, para não acoplar a 3.7 a Card/Registro). Preenchido pelo consumidor.
+  resourceType String
+  /// Id do recurso dono. A autorização é resolvida pela porta a partir de `(resourceType, resourceId)`.
+  resourceId   String    @db.Uuid
+  /// Estado do ciclo de vida. Nasce em QUARENTENA; só o veredito CLEAN promove a DISPONIVEL (fail-closed).
+  state        FileState @default(QUARENTENA)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  /// Instante do expurgo físico do binário (null enquanto não expurgado). Remoção lógica precede o expurgo.
+  purgedAt     DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  scans        FileScan[]
+
+  // Contagem por recurso (limite de 10 — Q1) e listagem por recurso do consumidor.
+  @@index([orgId, resourceType, resourceId])
+  @@map("FileObject")
+}
+
+/// FileScan — fato apurado da verificação de segurança (Story 3.7). Dado org-owned, **append-only e IMUTÁVEL**:
+/// o runtime recebe **só SELECT+INSERT** (sem UPDATE/DELETE — ver GRANT), como `FormVersion`/`CardHistory`/
+/// `RecordHistory`. Uma vez escrito, o veredito e os hashes não mudam — é a prova do que foi verificado.
+///
+/// Guarda os dois checksums (aceite × releitura) que provam que o conteúdo verificado é o que será promovido
+/// (anti-troca-de-bytes), o tipo detectado por conteúdo real (magic bytes), o tamanho e o veredito composto.
+/// Escrito na MESMA transação da promoção do `FileObject` (AD-13). Isolamento pelo banco (RLS ENABLE+FORCE +
+/// WITH CHECK). Em `MODELOS_AUDITADOS`.
+model FileScan {
+  id              String      @id @default(uuid()) @db.Uuid
+  orgId           String      @db.Uuid
+  fileId          String      @db.Uuid
+  /// Tamanho real em bytes (apurado no aceite/releitura). BigInt — arquivos podem exceder Int.
+  tamanhoBytes    BigInt
+  /// Tipo detectado por CONTEÚDO real (magic bytes), não pela extensão declarada.
+  mimeDetectado   String
+  /// Checksum SHA-256 no aceite (ingestão).
+  sha256Ingest    String
+  /// Checksum SHA-256 na releitura durante o scan. Diferente do de ingestão ⇒ troca de bytes ⇒ BLOCKED.
+  sha256Releitura String
+  /// Veredito composto: CLEAN só se magic bytes + tamanho + 2×SHA iguais + ClamAV CLEAN + if-match; senão BLOCKED.
+  veredito        FileVerdict
+  scannedAt       DateTime    @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  file         FileObject   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, fileId])
+  @@map("FileScan")
+}
+
+/// ScanSlot — semáforo de verificação (Story 3.7). Tabela **GLOBAL, sem RLS** (como `RateLimit`/`Account`/
+/// `PublicFormRoute`): não pertence a um tenant, e o isolamento aqui é lógico (a `key` embute o `orgId`).
+/// Vive conceitualmente sob `kernel/antiabuso/` — limita a concorrência de scans por Organização (teto config),
+/// fail-closed no teto (429). Cada linha ativa é UM slot; várias linhas por `key` até o teto.
+///
+/// `adquirirSlot`: statement atômico que insere só abaixo do teto (conta linhas ativas por `key`) → `token` ou nada
+/// (429). `liberarSlot(token)`: DELETE em `finally`. `expiraEm` é auto-liberação (slot órfão de um scan que morreu).
+/// GRANT: `SELECT, INSERT, DELETE` (é a única tabela da capacidade que o runtime pode DELETE — não guarda dado do
+/// titular, é efêmera). NÃO está em `MODELOS_AUDITADOS` (semáforo técnico, não mutação de dado de negócio).
+model ScanSlot {
+  /// Posse do slot: gerado pela aplicação no `adquirirSlot` e usado no `liberarSlot`. PK (único por slot).
+  token    String   @id @db.Uuid
+  /// Chave do semáforo `scan:<orgId>`. Várias linhas ativas por `key` até o teto de concorrência.
+  key      String
+  /// Expiração do slot (auto-liberação). Instante absoluto — comparado com `now()`.
+  expiraEm DateTime @db.Timestamptz
+
+  // Contagem de slots ativos por `key` (para o teto) e varredura de expirados.
+  @@index([key, expiraEm])
+  @@map("ScanSlot")
+}
+
+/// Estado do ciclo de vida do FileObject (Story 3.7). Fail-closed: nasce em QUARENTENA, indisponível até CLEAN.
+/// `BLOCKED` é terminal (nunca baixável/associável). Remoção é lógica (`REMOVIDO_LOGICO`); `EXPURGADO` = binário
+/// expurgado do storage, linha preservada (LGPD). `restaurado`/`promovido` NÃO são estados — são transições.
+enum FileState {
+  QUARENTENA
+  DISPONIVEL
+  REMOVIDO_LOGICO
+  EXPURGADO
+  BLOCKED
+}
+
+/// Veredito da verificação (Story 3.7). Binário e fail-closed: qualquer coisa que não seja comprovadamente limpa
+/// (erro, timeout, base velha, limite excedido, troca de bytes, assinatura ClamAV) é `BLOCKED`, nunca CLEAN por omissão.
+enum FileVerdict {
+  CLEAN
+  BLOCKED
 }

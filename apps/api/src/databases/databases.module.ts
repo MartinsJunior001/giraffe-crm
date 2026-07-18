@@ -10,6 +10,7 @@ import { RecordHistoryController } from './records/history/record-history.contro
 import { RecordHistoryReadService } from './records/history/record-history-read.service';
 import { RecordLifecycleService } from './records/record-lifecycle.service';
 import { RecordsController } from './records/records.controller';
+import { RecordFilesController } from './records/files/record-files.controller';
 import { RecordsReadService } from './records/records-read.service';
 import { RecordsService } from './records/records.service';
 
@@ -40,6 +41,7 @@ import { RecordsService } from './records/records.service';
     DatabaseFormPublicationController,
     RecordsController,
     RecordHistoryController,
+    RecordFilesController,
   ],
   providers: [
     DatabasesService,

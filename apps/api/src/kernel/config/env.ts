@@ -122,6 +122,37 @@ const EnvSchema = z
       z.coerce.number().int().positive().optional(),
     ),
 
+    // ── Débito D-01 — hop Web→API autenticado (substitui a confiança por IP estático) ──────────
+    /**
+     * Segredo do HMAC que autentica o hop Web→API (`kernel/auth/internal-hop.ts`). **Opcional**, e a
+     * ausência é o "modo direto": sem ele, a API resolve o IP como sempre (socket + `TRUSTED_PROXY_IPS`)
+     * — é assim que dev/teste/CI rodam, sem regressão. PRESENTE (staging/produção atrás do proxy do
+     * Coolify), a API passa a EXIGIR a prova assinada na rota de auth: um `X-Forwarded-For` sem
+     * assinatura válida é recusado (fail-closed), e o IP do cliente vem do envelope assinado.
+     *
+     * Separado do `BETTER_AUTH_SECRET`/`LOGIN_HMAC_SECRET` de propósito (comprometer um não é
+     * comprometer os outros). Variável de SERVIDOR na Web e na API — jamais `NEXT_PUBLIC_`, jamais em log.
+     */
+    INTERNAL_HMAC_SECRET: vazioComoAusente(
+      z.string().min(32, 'INTERNAL_HMAC_SECRET deve ter ao menos 32 caracteres').optional(),
+    ),
+
+    /** Versão da chave atual do hop (para rotação com janela de sobreposição, como o HMAC de login). */
+    INTERNAL_HMAC_KEY_VERSION: z.coerce.number().int().positive().default(1),
+
+    /** Segredo ANTERIOR do hop, durante a janela de rotação (AC6). Opcional. */
+    INTERNAL_HMAC_PREVIOUS_SECRET: vazioComoAusente(
+      z
+        .string()
+        .min(32, 'INTERNAL_HMAC_PREVIOUS_SECRET deve ter ao menos 32 caracteres')
+        .optional(),
+    ),
+
+    /** Versão do segredo anterior do hop. Obrigatória quando há segredo anterior. */
+    INTERNAL_HMAC_PREVIOUS_KEY_VERSION: vazioComoAusente(
+      z.coerce.number().int().positive().optional(),
+    ),
+
     /**
      * IPs dos PROXIES confiáveis, separados por vírgula. **Vazio por padrão** — e isso é a decisão,
      * não um esquecimento.
@@ -170,6 +201,73 @@ const EnvSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+
+    // ── Story 3.7 — capacidade compartilhada de arquivos (storage/antivírus/limites) ─────────
+    // Estes serviços (MinIO/ClamAV) existem só em dev/CI (AD-32). Com o gate desligado (default),
+    // são opcionais e a capacidade fica indisponível de forma honesta. Ligá-lo EXIGE storage
+    // configurado — a coerência é imposta no `.superRefine` fail-closed abaixo.
+
+    /** Endpoint do storage S3-compatível (ex.: MinIO `http://127.0.0.1:9000`). Vazio = ausente. */
+    STORAGE_ENDPOINT: vazioComoAusente(
+      z.string().url('STORAGE_ENDPOINT deve ser uma URL válida').optional(),
+    ),
+    /** Região do storage (S3 exige uma; irrelevante no MinIO, mas o SDK a requer). */
+    STORAGE_REGION: z.string().default('us-east-1'),
+    /** Bucket privado dos arquivos. */
+    STORAGE_BUCKET: z.string().default('giraffe-files'),
+    /** Credencial de acesso do storage (dev/CI). Segredo — nunca em log/health. Vazio = ausente. */
+    STORAGE_ACCESS_KEY: vazioComoAusente(z.string().optional()),
+    /** Credencial secreta do storage (dev/CI). Segredo — nunca em log/health. Vazio = ausente. */
+    STORAGE_SECRET_KEY: vazioComoAusente(z.string().optional()),
+    /** MinIO exige path-style (bucket no path, não no host). Só `'false'` desliga; default liga. */
+    STORAGE_FORCE_PATH_STYLE: z
+      .string()
+      .optional()
+      .transform((v) => v !== 'false'),
+
+    /** Host do clamd (TCP). Dev/CI. */
+    CLAMAV_HOST: z.string().default('127.0.0.1'),
+    /** Porta do clamd (padrão 3310). */
+    CLAMAV_PORT: z.coerce.number().int().positive().max(65535).default(3310),
+    /**
+     * Idade máxima da base de assinaturas do ClamAV (horas). Base mais velha que isto ⇒ o veredito
+     * é RECUSADO (fail-closed): um scanner com base velha é um scanner cego. Default conservador.
+     */
+    CLAMAV_DB_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
+    /**
+     * Timeout (ms) do scan do clamd. O TTL do slot (`SCAN_SLOT_TTL_SECONDS`) DEVE ser maior que isto, ou um slot
+     * ainda em uso expiraria durante o scan e outra requisição entraria acima do teto — coerência no superRefine.
+     */
+    CLAMAV_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+
+    /**
+     * Tamanho máximo por arquivo (bytes). Limita também o buffer de upload (DoS). Default 10 MiB. O teto (50 MiB)
+     * casa com a barreira dura do multer (`MULTER_MAX_BYTES`); acima disso o limite "configurável" seria capado
+     * silenciosamente pelo multer.
+     */
+    FILE_MAX_BYTES: z.coerce.number().int().positive().max(52_428_800).default(10_485_760),
+    /** Contagem máxima de arquivos por recurso (Q1 = 10). Validado por faixa, fail-closed. */
+    FILE_MAX_PER_RESOURCE: z.coerce.number().int().positive().max(1000).default(10),
+
+    // ── Story 3.8 — limites do CANAL PÚBLICO (Q4/T013) ─────────────────────────────────────────
+    // O canal público (não autenticado) é o ponto mais atacado: além do limite por arquivo (FILE_MAX_BYTES),
+    // impõe tetos próprios por Campo, por submissão (contagem) e por submissão (bytes totais). Faixa validada,
+    // fail-closed — um valor ausente/ruim cai no default conservador, nunca em "ilimitado".
+    /** Máx. de arquivos por Campo Arquivo numa submissão pública. */
+    PUBLIC_FILE_MAX_PER_FIELD: z.coerce.number().int().positive().max(100).default(5),
+    /** Máx. de arquivos somados em TODA a submissão pública. */
+    PUBLIC_FILE_MAX_PER_SUBMISSION: z.coerce.number().int().positive().max(100).default(10),
+    /** Máx. de BYTES somados em toda a submissão pública (teto de DoS). Default 25 MiB. */
+    PUBLIC_FILE_MAX_TOTAL_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(104_857_600)
+      .default(26_214_400),
+    /** Teto de verificações concorrentes por Organização (semáforo `ScanSlot`). Fail-closed no teto (429). */
+    SCAN_MAX_CONCURRENT_PER_ORG: z.coerce.number().int().positive().max(100).default(3),
+    /** TTL do slot de verificação (segundos) — auto-liberação de slot órfão. */
+    SCAN_SLOT_TTL_SECONDS: z.coerce.number().int().positive().default(120),
   })
   /**
    * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em
@@ -250,6 +348,78 @@ const EnvSchema = z
         code: 'custom',
         message:
           'LOGIN_HMAC_PREVIOUS_KEY_VERSION não pode ser igual a LOGIN_HMAC_KEY_VERSION (a rotação ficaria irrastreável)',
+      });
+    }
+  })
+  /**
+   * Coerência da rotação do hop Web→API (D-01) — o mesmo contrato do HMAC de login: segredo e versão
+   * anteriores andam juntos, e nenhum dos dois pode coincidir com o atual (senão a rotação seria
+   * irrastreável ou aceitaria a chave "anterior" como se fosse a atual). Mensagens só com NOMES.
+   */
+  .superRefine((env, ctx) => {
+    const temSegredo = env.INTERNAL_HMAC_PREVIOUS_SECRET !== undefined;
+    const temVersao = env.INTERNAL_HMAC_PREVIOUS_KEY_VERSION !== undefined;
+    if (temSegredo !== temVersao) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'INTERNAL_HMAC_PREVIOUS_SECRET e INTERNAL_HMAC_PREVIOUS_KEY_VERSION devem ser definidas juntas',
+      });
+    }
+    if (!temSegredo) return;
+    if (env.INTERNAL_HMAC_PREVIOUS_SECRET === env.INTERNAL_HMAC_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'INTERNAL_HMAC_PREVIOUS_SECRET não pode ser igual a INTERNAL_HMAC_SECRET',
+      });
+    }
+    if (env.INTERNAL_HMAC_PREVIOUS_KEY_VERSION === env.INTERNAL_HMAC_KEY_VERSION) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'INTERNAL_HMAC_PREVIOUS_KEY_VERSION não pode ser igual a INTERNAL_HMAC_KEY_VERSION (a rotação ficaria irrastreável)',
+      });
+    }
+  })
+  /**
+   * Coerência do gate de arquivos (3.7, AD-28). Ligar `FILE_UPLOAD_ENABLED` sem storage configurado
+   * é a receita de uma capacidade "ligada" que aceita upload e não tem onde guardar — falha opaca na
+   * 1ª requisição. Fail-closed: com o gate ON, o storage é obrigatório e a API não sobe sem ele.
+   *
+   * As mensagens citam apenas NOMES de variáveis — as credenciais nunca podem vazar para log/stderr.
+   */
+  .superRefine((env, ctx) => {
+    if (!env.FILE_UPLOAD_ENABLED) return;
+
+    const faltando = (
+      [
+        ['STORAGE_ENDPOINT', env.STORAGE_ENDPOINT],
+        ['STORAGE_ACCESS_KEY', env.STORAGE_ACCESS_KEY],
+        ['STORAGE_SECRET_KEY', env.STORAGE_SECRET_KEY],
+        ['STORAGE_BUCKET', env.STORAGE_BUCKET],
+      ] as const
+    )
+      .filter(([, v]) => v === undefined || v === '')
+      .map(([nome]) => nome);
+
+    if (faltando.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'FILE_UPLOAD_ENABLED=true exige storage configurado — variáveis ausentes: ' +
+          faltando.join(', ') +
+          ' (a capacidade não pode ligar sem onde guardar o binário — fail-closed AD-28)',
+      });
+    }
+
+    // O slot do semáforo é segurado durante o scan SÍNCRONO. Se o TTL expirar antes do scan terminar, o slot é
+    // coletado e outra requisição entra ACIMA do teto de concorrência. Exige margem sobre o timeout do clamd.
+    if (env.SCAN_SLOT_TTL_SECONDS * 1000 <= env.CLAMAV_TIMEOUT_MS) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'SCAN_SLOT_TTL_SECONDS (em ms) deve ser MAIOR que CLAMAV_TIMEOUT_MS — senão um slot em uso expira ' +
+          'durante o scan e a concorrência ultrapassa SCAN_MAX_CONCURRENT_PER_ORG',
       });
     }
   });

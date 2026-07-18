@@ -3,11 +3,17 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthModule } from './health/health.module';
 import { getEnv } from './kernel/config/env';
+import { AntiabusoModule } from './kernel/antiabuso/antiabuso.module';
 import { AuthModule } from './kernel/auth/auth.module';
 import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { DatabasesModule } from './databases/databases.module';
+import { FILE_AUTHZ_CONTRACT } from './files/file-authz.contract';
+import { FILE_EVENT_SINK } from './files/file-event-sink';
+import { FilesModule } from './files/files.module';
+import { FileAuthzDispatcher } from './file-authz/file-authz.dispatcher';
+import { FileEventDispatcher } from './file-authz/file-event.dispatcher';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PipesModule } from './pipes/pipes.module';
 
@@ -58,6 +64,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
                 'req.headers.authorization',
                 'req.headers.cookie',
                 'res.headers["set-cookie"]',
+                // Hop Web→API (D-01): o envelope assinado não é o segredo, mas fora de log por higiene —
+                // um leitor de log não deve poder reusar uma prova ainda dentro da janela.
+                'req.headers["x-internal-hop"]',
               ],
               remove: true,
             },
@@ -68,6 +77,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
       },
     }),
     DbModule,
+    // Primitivos antiabuso transversais (rate limiter genérico). Global: consumido hoje pela submissão
+    // pública (2.8, em pipes/) e reutilizável pelos demais baldes antiabuso sem importar o domínio.
+    AntiabusoModule,
     // Antes de HealthModule/OrganizationsModule: registra o guard global e o middleware que abre
     // o escopo de contexto. O guard é deny-by-default — rota nova nasce protegida.
     ContextModule,
@@ -82,6 +94,12 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     OrganizationsModule,
     PipesModule,
     DatabasesModule,
+    // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
+    // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
+    FilesModule.register(
+      { provide: FILE_AUTHZ_CONTRACT, useClass: FileAuthzDispatcher },
+      { provide: FILE_EVENT_SINK, useClass: FileEventDispatcher },
+    ),
   ],
 })
 export class AppModule {}

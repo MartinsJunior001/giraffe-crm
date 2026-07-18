@@ -9,7 +9,15 @@ import { Prisma } from '../../../generated/prisma';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
-import { SubmissaoInvalidaError, validarSubmissao } from '../../pipes/cards/submission';
+import { getEnv } from '../../kernel/config/env';
+import {
+  camposArquivo,
+  extrairArquivosReferenciados,
+  SubmissaoInvalidaError,
+  validarSubmissao,
+  type OpcoesSubmissao,
+} from '../../pipes/cards/submission';
+import { snapshotExigeCapacidadeArquivo } from '../../pipes/forms/file-gate';
 import { exigirLerDatabase, exigirOperarDatabase } from '../database-authz';
 import type { CriarRegistroDTO, EditarRegistroDTO } from './records.dto';
 
@@ -139,7 +147,7 @@ export class RecordsService {
 
     const record = await db.record.findFirst({
       where: { id: recordId, databaseId },
-      select: { id: true, lifecycleState: true, formVersionId: true },
+      select: { id: true, lifecycleState: true, formVersionId: true, valores: true },
     });
     if (!record) throw new NotFoundException();
     if (record.lifecycleState === 'ARQUIVADO') {
@@ -152,7 +160,14 @@ export class RecordsService {
     });
     if (!versao) throw new ConflictException('versão do Registro indisponível');
 
-    const valores = this.validar(versao.snapshot, dto.valores);
+    // Edição: o Registro já existe (e o arquivo já foi enviado e vinculado a ele), então Campo Arquivo é aceito
+    // como REFERÊNCIA tipada (Story 3.8, Opção 1). O vínculo é conferido contra ESTE Registro.
+    const valores = this.validar(versao.snapshot, dto.valores, { arquivo: 'referencia' });
+    await this.exigirArquivosVinculados(db, versao.snapshot, valores, recordId);
+
+    // FILE_REPLACED (Story 3.8, F5): Campo Arquivo cuja referência mudou de um `fileId` para OUTRO (substituição).
+    // Anexar/desanexar-em-valor seguem cobertos pelo VALUES_UPDATED genérico; aqui só a troca A→B.
+    const substituidos = this.arquivosSubstituidos(versao.snapshot, record.valores, valores);
 
     let atualizado: RecordVisao | null;
     try {
@@ -175,6 +190,19 @@ export class RecordsService {
             actorId: contexto.accountId ?? null,
           },
         });
+
+        // Substituição de Campo Arquivo (A→B): evento próprio na MESMA transação, sem PII/chave (só o novo ref).
+        for (const troca of substituidos) {
+          await tx.recordHistory.create({
+            data: {
+              orgId: contexto.orgId,
+              recordId,
+              type: 'FILE_REPLACED',
+              summary: `Arquivo substituído (${troca})`,
+              actorId: contexto.accountId ?? null,
+            },
+          });
+        }
 
         return tx.record.findUniqueOrThrow({ where: { id: recordId }, select: SELECT_RECORD });
       });
@@ -207,13 +235,87 @@ export class RecordsService {
   // ── Internos ─────────────────────────────────────────────────────────────────────────────────
 
   /** Valida os valores contra o snapshot (400 determinístico), reusando o núcleo puro da 2.7. */
-  private validar(snapshot: Prisma.JsonValue, valores: unknown): Record<string, unknown> {
+  private validar(
+    snapshot: Prisma.JsonValue,
+    valores: unknown,
+    opcoes?: OpcoesSubmissao,
+  ): Record<string, unknown> {
+    // Gate de CONSUMO (Story 3.8, RF-3 / ADR AC-2): snapshot publicado exige Campo Arquivo mas a capacidade
+    // está desligada ⇒ 409 honesto. Vale para criar E editar (ambos passam por aqui). Fail-closed.
+    if (snapshotExigeCapacidadeArquivo(snapshot) && !getEnv().FILE_UPLOAD_ENABLED) {
+      throw new ConflictException({ motivo: 'CAPACIDADE_ARQUIVO_INDISPONIVEL' });
+    }
     try {
-      return validarSubmissao(snapshot, valores);
+      return validarSubmissao(snapshot, valores, opcoes);
     } catch (err) {
       if (err instanceof SubmissaoInvalidaError) throw new BadRequestException(err.message);
       throw err;
     }
+  }
+
+  /**
+   * Confere que cada arquivo referenciado nos `valores` (Campo `FILE`, Story 3.8) está DISPONIVEL e **vinculado
+   * a ESTE Registro** (`resourceType='RECORD'`, `resourceId=recordId`). Herda a 3.7: RLS escopa `FileObject` ao
+   * tenant, então um `fileId` de outro tenant simplesmente não é encontrado; um `fileId` de OUTRO Registro ou em
+   * QUARENTENA/removido não casa o vínculo. Qualquer falha ⇒ 400 uniforme (não-enumerante — não distingue
+   * "inexistente" de "de outro recurso"). Só de LEITURA; roda antes da transação de escrita.
+   */
+  private async exigirArquivosVinculados(
+    db: Db,
+    snapshot: Prisma.JsonValue,
+    valores: Record<string, unknown>,
+    recordId: string,
+  ): Promise<void> {
+    const ids = extrairArquivosReferenciados(snapshot, valores);
+    if (ids.length === 0) return;
+    const arquivos = await db.fileObject.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, state: true, resourceType: true, resourceId: true },
+    });
+    const validos = new Set(
+      arquivos
+        .filter(
+          (a) =>
+            a.state === 'DISPONIVEL' && a.resourceType === 'RECORD' && a.resourceId === recordId,
+        )
+        .map((a) => a.id),
+    );
+    for (const id of ids) {
+      if (!validos.has(id)) throw new BadRequestException('referência de arquivo inválida');
+    }
+  }
+
+  /**
+   * Detecta Campos `FILE` cuja referência foi SUBSTITUÍDA (troca A→B): valor antigo e novo ambos presentes e
+   * diferentes. Só o caso single (string) — para múltiplo (lista), a mudança fica coberta pelo `VALUES_UPDATED`
+   * genérico. Devolve os novos `fileId`s (para o `summary` do evento; sem PII/chave). Puro.
+   */
+  private arquivosSubstituidos(
+    snapshot: Prisma.JsonValue,
+    valoresAntigos: Prisma.JsonValue,
+    valoresNovos: Record<string, unknown>,
+  ): string[] {
+    const antigos =
+      valoresAntigos !== null &&
+      typeof valoresAntigos === 'object' &&
+      !Array.isArray(valoresAntigos)
+        ? (valoresAntigos as Record<string, unknown>)
+        : {};
+    const trocas: string[] = [];
+    for (const fieldId of camposArquivo(snapshot)) {
+      const antes = antigos[fieldId];
+      const agora = valoresNovos[fieldId];
+      if (
+        typeof antes === 'string' &&
+        typeof agora === 'string' &&
+        antes !== '' &&
+        agora !== '' &&
+        antes !== agora
+      ) {
+        trocas.push(agora);
+      }
+    }
+    return trocas;
   }
 
   /**

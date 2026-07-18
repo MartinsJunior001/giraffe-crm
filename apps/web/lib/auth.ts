@@ -8,6 +8,8 @@
  * na origem da Web e reencaminhá-lo à API funciona.
  */
 
+import { cabecalhoHop } from './internal-hop';
+
 export type MotivoFalhaLogin = 'credenciais' | 'limite' | 'indisponivel';
 export type ResultadoLogin =
   { ok: true; cookies: string[] } | { ok: false; motivo: MotivoFalhaLogin };
@@ -29,22 +31,26 @@ export async function loginNaApi(
   senha: string,
   origin: string,
   ipCliente?: string,
+  hmac?: { secret: string; keyVersion: number },
 ): Promise<ResultadoLogin> {
+  const path = '/api/auth/sign-in/email';
+  // Hop autenticado (D-01): com o segredo configurado, o IP do cliente vai DENTRO de um envelope
+  // assinado (`x-internal-hop`), não como `x-forwarded-for` cru — a API só honra o IP com a prova, sem
+  // depender do endereço (dinâmico) do container da Web. Sem o segredo (dev/CI), mantém o modo direto:
+  // manda o XFF único já validado por `derivarIpValidadoDoXff`. Ausente o IP, nenhum dos dois vai.
+  const hop = cabecalhoHop({ hmac, ipCliente, method: 'POST', path });
+  const usaHop = Object.keys(hop).length > 0;
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/api/auth/sign-in/email`, {
+    res = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       // `origin` é exigido pelo CSRF do Better Auth fora de teste; mandamos a origem da própria Web,
       // que está na allowlist (CORS_ALLOWED_ORIGINS/trustedOrigins).
-      //
-      // `x-forwarded-for` é o elo Web→API da cadeia de proxy (D-01): UM único IP, já validado por
-      // `derivarIpValidadoDoXff` (nunca a cadeia recebida). A API só o honra porque o peer é o IP
-      // fixo da Web (TRUSTED_PROXY_IPS) — sem ele, o rate limit do login (G2) contaria a Web, não
-      // o cliente. Ausente (dev sem proxy), o header simplesmente não vai.
       headers: {
         'content-type': 'application/json',
         origin,
-        ...(ipCliente === undefined ? {} : { 'x-forwarded-for': ipCliente }),
+        ...hop,
+        ...(usaHop || ipCliente === undefined ? {} : { 'x-forwarded-for': ipCliente }),
       },
       body: JSON.stringify({ email, password: senha }),
       cache: 'no-store',

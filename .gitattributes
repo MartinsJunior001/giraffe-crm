@@ -15,3 +15,6 @@
 # `text=auto` deixa o Git detectar binários sozinho; `eol=lf` garante o working tree em LF mesmo
 # com `autocrlf=true`, porque o `.gitattributes` tem precedência sobre a configuração local.
 * text=auto eol=lf
+
+# Scripts operacionais L6 — sempre LF (rodam em Linux no host do Coolify)
+scripts/ops/l6/*.sh text eol=lf

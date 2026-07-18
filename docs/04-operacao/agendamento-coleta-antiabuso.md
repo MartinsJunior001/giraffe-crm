@@ -37,20 +37,25 @@ vaza pelo pool). O `scripts/db-cleanup.mjs` e o `LoginFailureService.limparExpir
   5 min; sob volume baixo, 1 h basta.
 - A coleta é barata e idempotente; sobrepor execuções é seguro (o lock protege).
 
-## Ativação no Coolify — PENDENTE (Infra/Ops)
+## Ativação no Coolify (Scheduled Task)
 
-> **Status: NÃO ATIVADO.** O passo abaixo é a ação de Infra/Ops que falta para fechar o D-05 no ambiente.
-
-1. Criar um **Scheduled Task** no serviço da API no Coolify (ou um cron equivalente na infraestrutura),
-   com o comando:
+1. Criar **um** **Scheduled Task** vinculado **exclusivamente ao serviço `api`** do recurso
+   `enl623bli2h2ub5kmu4ygktd` (nunca `db`/`web`, nunca outro projeto), com o **comando autoritativo**:
    ```bash
-   pnpm --filter @giraffe/api db:cleanup
+   node /repo/scripts/db-cleanup.mjs
    ```
-   ou, se o container roda o `dist`, o equivalente `node scripts/db-cleanup.mjs` com o mesmo ambiente.
-2. **Cron sugerido:** `*/15 * * * *` (a cada 15 min).
+   > **Este é o comando exato** — o mesmo que o gate `gate-d05-cleanup.sh` executa e que fechou
+   > `D05_CLEANUP_OK` no staging. **Não** use `pnpm ... db:cleanup` aqui: a imagem de **runtime** teve
+   > `npm`/`corepack`/`pnpm` **removidos** (redução de superfície, ver `apps/api/Dockerfile`), então
+   > `pnpm` não existe no container. O caminho é **absoluto** (`/repo/scripts/...`) porque o `WORKDIR`
+   > do runtime é `/repo/apps/api`. `pnpm --filter @giraffe/api db:cleanup` só vale para **dev local**.
+2. **Cron:** `*/15 * * * *` (a cada 15 min).
 3. O comando exige `DATABASE_URL` (papel de runtime `giraffe_app`, que tem `DELETE` em `LoginFailure` e
-   `RateLimit`) — **as mesmas** variáveis já injetadas no serviço. **Não** usa a credencial do migrator.
+   `RateLimit`) — **as mesmas** variáveis já injetadas no serviço `api`. **Não** usa a credencial do migrator.
 4. **Uma única definição** de agendamento (sem segunda verdade). Não duplicar num segundo cron.
+5. Após criar, **executar manualmente uma vez** pelo próprio Scheduled Task e conferir no log: **exit 0**,
+   a linha `[cleanup] LoginFailure: N · RateLimit: M (expirados)` (ou `pulado` se sobrepôs pelo advisory
+   lock) e **ausência de PII** (nem IP, nem chave, nem e-mail, nem `DATABASE_URL`).
 
 ## Observabilidade
 
@@ -72,3 +77,13 @@ vaza pelo pool). O `scripts/db-cleanup.mjs` e o `LoginFailureService.limparExpir
 pnpm --filter @giraffe/api db:cleanup
 # Rodar duas vezes seguidas: a 2ª deve apagar 0 (idempotência) ou reportar "pulado" se sobrepôs.
 ```
+
+No **staging** (execução manual controlada, débito D-05), o gate versionado roda a coleta duas vezes
+por `docker exec` no container da API e prova o código 0 + a idempotência, com guarda de escopo:
+
+```bash
+bash scripts/ops/l6/gate-d05-cleanup.sh   # → D05_CLEANUP_OK
+```
+
+Regressão descartável (prova que expirados são apagados e contadores em curso são preservados):
+`scripts/ops/l6/test-gate-d05-cleanup.sh` → `D05_REGRESSAO_OK`.

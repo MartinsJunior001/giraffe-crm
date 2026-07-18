@@ -38,3 +38,20 @@ export function podePublicarComArquivo(
 export function tipoArquivoDisponivel(fileUpload: boolean): boolean {
   return fileUpload;
 }
+
+/**
+ * O snapshot de uma `FormVersion` publicada (Campos ativos congelados — 2.6) contém algum Campo `FILE`?
+ * Base do **gate de CONSUMO** (Story 3.8, RF-3 / ADR AC-2, "[3.8, não 3.7]"): um Formulário publicado enquanto
+ * a capacidade estava ligada pode ser SUBMETIDO depois que ela foi desligada — a definição congelada ainda
+ * exige arquivo, mas a capacidade não existe. Fail-closed: snapshot malformado ⇒ `false` (não bloqueia a
+ * submissão por um formato que não reconhece; a validação de valores já é fail-closed em `submission.ts`).
+ * Pura e testável; o serviço compõe com `getEnv().FILE_UPLOAD_ENABLED` para decidir o 409.
+ */
+export function snapshotExigeCapacidadeArquivo(snapshot: unknown): boolean {
+  if (snapshot === null || typeof snapshot !== 'object') return false;
+  const fields = (snapshot as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return false;
+  return fields.some(
+    (f) => f !== null && typeof f === 'object' && (f as { type?: unknown }).type === 'FILE',
+  );
+}
