@@ -1,11 +1,12 @@
 # Spec — Story 3.8: Campo Arquivo funcional e anexo geral (Card/Registro)
 
-Baseline a definir (sobre a **3.7 mergeada**) · Épico 3 · Risco ALTO · Depende de 3.7 (BLOQUEIO DURO), 3.3, 3.4,
-2.9, 2.4, 2.5, 2.6, 2.7, 2.8, 2.10. Governança: **ADR-001** (v5, ratificada) — **AC-2 marcado "[3.8, não 3.7]"**.
+Baseline sobre a **3.7 mergeada** (PR #103/#105, `main`) · Épico 3 · Risco ALTO · Depende de 3.7 (satisfeito), 3.3,
+3.4, 2.9, 2.4, 2.5, 2.6, 2.7, 2.8, 2.10. Governança: **ADR-001** (v5, ratificada) — **AC-2 marcado "[3.8, não 3.7]"**.
 
-> **BLOQUEIO DURO:** esta Story só entra em implementação com a **3.7 (capacidade compartilhada de arquivos)
-> PRONTA e MERGEADA** (hoje `ready-for-dev`, em PR). Este spec é planejamento antecipado (Planner n+1); não
-> autoriza código. `sprint-status.yaml` permanece `backlog` até a abertura autoritativa da Story.
+> **DESBLOQUEADA.** A 3.7 está mergeada e `done`. Os fatos reais da 3.7 que fecham os placeholders "NEEDS-3.7"
+> estão em **`reconciliation-3-7.md`** (estados `DISPONIVEL`/`QUARENTENA`, assinatura do `FileAuthzContract`,
+> `resourceType`=texto→allowlist, rotas reais, limites/allowlist, **DEB-3.7-SMOKE-STORAGE** como task T0). Onde
+> este spec disser `AVAILABLE`/`QUARANTINED`, leia `DISPONIVEL`/`QUARENTENA`.
 
 ## 1. Resumo
 

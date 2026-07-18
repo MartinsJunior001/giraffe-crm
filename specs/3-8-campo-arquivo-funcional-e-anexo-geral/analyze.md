@@ -70,3 +70,26 @@ Os artefatos são internamente consistentes e a cobertura requisito↔task é to
 - **Mover `sprint-status.yaml`** (`backlog → ready-for-dev`) de forma autoritativa via workflow BMAD **no ramo real**
   quando a Story abrir — não neste worktree isolado.
 - Sem CRITICAL: não há bloqueio de consistência; o bloqueio é de **dependência** (3.7).
+
+---
+
+## Re-análise do DELTA — 2026-07-18 (3.7 MERGEADA e done, PR #103/#105)
+
+A 3.7 fechou. Reavaliação **apenas dos pontos que a mudança de estado toca** (não se refazem artefatos corretos).
+Fonte da verdade da reconciliação: **`reconciliation-3-7.md`**.
+
+| ID | Antes | Agora |
+|----|-------|-------|
+| **H2** (assinatura `FileAuthzContract` + forma de `FileObject`) | HIGH→aceito (NEEDS-3.7) | **RESOLVIDO.** Assinatura congelada (`podeLer`/`podeEditar(resourceType,resourceId)` + token Symbol + `FilesModule` deny-all default), forma de `FileObject` e estados (`DISPONIVEL`/`QUARENTENA`/…) fixados em `reconciliation-3-7.md`. |
+| **M1** (modelagem anexo geral A vs B) | MEDIUM | **RESOLVIDO para Opção A.** `FileObject.resourceType` é **texto** genérico → allowlist no consumidor (`CARD`/`RECORD`), anexo geral = linha não referenciada em `valores`. **Sem migration, sem GRANT novo** (AD-11). Coluna `purpose` só se a Opção A falhar na prática — improvável. |
+| **R6** (dependência 3.7) | risco | **RESOLVIDO** (mergeada). |
+| **H1** (valores dos limites do canal público — Q4) | HIGH→aceito | **ABERTO, não-bloqueante.** Fixar na implementação como envs novos (Zod, faixa, fail-closed) com defaults conservadores ≤ limites da 3.7; T013. |
+| **Q1/Q4/Q5/Q6/Q7/Q8** | defaults do planner | Seguem como defaults conservadores fail-closed; validáveis com o dono, sem retrabalho estrutural. |
+
+**NOVO pré-requisito rastreado (não-defeito):** **DEB-3.7-SMOKE-STORAGE** — a 3.8, como 1º consumidor, deve
+reintroduzir o provisionamento MinIO/ClamAV no CI + um smoke real do caminho SigV4/`node:net` da 3.7 (T001b/T017).
+Não é inconsistência dos artefatos; é a quitação de um débito herdado, exigida antes de as ACs de storage real valerem.
+
+**Veredito do delta: APROVADO. 0 CRITICAL, 0 HIGH remanescente bloqueante** (H2/M1/R6 resolvidos; H1 é decisão de
+valor de config, endereçada na T013 com fail-closed). Cobertura requisito↔task segue 100% (T001b acrescentada não
+cria RF órfão — é pré-requisito de infraestrutura). Apto ao `context7-check` + `pre-implementation-check` e implementação.

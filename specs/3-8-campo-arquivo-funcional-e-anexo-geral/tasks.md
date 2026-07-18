@@ -1,14 +1,17 @@
 # Tasks — Story 3.8: Campo Arquivo funcional e anexo geral (Card/Registro)
 
-> DOCS-ONLY até aqui. Ordem por dependência; frentes F1–F8 do `plan.md`. **BLOQUEIO DURO:** nada abaixo de T001
-> começa antes da **3.7 mergeada**. `[P]` = paralelizável (arquivos distintos, sem dependência pendente).
+> Ordem por dependência; frentes F1–F8 do `plan.md`. 3.7 **mergeada e done** (desbloqueada). Os fatos reais da 3.7
+> estão em `reconciliation-3-7.md`. `[P]` = paralelizável (arquivos distintos, sem dependência pendente).
 
 ## Fase 1 — Gate pré-código (bloqueante)
 
-- [ ] T001 Confirmar a **3.7 mergeada**; fixar `baseline_commit`, a **assinatura exata do `FileAuthzContract`**
-  (Q2 da 3.7), a forma final de `FileObject` e o nome da constante de motivo do gate; rodar `pre-implementation-check`
-  + `context7-check` (SDK S3/MinIO, ClamAV, Prisma 6.19.x, NestJS 11 — versões pós-3.7). Registrar em
-  `gates/3-8/T001-pre-code-gate.md`. (AC: pré-requisito; resolve NEEDS-3.7)
+- [ ] T001 Gate pré-código: `context7-check` (Prisma 6.19.3, NestJS 11, `node:http`/`node:net` — a 3.7 é
+  **zero-dependência**, sem SDK S3/clamscan) + `pre-implementation-check`. Baseline = `main` pós-3.7; assinatura do
+  `FileAuthzContract`, forma de `FileObject` e estados já FIXADOS em `reconciliation-3-7.md`. Registrar o relatório. (pré-requisito)
+- [ ] T001b **(DEB-3.7-SMOKE-STORAGE — pré-requisito de "consumir a capacidade")** Reintroduzir o provisionamento de
+  **MinIO + ClamAV no CI** (via `docker-compose.dev-files.yml`, revertido na 3.7 por falta de consumidor) e um **smoke
+  real** que exercita o caminho HTTP/SigV4 de `StorageService` + `ClamavService` reais (upload→scan→download) — fecha
+  o débito da 3.7 antes de as ACs dependentes do storage real valerem. Sem reimplementar a 3.7; só exercitá-la. (T017 consome.)
 
 ## Fase 2 — Fundação: binding e valor referencial (bloqueia as demais)
 
