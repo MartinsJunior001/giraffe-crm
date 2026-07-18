@@ -51,8 +51,9 @@ export class ClamavService {
     try {
       const versao = await this.comando('nVERSION\n');
       const partes = versao.trim().split('/');
-      if (partes.length < 3) return null;
-      const data = new Date(partes[2].trim());
+      const dataStr = partes[2];
+      if (dataStr === undefined) return null;
+      const data = new Date(dataStr.trim());
       return Number.isNaN(data.getTime()) ? null : data;
     } catch (err) {
       this.logger.warn(
