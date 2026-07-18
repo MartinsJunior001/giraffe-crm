@@ -12,6 +12,7 @@ import { KanbanReadService } from './cards/kanban-read.service';
 import { CardAccessController } from './cards/access/card-access.controller';
 import { CardAccessService } from './cards/access/card-access.service';
 import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.controller';
+import { CardFilesController } from './cards/files/card-files.controller';
 import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
 import { CardMovementController } from './cards/movement/card-movement.controller';
 import { CardMovementService } from './cards/movement/card-movement.service';
@@ -96,6 +97,7 @@ import { PipesService } from './pipes.service';
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
+    CardFilesController,
   ],
   providers: [
     PipesService,

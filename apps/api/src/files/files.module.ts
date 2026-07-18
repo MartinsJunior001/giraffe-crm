@@ -39,9 +39,13 @@ export class FilesModule {
    * (`files/` não importa domínio) e o default deny-all quando importado sem binding (`imports: [FilesModule]`).
    */
   static register(authz: Provider): DynamicModule {
-    // `authz` por último: sobrescreve o token para o `FilesService` dentro do injetor deste módulo.
+    // `authz` por último: sobrescreve o token para o `FilesService` dentro do injetor deste módulo. `global`
+    // para que o `FilesService` (com o dispatcher REAL) seja o único visível a `pipes/`/`databases/` — evita
+    // uma 2ª instância deny-all se algum módulo importasse `FilesModule` estático (os controllers de anexo
+    // apenas injetam `FilesService`, sem reimportar este módulo).
     return {
       module: FilesModule,
+      global: true,
       controllers: [FilesController],
       providers: [...PROVIDERS_BASE, authz],
       exports: [FilesService, FILE_AUTHZ_CONTRACT],

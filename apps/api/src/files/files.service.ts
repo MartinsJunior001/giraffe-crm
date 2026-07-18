@@ -437,6 +437,63 @@ export class FilesService {
     return visao as FileVisao;
   }
 
+  /**
+   * Lista os anexos **DISPONÍVEIS** de um recurso (Story 3.8, anexo geral). Autz de LEITURA (sem acesso →
+   * 404 não-enumerante). Só metadados — `bucketKey`/`orgId` nunca saem. QUARENTENA/BLOCKED/REMOVIDO/EXPURGADO
+   * ficam fora da lista (o anexo útil é o disponível; a verificação é síncrona, então QUARENTENA é transitório).
+   */
+  async listar(resourceType: string, resourceId: string): Promise<FileVisao[]> {
+    this.exigirCapacidade();
+    if (!(await this.authz.podeLer(resourceType, resourceId))) throw new NotFoundException();
+    const { db } = this.db();
+    const files = await db.fileObject.findMany({
+      where: { resourceType, resourceId, state: 'DISPONIVEL' },
+      select: SELECT_FILE,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return files as FileVisao[];
+  }
+
+  /** Download de um anexo escopado ao recurso da rota: exige que o arquivo pertença a `(resourceType, resourceId)`. */
+  async baixarDoRecurso(
+    resourceType: string,
+    resourceId: string,
+    fileId: string,
+  ): Promise<DownloadArquivo> {
+    await this.exigirPertence(resourceType, resourceId, fileId);
+    return this.baixar(fileId);
+  }
+
+  /** Remoção lógica de um anexo escopado ao recurso da rota. Autz de EDIÇÃO (via `remover`). Idempotente. */
+  async removerDoRecurso(
+    resourceType: string,
+    resourceId: string,
+    fileId: string,
+  ): Promise<FileVisao> {
+    await this.exigirPertence(resourceType, resourceId, fileId);
+    return this.remover(fileId);
+  }
+
+  /**
+   * Garante que o `fileId` pertence a ESTE recurso `(resourceType, resourceId)` — a rota escopa o arquivo ao seu
+   * dono. 404 não-enumerante se não pertence, não existe ou é de outra Org (RLS). A autz de acesso propriamente
+   * dita fica com `baixar`/`remover` (pela herança do recurso dono); aqui só se impede o cruzamento de rota.
+   */
+  private async exigirPertence(
+    resourceType: string,
+    resourceId: string,
+    fileId: string,
+  ): Promise<void> {
+    const { db } = this.db();
+    const file = await db.fileObject.findUnique({
+      where: { id: fileId },
+      select: { resourceType: true, resourceId: true },
+    });
+    if (!file || file.resourceType !== resourceType || file.resourceId !== resourceId) {
+      throw new NotFoundException();
+    }
+  }
+
   /** Limites da capacidade (para "exibir antes do envio" — US5). Sem segredo/chave; só números e tipos. */
   limites(): { maxBytes: number; maxPorRecurso: number; tiposPermitidos: string[] } {
     const env = getEnv();

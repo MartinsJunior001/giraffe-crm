@@ -12,20 +12,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { contentDisposition, MULTER_LIMITS } from './file-http.util';
 import { FilesService, type FileVisao } from './files.service';
-
-/**
- * Teto de memória do multipart (bound de DoS) — ACIMA do `FILE_MAX_BYTES` configurável, que é conferido no
- * núcleo puro de validação. É a barreira dura contra upload gigante; o limite fino (e a mensagem) vêm do serviço.
- */
-const MULTER_MAX_BYTES = 52_428_800; // 50 MiB (== StreamMaxLength do clamd).
-
-/** Nome de arquivo seguro para o header (RFC 5987) — evita injeção de header via nome original (PII/controle do cliente). */
-function contentDisposition(nomeOriginal: string): string {
-  const asciiFallback = nomeOriginal.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  const utf8 = encodeURIComponent(nomeOriginal);
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8}`;
-}
 
 /**
  * Capacidade compartilhada de arquivos (Story 3.7), API INTERNA. Todas as rotas são autenticadas pelo guard
@@ -54,9 +42,7 @@ export class FilesController {
   @UseInterceptors(
     // Limites do multipart APERTADOS (bound de DoS de memória por usuário autenticado): 1 arquivo, poucos
     // campos/partes, além do teto de bytes. Sem isto, `files/fields/parts` ficam Infinity.
-    FileInterceptor('file', {
-      limits: { fileSize: MULTER_MAX_BYTES, files: 1, fields: 5, parts: 10 },
-    }),
+    FileInterceptor('file', { limits: MULTER_LIMITS }),
   )
   async enviar(
     @Param('resourceType') resourceType: string,
