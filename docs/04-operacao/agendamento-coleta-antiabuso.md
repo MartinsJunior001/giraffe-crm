@@ -72,3 +72,13 @@ vaza pelo pool). O `scripts/db-cleanup.mjs` e o `LoginFailureService.limparExpir
 pnpm --filter @giraffe/api db:cleanup
 # Rodar duas vezes seguidas: a 2ª deve apagar 0 (idempotência) ou reportar "pulado" se sobrepôs.
 ```
+
+No **staging** (execução manual controlada, débito D-05), o gate versionado roda a coleta duas vezes
+por `docker exec` no container da API e prova o código 0 + a idempotência, com guarda de escopo:
+
+```bash
+bash scripts/ops/l6/gate-d05-cleanup.sh   # → D05_CLEANUP_OK
+```
+
+Regressão descartável (prova que expirados são apagados e contadores em curso são preservados):
+`scripts/ops/l6/test-gate-d05-cleanup.sh` → `D05_REGRESSAO_OK`.
