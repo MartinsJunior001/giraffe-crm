@@ -75,11 +75,13 @@ services:
     volumes:
       # clamd.conf com AlertExceedsMax yes + limites (fail-closed em "limite excedido").
       - ./docker/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
-      - clamav-data:/var/lib/clamav
+      # NÃO montar volume em /var/lib/clamav: a imagem `_base` traz a base EMBUTIDA ali; um volume VAZIO a
+      # encobriria e forçaria o freshclam a baixar ~300 MB no boot (lento/flaky, estourava o healthcheck no CI).
+      # Sem o mount, o clamd usa a base da imagem e sobe em segundos — determinístico, sem rede.
     ports:
       - '127.0.0.1:3310:3310'
     healthcheck:
-      # Espera o clamd responder (base embutida carregada). start_period cobre a carga inicial da base.
+      # Espera o clamd responder (base embutida já na imagem). start_period cobre a carga em memória.
       test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
       interval: 10s
       timeout: 5s
@@ -88,4 +90,3 @@ services:
 
 volumes:
   minio-data:
-  clamav-data:
