@@ -44,6 +44,7 @@ const MODELOS_AUDITADOS = new Set([
   'RecordHistory',
   'FileObject',
   'FileScan',
+  'CardRecordLink',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
