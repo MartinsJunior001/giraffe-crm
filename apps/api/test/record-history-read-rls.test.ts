@@ -39,10 +39,25 @@ beforeAll(async () => {
   await dbC.database.create({ data: { id: databaseId, orgId: ORG_C, name: 'Base hist RLS' } });
   await dbC.form.create({ data: { id: formId, orgId: ORG_C, context: 'DATABASE', databaseId } });
   await dbC.formVersion.create({
-    data: { id: formVersionId, orgId: ORG_C, formId, version: 1, snapshot: { fields: [] }, revision: 'r' },
+    data: {
+      id: formVersionId,
+      orgId: ORG_C,
+      formId,
+      version: 1,
+      snapshot: { fields: [] },
+      revision: 'r',
+    },
   });
   await dbC.record.create({
-    data: { id: recordId, orgId: ORG_C, databaseId, formId, formVersionId, idempotencyKey: randomUUID(), valores: {} },
+    data: {
+      id: recordId,
+      orgId: ORG_C,
+      databaseId,
+      formId,
+      formVersionId,
+      idempotencyKey: randomUUID(),
+      valores: {},
+    },
   });
   await dbC.recordHistory.createMany({
     data: [

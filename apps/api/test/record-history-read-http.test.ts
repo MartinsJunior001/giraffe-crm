@@ -61,7 +61,12 @@ let baseUrl: string;
 let migrator: PrismaClient;
 const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-async function req(method: string, path: string, conta?: string, body?: unknown): Promise<Response> {
+async function req(
+  method: string,
+  path: string,
+  conta?: string,
+  body?: unknown,
+): Promise<Response> {
   const headers: Record<string, string> = {};
   if (conta !== undefined) headers[HEADER_CONTA] = conta;
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -91,7 +96,13 @@ beforeAll(async () => {
     data: [
       { id: adminMemb, accountId: adminConta, orgId: ORG_C, role: 'ADMIN', state: 'ACTIVE' },
       { id: viewerMemb, accountId: viewerConta, orgId: ORG_C, role: 'MEMBER', state: 'ACTIVE' },
-      { id: semAcessoMemb, accountId: semAcessoConta, orgId: ORG_C, role: 'MEMBER', state: 'ACTIVE' },
+      {
+        id: semAcessoMemb,
+        accountId: semAcessoConta,
+        orgId: ORG_C,
+        role: 'MEMBER',
+        state: 'ACTIVE',
+      },
     ],
   });
   await dbC.database.create({ data: { id: dbId, orgId: ORG_C, name: 'Base de Histórico' } });
@@ -104,10 +115,16 @@ beforeAll(async () => {
   await app.listen(0);
   baseUrl = await app.getUrl();
 
-  await req('POST', `/databases/${dbId}/grants`, adminConta, { membershipId: viewerMemb, role: 'VIEWER' });
+  await req('POST', `/databases/${dbId}/grants`, adminConta, {
+    membershipId: viewerMemb,
+    role: 'VIEWER',
+  });
 
   // Formulário: Nome (texto); publica.
-  await req('POST', `/databases/${dbId}/form/fields`, adminConta, { label: 'Nome', type: 'TEXT_SHORT' });
+  await req('POST', `/databases/${dbId}/form/fields`, adminConta, {
+    label: 'Nome',
+    type: 'TEXT_SHORT',
+  });
   const form = (await (await req('GET', `/databases/${dbId}/form`, adminConta)).json()) as {
     fields: { id: string; label: string }[];
   };
@@ -123,11 +140,18 @@ beforeAll(async () => {
   expect(criado.status).toBe(201);
   recordId = ((await criado.json()) as { id: string }).id;
   expect(
-    (await req('PATCH', `/databases/${dbId}/records/${recordId}`, adminConta, { valores: { [nomeId]: 'Ana Maria' } }))
-      .status,
+    (
+      await req('PATCH', `/databases/${dbId}/records/${recordId}`, adminConta, {
+        valores: { [nomeId]: 'Ana Maria' },
+      })
+    ).status,
   ).toBe(200);
-  expect((await req('POST', `/databases/${dbId}/records/${recordId}/archive`, adminConta)).status).toBe(200);
-  expect((await req('POST', `/databases/${dbId}/records/${recordId}/restore`, adminConta)).status).toBe(200);
+  expect(
+    (await req('POST', `/databases/${dbId}/records/${recordId}/archive`, adminConta)).status,
+  ).toBe(200);
+  expect(
+    (await req('POST', `/databases/${dbId}/records/${recordId}/restore`, adminConta)).status,
+  ).toBe(200);
 }, 40000);
 
 afterAll(async () => {
@@ -188,7 +212,8 @@ describe('AC3/AC4/AC7: autorização e isolamento', () => {
     ).toBe(404);
     // Outro Database (inexistente) com o mesmo recordId → 404 (o Registro não pertence a ele).
     expect(
-      (await req('GET', `/databases/${randomUUID()}/records/${recordId}/history`, adminConta)).status,
+      (await req('GET', `/databases/${randomUUID()}/records/${recordId}/history`, adminConta))
+        .status,
     ).toBe(404);
   });
 });
