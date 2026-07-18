@@ -45,7 +45,7 @@ gate_arquitetura: >-
 **I want** anexar arquivos aos meus Cards e Registros — por Campo Arquivo do Formulário e como anexo geral do recurso —,
 **So that** os arquivos fiquem seguros, verificados e com o mesmo controle de acesso do recurso, sem acesso cruzado.
 
-**Status: ready-for-dev (planejamento antecipado — BLOQUEADO pela 3.7 não mergeada).** Oitava Story do **Épico 3**,
+**Status: ready-for-dev.** Pré-requisito 3.7 (capacidade compartilhada de arquivos) **mergeado e done** (PR #103/#105) — desbloqueada. Oitava Story do **Épico 3**,
 risco **ALTO** — é o **primeiro consumidor concreto** da capacidade compartilhada de arquivos (3.7), ligando `Card`
 (via `pipes/`) e `Registro` (via `databases/`) à base segura e **ativando o tipo Arquivo** nos três Formulários. A
 3.7 constrói a máquina (storage, quarentena, ClamAV fail-closed, dois SHA, antiabuso); a 3.8 **conecta** essa máquina
