@@ -296,14 +296,19 @@ jobs:
             done
             echo "::error::o serviço $svc não ficou healthy"; docker compose logs "$svc"; return 1
           }
-          # ClamAV usa a base EMBUTIDA da imagem (sem volume em /var/lib/clamav, freshclamd desligado) — sobe em
-          # segundos, sem download de rede. Margem folgada para a carga da base em memória + o healthcheck.
-          esperar_healthy minio 20 && esperar_healthy clamav 60
+          # MinIO precisa ficar healthy (é confiável). Para o ClamAV, o docker healthcheck (clamdcheck.sh via TCP
+          # PING) é ADVISORY: o entrypoint da imagem roda o freshclam no boot e faz chamadas de rede ao CDN do
+          # ClamAV, rate-limitado em runners de cloud — o clamd sobe, mas o healthcheck pode não passar a tempo.
+          # Quem valida o clamd DE VERDADE é o smoke (INSTREAM real, abaixo). Se o clamav não ficar healthy,
+          # avisamos e seguimos; o smoke é o gate autoritativo (falha honesta se o clamd não responder).
+          esperar_healthy minio 20 || exit 1
+          esperar_healthy clamav 100 || echo "::warning::clamav não ficou healthy (freshclam/CDN rate-limit); o smoke validará o clamd diretamente"
 
       - name: Criar bucket privado do MinIO (sem política pública — AD-27)
         run: docker compose run --rm minio-setup
 
-      # O gate real: se MinIO/ClamAV estiverem fora ou o caminho SigV4/INSTREAM regredir, este passo fica VERMELHO.
+      # O gate REAL do ClamAV/SigV4: o smoke exercita INSTREAM e SigV4 contra os serviços no ar. Se o clamd não
+      # responder ou o caminho regredir, ESTE passo fica vermelho (o healthcheck acima é só advisory).
       - name: Smoke real de arquivos (SigV4 + ClamAV INSTREAM)
         run: pnpm --filter @giraffe/api test:smoke
 
