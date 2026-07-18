@@ -6,6 +6,8 @@ import { DatabaseFormPublicationController } from './forms/database-form-publica
 import { DatabaseFormsController } from './forms/database-forms.controller';
 import { DatabaseGrantsController } from './grants/database-grants.controller';
 import { DatabaseGrantsService } from './grants/database-grants.service';
+import { RecordHistoryController } from './records/history/record-history.controller';
+import { RecordHistoryReadService } from './records/history/record-history-read.service';
 import { RecordLifecycleService } from './records/record-lifecycle.service';
 import { RecordsController } from './records/records.controller';
 import { RecordFilesController } from './records/files/record-files.controller';
@@ -24,6 +26,9 @@ import { RecordsService } from './records/records.service';
  * Story 3.4: ciclo de vida do Registro (`RecordsController`/`RecordsService`/`RecordLifecycleService`) —
  * materializa `Record`/`RecordHistory` **reutilizando `submission.ts` (2.7)** para validar contra o snapshot da
  * `FormVersion` publicada do Formulário de Database; autz por `exigirOperarDatabase` (acorda o MEMBER dormente).
+ * Story 3.5: visualização/tabela de Registros (`RecordsReadService`) — leitura pura. Story 3.6: Histórico do
+ * Registro (`RecordHistoryController`/`RecordHistoryReadService`) — read-side puro sobre `RecordHistory`
+ * (append-only), espelho do Histórico do Card (2.17); autz pelo acesso ATUAL ao Database dono (`exigirLerDatabase`).
  * Depende do contexto de Organização e do Prisma (providos por `ContextModule`/`DbModule` globais) e do guard
  * de autorização global (`AuthzModule`) — não os re-registra.
  */
@@ -35,6 +40,7 @@ import { RecordsService } from './records/records.service';
     DatabaseFormsController,
     DatabaseFormPublicationController,
     RecordsController,
+    RecordHistoryController,
     RecordFilesController,
   ],
   providers: [
@@ -43,6 +49,7 @@ import { RecordsService } from './records/records.service';
     RecordsService,
     RecordLifecycleService,
     RecordsReadService,
+    RecordHistoryReadService,
   ],
 })
 export class DatabasesModule {}

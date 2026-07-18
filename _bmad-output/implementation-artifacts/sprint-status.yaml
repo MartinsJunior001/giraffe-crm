@@ -108,7 +108,7 @@ development_status:
   3-3-formulario-de-database-schema-visual-do-registro: done
   3-4-ciclo-de-vida-do-registro-historico-write-side: done
   3-5-visualizacao-e-navegacao-de-registros: done
-  3-6-historico-do-registro-read-side: backlog
+  3-6-historico-do-registro-read-side: ready-for-dev
   3-7-capacidade-compartilhada-de-arquivos: done
   3-8-campo-arquivo-funcional-e-anexo-geral: done
   3-9-vinculo-card-registro-n-n: backlog
