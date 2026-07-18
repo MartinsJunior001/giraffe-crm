@@ -296,8 +296,9 @@ jobs:
             done
             echo "::error::o serviço $svc não ficou healthy"; docker compose logs "$svc"; return 1
           }
-          # ClamAV carrega a base de assinaturas no boot — start_period longo (até ~90s).
-          esperar_healthy minio 20 && esperar_healthy clamav 60
+          # ClamAV carrega a base EMBUTIDA no boot (freshclamd desligado no override — determinístico, sem rede).
+          # A carga da base + o healthcheck (clamdcheck.sh via TCP PING) pode levar alguns minutos no runner.
+          esperar_healthy minio 20 && esperar_healthy clamav 120
 
       - name: Criar bucket privado do MinIO (sem política pública — AD-27)
         run: docker compose run --rm minio-setup

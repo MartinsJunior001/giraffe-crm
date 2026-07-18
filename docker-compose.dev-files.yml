@@ -59,6 +59,13 @@ services:
     # (a base embutida cobre a assinatura de teste). O gate de frescor (`CLAMAV_DB_MAX_AGE_HOURS`) é afrouxado no
     # CI (a base embutida é "velha" por construção) e a lógica de frescor real é provada no teste de unidade.
     image: clamav/clamav:1.4_base
+    environment:
+      # Desliga o freshclamd: a imagem `_base` já traz a base EMBUTIDA, e o updater em background é lento/flaky e
+      # trava a coordenação freshclam↔clamd (o wrapper fica em "Socket for clamd not found" e o clamd não responde
+      # ao PING do healthcheck a tempo — o job de CI travava no `esperar_healthy`). Sem freshclam, o clamd sobe
+      # determinístico com a base embutida (o canário EICAR ainda detecta; o gate de frescor é afrouxado no CI).
+      CLAMAV_NO_FRESHCLAMD: 'true'
+      CLAMAV_NO_MILTERD: 'true'
     deploy:
       resources:
         limits:
