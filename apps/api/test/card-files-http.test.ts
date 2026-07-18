@@ -146,6 +146,16 @@ async function cardDoBanco(cardId: string): Promise<{ valores: unknown } | null>
   return db.card.findUnique({ where: { id: cardId }, select: { valores: true } });
 }
 
+async function tiposHistorico(cardId: string): Promise<string[]> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  const eventos = await db.cardHistory.findMany({
+    where: { cardId },
+    select: { type: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return eventos.map((e) => e.type);
+}
+
 beforeAll(async () => {
   if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
@@ -204,10 +214,12 @@ describe('anexo geral de Card (Opção 1) — Card.valores intocado', () => {
     expect((await cardDoBanco(cardId))?.valores).toEqual({ [campoId]: 'x' });
   });
 
-  it('lista, baixa e remove (lógico) o anexo', async () => {
+  it('lista, baixa e remove (lógico) o anexo; emite FILE_ATTACHED e FILE_REMOVED', async () => {
     const { cardId } = await pipeComCard('3.8 anexo ciclo');
     const up = await anexar(cardId, ANA, PNG);
     expect(up.status).toBe(201);
+    // F5: o anexo emitiu FILE_ATTACHED na trilha do Card (na mesma tx da promoção).
+    expect(await tiposHistorico(cardId)).toEqual(['CREATED', 'FILE_ATTACHED']);
 
     const lista = (await (await req('GET', `/cards/${cardId}/files`, ANA)).json()) as FileResp[];
     expect(lista.map((f) => f.id)).toContain(up.body.id);
@@ -226,6 +238,13 @@ describe('anexo geral de Card (Opção 1) — Card.valores intocado', () => {
     expect(rm.status).toBe(200);
     const lista2 = (await (await req('GET', `/cards/${cardId}/files`, ANA)).json()) as FileResp[];
     expect(lista2.map((f) => f.id)).not.toContain(up.body.id); // some da lista (REMOVIDO_LOGICO).
+    // F5: a remoção emitiu FILE_REMOVED (idempotente — remover de novo não duplica o evento).
+    expect(await tiposHistorico(cardId)).toEqual(['CREATED', 'FILE_ATTACHED', 'FILE_REMOVED']);
+    await fetch(`${baseUrl}/cards/${cardId}/files/${up.body.id}`, {
+      method: 'DELETE',
+      headers: { [HEADER_CONTA]: ANA },
+    });
+    expect(await tiposHistorico(cardId)).toEqual(['CREATED', 'FILE_ATTACHED', 'FILE_REMOVED']);
   });
 });
 

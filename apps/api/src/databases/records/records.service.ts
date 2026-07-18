@@ -11,6 +11,7 @@ import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
 import { getEnv } from '../../kernel/config/env';
 import {
+  camposArquivo,
   extrairArquivosReferenciados,
   SubmissaoInvalidaError,
   validarSubmissao,
@@ -146,7 +147,7 @@ export class RecordsService {
 
     const record = await db.record.findFirst({
       where: { id: recordId, databaseId },
-      select: { id: true, lifecycleState: true, formVersionId: true },
+      select: { id: true, lifecycleState: true, formVersionId: true, valores: true },
     });
     if (!record) throw new NotFoundException();
     if (record.lifecycleState === 'ARQUIVADO') {
@@ -163,6 +164,10 @@ export class RecordsService {
     // como REFERÊNCIA tipada (Story 3.8, Opção 1). O vínculo é conferido contra ESTE Registro.
     const valores = this.validar(versao.snapshot, dto.valores, { arquivo: 'referencia' });
     await this.exigirArquivosVinculados(db, versao.snapshot, valores, recordId);
+
+    // FILE_REPLACED (Story 3.8, F5): Campo Arquivo cuja referência mudou de um `fileId` para OUTRO (substituição).
+    // Anexar/desanexar-em-valor seguem cobertos pelo VALUES_UPDATED genérico; aqui só a troca A→B.
+    const substituidos = this.arquivosSubstituidos(versao.snapshot, record.valores, valores);
 
     let atualizado: RecordVisao | null;
     try {
@@ -185,6 +190,19 @@ export class RecordsService {
             actorId: contexto.accountId ?? null,
           },
         });
+
+        // Substituição de Campo Arquivo (A→B): evento próprio na MESMA transação, sem PII/chave (só o novo ref).
+        for (const troca of substituidos) {
+          await tx.recordHistory.create({
+            data: {
+              orgId: contexto.orgId,
+              recordId,
+              type: 'FILE_REPLACED',
+              summary: `Arquivo substituído (${troca})`,
+              actorId: contexto.accountId ?? null,
+            },
+          });
+        }
 
         return tx.record.findUniqueOrThrow({ where: { id: recordId }, select: SELECT_RECORD });
       });
@@ -264,6 +282,31 @@ export class RecordsService {
     for (const id of ids) {
       if (!validos.has(id)) throw new BadRequestException('referência de arquivo inválida');
     }
+  }
+
+  /**
+   * Detecta Campos `FILE` cuja referência foi SUBSTITUÍDA (troca A→B): valor antigo e novo ambos presentes e
+   * diferentes. Só o caso single (string) — para múltiplo (lista), a mudança fica coberta pelo `VALUES_UPDATED`
+   * genérico. Devolve os novos `fileId`s (para o `summary` do evento; sem PII/chave). Puro.
+   */
+  private arquivosSubstituidos(
+    snapshot: Prisma.JsonValue,
+    valoresAntigos: Prisma.JsonValue,
+    valoresNovos: Record<string, unknown>,
+  ): string[] {
+    const antigos =
+      valoresAntigos !== null && typeof valoresAntigos === 'object' && !Array.isArray(valoresAntigos)
+        ? (valoresAntigos as Record<string, unknown>)
+        : {};
+    const trocas: string[] = [];
+    for (const fieldId of camposArquivo(snapshot)) {
+      const antes = antigos[fieldId];
+      const agora = valoresNovos[fieldId];
+      if (typeof antes === 'string' && typeof agora === 'string' && antes !== '' && agora !== '' && antes !== agora) {
+        trocas.push(agora);
+      }
+    }
+    return trocas;
   }
 
   /**

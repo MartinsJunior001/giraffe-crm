@@ -10,8 +10,10 @@ import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
 import { DatabasesModule } from './databases/databases.module';
 import { FILE_AUTHZ_CONTRACT } from './files/file-authz.contract';
+import { FILE_EVENT_SINK } from './files/file-event-sink';
 import { FilesModule } from './files/files.module';
 import { FileAuthzDispatcher } from './file-authz/file-authz.dispatcher';
+import { FileEventDispatcher } from './file-authz/file-event.dispatcher';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PipesModule } from './pipes/pipes.module';
 
@@ -91,7 +93,10 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     DatabasesModule,
     // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
     // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
-    FilesModule.register({ provide: FILE_AUTHZ_CONTRACT, useClass: FileAuthzDispatcher }),
+    FilesModule.register(
+      { provide: FILE_AUTHZ_CONTRACT, useClass: FileAuthzDispatcher },
+      { provide: FILE_EVENT_SINK, useClass: FileEventDispatcher },
+    ),
   ],
 })
 export class AppModule {}

@@ -123,6 +123,16 @@ async function anexar(recordId: string, conta: string = adminConta, bytes = PNG)
   return (await res.json()) as FileResp;
 }
 
+async function tiposHistorico(recordId: string): Promise<string[]> {
+  const db = withTenantContext(migrator, { orgId: ORG_C }, semLog);
+  const eventos = await db.recordHistory.findMany({
+    where: { recordId },
+    select: { type: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return eventos.map((e) => e.type);
+}
+
 async function criarRegistro(nome: string): Promise<RecordResp> {
   const r = await req('POST', `/databases/${dbId}/records`, adminConta, {
     idempotencyKey: randomUUID(),
@@ -193,6 +203,8 @@ describe('Campo Arquivo no Registro (F2) — referência tipada com vínculo', (
     expect(f1.state).toBe('DISPONIVEL');
     expect(f1.resourceType).toBe('RECORD');
     expect(f1.resourceId).toBe(rec.id);
+    // F5: o anexo emitiu FILE_ATTACHED na trilha do Registro.
+    expect(await tiposHistorico(rec.id)).toEqual(['CREATED', 'FILE_ATTACHED']);
 
     // Campo Arquivo = referência tipada nos valores do Registro.
     const patch = await req('PATCH', `/databases/${dbId}/records/${rec.id}`, adminConta, {
@@ -200,14 +212,17 @@ describe('Campo Arquivo no Registro (F2) — referência tipada com vínculo', (
     });
     expect(patch.status).toBe(200);
     expect(((await patch.json()) as RecordResp).valores[fileFieldId]).toBe(f1.id);
+    // 1ª referência (não havia valor anterior) ⇒ VALUES_UPDATED, sem FILE_REPLACED.
+    expect(await tiposHistorico(rec.id)).not.toContain('FILE_REPLACED');
 
-    // Substituição: novo arquivo no mesmo Registro, nova referência.
+    // Substituição: novo arquivo no mesmo Registro, nova referência (A→B) ⇒ FILE_REPLACED.
     const f2 = await anexar(rec.id);
     const patch2 = await req('PATCH', `/databases/${dbId}/records/${rec.id}`, adminConta, {
       valores: { [textFieldId]: 'Alice', [fileFieldId]: f2.id },
     });
     expect(patch2.status).toBe(200);
     expect(((await patch2.json()) as RecordResp).valores[fileFieldId]).toBe(f2.id);
+    expect(await tiposHistorico(rec.id)).toContain('FILE_REPLACED');
   });
 
   it('criação NÃO aceita valor de Campo Arquivo (recurso inexistente) → 400', async () => {

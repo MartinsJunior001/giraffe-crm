@@ -18,6 +18,7 @@ import { StorageService } from '../kernel/storage/storage.service';
 import { chaveQuarentena, montarChave, pertenceAoTenant } from '../kernel/storage/storage-key';
 import { ClamavService } from '../kernel/scanner/clamav.service';
 import { FILE_AUTHZ_CONTRACT, type FileAuthzContract } from './file-authz.contract';
+import { FILE_EVENT_SINK, type FileEventSink } from './file-event-sink';
 import { estaDisponivel, planejarTransicao, type EstadoFile } from './file-states.core';
 import { MIMES_PERMITIDOS, validarUpload } from './file-validation.core';
 import { baseFresca, computarVeredito } from './file-verdict.core';
@@ -83,6 +84,7 @@ export class FilesService {
     private readonly scanner: ClamavService,
     private readonly semaphore: ScanSlotSemaphore,
     @Inject(FILE_AUTHZ_CONTRACT) private readonly authz: FileAuthzContract,
+    @Inject(FILE_EVENT_SINK) private readonly eventSink: FileEventSink,
   ) {}
 
   private db(): { contexto: ContextoOrganizacional; db: Db } {
@@ -213,9 +215,11 @@ export class FilesService {
         }
       }
 
-      // 5) Persiste o FATO (FileScan) + o estado do FileObject na MESMA transação atômica (AD-13).
+      // 5) Persiste o FATO (FileScan) + o estado do FileObject + o evento de anexo na MESMA transação (AD-13).
       await this.promover(contexto, {
         fileId: criado.id,
+        resourceType,
+        resourceId,
         tamanhoBytes: releitura.length,
         mimeDetectado: validacao.mime,
         sha256Ingest,
@@ -285,6 +289,8 @@ export class FilesService {
     contexto: ContextoOrganizacional,
     dados: {
       fileId: string;
+      resourceType: string;
+      resourceId: string;
       tamanhoBytes: number;
       mimeDetectado: string;
       sha256Ingest: string;
@@ -320,6 +326,18 @@ export class FilesService {
             veredito: dados.veredito,
           },
         });
+
+        // Evento de anexo na MESMA transação (AD-13): só o arquivo que ficou DISPONIVEL vira FILE_ATTACHED na
+        // trilha do recurso dono. Um veredito BLOCKED não anexa nada — não emite. O sink (no-op por padrão)
+        // roteia CARD→CardHistory / RECORD→RecordHistory; `resourceType` sem trilha ⇒ silêncio, sem falhar.
+        if (alvo === 'DISPONIVEL') {
+          await this.eventSink.registrar(tx, contexto, {
+            resourceType: dados.resourceType,
+            resourceId: dados.resourceId,
+            fileId: dados.fileId,
+            tipo: 'FILE_ATTACHED',
+          });
+        }
         promovido = true;
       });
     } catch (err) {
@@ -390,7 +408,7 @@ export class FilesService {
   /** Núcleo comum das transições com guarda otimista (remover). Autz de EDIÇÃO; idempotente sem falsear auditoria. */
   private async transicionar(fileId: string, acao: 'remover'): Promise<FileVisao> {
     this.exigirCapacidade();
-    const { db } = this.db();
+    const { contexto, db } = this.db();
     const file = await this.carregarParaEditar(db, fileId);
 
     const plano = planejarTransicao(acao, file.state as EstadoFile);
@@ -398,15 +416,38 @@ export class FilesService {
     if (plano.tipo === 'invalido') throw new ConflictException(plano.motivo);
 
     const origem = file.state as EstadoFile;
-    const r = await db.fileObject.updateMany({
-      where: { id: fileId, state: origem },
-      data: { state: plano.target },
-    });
-    if (r.count === 0) {
+    // UPDATE de estado + evento FILE_REMOVED na MESMA transação (AD-13), na tx raiz com contexto (como a
+    // promoção): a remoção lógica de um anexo vira um evento na trilha do recurso dono. Guarda otimista: só
+    // transiciona a partir do estado LIDO; `count === 0` é corrida (resolvida fora, sem evento nem auditoria).
+    let contagem = 0;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const p of definirContextoOrg(tx, contexto)) await p;
+        const r = await tx.fileObject.updateMany({
+          where: { id: fileId, state: origem },
+          data: { state: plano.target },
+        });
+        contagem = r.count;
+        if (contagem === 0) return; // corrida — nada mudou, sem evento; resolve-se após o rollback.
+        await this.eventSink.registrar(tx, contexto, {
+          resourceType: file.resourceType,
+          resourceId: file.resourceId,
+          fileId,
+          tipo: 'FILE_REMOVED',
+        });
+      });
+    } catch (err) {
+      if (isConflito(err))
+        throw new ConflictException('transição concorrente; repita a requisição');
+      throw err;
+    }
+
+    if (contagem === 0) {
       const atual = await this.projetar(db, fileId);
       if (atual.state === plano.target) return atual; // corrida idempotente.
       throw new ConflictException('estado mudou durante a transição; repita a requisição');
     }
+    this.auditar(contexto, 'update', 'FileObject');
     return this.projetar(db, fileId);
   }
 

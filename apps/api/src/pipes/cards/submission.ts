@@ -222,3 +222,12 @@ export function extrairArquivosReferenciados(
   }
   return [...ids];
 }
+
+/** `Field.id`s dos Campos `FILE` do snapshot (para detectar substituição de valor — FILE_REPLACED). Puro. */
+export function camposArquivo(snapshot: Prisma.JsonValue): string[] {
+  const ids: string[] = [];
+  for (const campo of indexarCampos(snapshot).values()) {
+    if (campo.type === 'FILE') ids.push(campo.id);
+  }
+  return ids;
+}
