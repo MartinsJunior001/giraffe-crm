@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { type DynamicModule, Module, type Provider } from '@nestjs/common';
 import { StorageService } from '../kernel/storage/storage.service';
 import { ClamavService } from '../kernel/scanner/clamav.service';
 import { FILE_AUTHZ_CONTRACT, type FileAuthzContract } from './file-authz.contract';
@@ -24,14 +24,27 @@ const DENY_ALL_FILE_AUTHZ: FileAuthzContract = {
  * global (não re-registrado). Contexto de Organização e Prisma vêm de `ContextModule`/`DbModule` globais; o guard
  * de autz global de `AuthzModule`. A porta `FILE_AUTHZ_CONTRACT` tem binding deny-all por padrão (fail-closed).
  */
+const PROVIDERS_BASE: Provider[] = [FilesService, StorageService, ClamavService];
+
 @Module({
   controllers: [FilesController],
-  providers: [
-    FilesService,
-    StorageService,
-    ClamavService,
-    { provide: FILE_AUTHZ_CONTRACT, useValue: DENY_ALL_FILE_AUTHZ },
-  ],
+  providers: [...PROVIDERS_BASE, { provide: FILE_AUTHZ_CONTRACT, useValue: DENY_ALL_FILE_AUTHZ }],
   exports: [FilesService, FILE_AUTHZ_CONTRACT],
 })
-export class FilesModule {}
+export class FilesModule {
+  /**
+   * Liga a implementação REAL da porta de autorização (Story 3.8) SEM que `files/` conheça Card/Registro: o
+   * consumidor (`AppModule`) injeta o provider do `FILE_AUTHZ_CONTRACT` (um dispatcher que roteia por
+   * `resourceType` para as guardas puras `pipe-authz`/`database-authz`). Preserva o desacoplamento da 3.7
+   * (`files/` não importa domínio) e o default deny-all quando importado sem binding (`imports: [FilesModule]`).
+   */
+  static register(authz: Provider): DynamicModule {
+    // `authz` por último: sobrescreve o token para o `FilesService` dentro do injetor deste módulo.
+    return {
+      module: FilesModule,
+      controllers: [FilesController],
+      providers: [...PROVIDERS_BASE, authz],
+      exports: [FilesService, FILE_AUTHZ_CONTRACT],
+    };
+  }
+}
