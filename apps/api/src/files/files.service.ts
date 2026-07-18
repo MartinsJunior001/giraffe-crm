@@ -141,6 +141,9 @@ export class FilesService {
    * chamador — a submissão pública já validou o `publicId`, aplicou o rate limit e **reservou o `cardId`** a que
    * estes arquivos se vinculam. O contexto de tenant é **explícito** (do `publicId` resolvido), nunca do cliente.
    * Reusa integralmente a verificação composta fail-closed e a compensação do caminho autenticado.
+   *
+   * @internal **Só** para `PublicSubmissionService.submeterComArquivos`, que já autorizou pelo canal. NÃO chame de
+   * um fluxo autenticado (use `enviar`, que aplica a autz de recurso) — este método pula a guarda de propósito.
    */
   async enviarPublico(
     contexto: TenantContext,

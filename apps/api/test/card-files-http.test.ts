@@ -269,3 +269,29 @@ describe('autorização herdada do Card (F1) — não-enumeração', () => {
     expect((await anexar('ffffffff-ffff-ffff-ffff-ffffffffffff', ANA, PNG)).status).toBe(404);
   });
 });
+
+describe('read-only sob arquivamento (RF-7/AC7)', () => {
+  it('Card ARQUIVADO → anexar e remover anexo dão 409 (ler/baixar/listar seguem OK)', async () => {
+    const { cardId } = await pipeComCard('3.8 anexo arquivado');
+    const up = await anexar(cardId, ANA, PNG);
+    expect(up.status).toBe(201);
+
+    // Arquiva o Card (2.11).
+    expect((await req('POST', `/cards/${cardId}/archive`, ANA)).status).toBe(200);
+
+    // Mutação de anexo bloqueada: anexar novo → 409; remover existente → 409.
+    expect((await anexar(cardId, ANA, PNG)).status).toBe(409);
+    const rm = await fetch(`${baseUrl}/cards/${cardId}/files/${up.body.id}`, {
+      method: 'DELETE',
+      headers: { [HEADER_CONTA]: ANA },
+    });
+    expect(rm.status).toBe(409);
+
+    // Leitura permanece permitida sob arquivamento.
+    expect((await req('GET', `/cards/${cardId}/files`, ANA)).status).toBe(200);
+    const dl = await fetch(`${baseUrl}/cards/${cardId}/files/${up.body.id}/download`, {
+      headers: { [HEADER_CONTA]: ANA },
+    });
+    expect(dl.status).toBe(200);
+  });
+});

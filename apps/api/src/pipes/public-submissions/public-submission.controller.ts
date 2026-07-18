@@ -6,6 +6,7 @@ import {
   Post,
   Req,
   UploadedFiles,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
@@ -15,9 +16,16 @@ import { SemContextoOrganizacional } from '../../kernel/context/sem-contexto.dec
 import { MULTER_MAX_BYTES } from '../../files/file-http.util';
 import { parseSubmissaoPublica, validarPublicId } from './public-submissions.dto';
 import { type ArquivoPublico, PublicSubmissionService } from './public-submission.service';
+import { PublicUploadSizeGuard } from './public-upload-size.guard';
 
-/** Barreira DURA do multipart público (DoS); os limites finos do canal (por Campo/submissão/total) são do serviço. */
-const MULTER_LIMITS_PUBLICO = { fileSize: MULTER_MAX_BYTES, files: 100, fields: 10, parts: 120 };
+/**
+ * Barreira DURA do multipart público (defesa em profundidade anti-DoS, Story 3.8/F6). O `AnyFilesInterceptor`
+ * usa memory storage e bufferia ANTES do serviço; o `PublicUploadSizeGuard` já rejeita cedo por `Content-Length`
+ * (o caso comum), e esta barreira limita o consumo de requisições chunked (sem `Content-Length`): `files ×
+ * fileSize` é o teto de memória. `files` é conservador (o limite fino por submissão é do serviço); `fileSize`
+ * casa com o teto absoluto por arquivo (`MULTER_MAX_BYTES`, ≥ `FILE_MAX_BYTES` configurável).
+ */
+const MULTER_LIMITS_PUBLICO = { fileSize: MULTER_MAX_BYTES, files: 20, fields: 5, parts: 30 };
 
 /**
  * Endpoint PÚBLICO da submissão do Formulário inicial (Story 2.8). **Sem autenticação e sem contexto**:
@@ -34,6 +42,7 @@ export class PublicSubmissionController {
 
   @SemContextoOrganizacional()
   @Post('forms/:publicId/submit')
+  @UseGuards(PublicUploadSizeGuard) // rejeita por Content-Length ANTES de o multer bufferizar (guard precede interceptor)
   @UseInterceptors(AnyFilesInterceptor({ limits: MULTER_LIMITS_PUBLICO }))
   async submeter(
     @Param('publicId') publicId: string,

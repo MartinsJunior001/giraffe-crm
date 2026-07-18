@@ -161,6 +161,7 @@ beforeAll(async () => {
   process.env.STORAGE_ACCESS_KEY = 'test';
   process.env.STORAGE_SECRET_KEY = 'test';
   process.env.PUBLIC_FILE_MAX_PER_SUBMISSION = '3';
+  process.env.PUBLIC_FILE_MAX_TOTAL_BYTES = '1000'; // teto do canal baixo p/ provar a barreira de Content-Length
   if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente.');
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
   await migrator.$connect();
@@ -290,6 +291,18 @@ describe('canal público com arquivo inline (F6)', () => {
 
   it('parte de arquivo em Campo não-Arquivo → 400 (allowlist de Campo)', async () => {
     expect((await submitMultipart({}, [{ campoId: textFieldId, bytes: PNG }])).status).toBe(400);
+    expect(await orfaosDisponiveis()).toBe(baseOrfaos);
+  });
+
+  it('corpo acima do teto do canal → 413 ANTES de bufferizar (guard de Content-Length)', async () => {
+    const antes = (await cardsDoPipe()).length;
+    // ~2 MiB > PUBLIC_FILE_MAX_TOTAL_BYTES(1000) + folga(1 MiB): o guard rejeita pelo Content-Length.
+    const grande = Buffer.alloc(2 * 1024 * 1024, 0x41);
+    const res = await submitMultipart({ [textFieldId]: 'Big' }, [
+      { campoId: fileFieldId, bytes: grande },
+    ]);
+    expect(res.status).toBe(413);
+    expect((await cardsDoPipe()).length).toBe(antes); // nada criado
     expect(await orfaosDisponiveis()).toBe(baseOrfaos);
   });
 

@@ -344,4 +344,46 @@ describe('Campo Arquivo no Registro (F2) — referência tipada com vínculo', (
     });
     expect(res.status).toBe(404);
   });
+
+  it('AC2/RF-3: FormVersion publicada com FILE + capacidade DESLIGADA → 409 CAPACIDADE_ARQUIVO_INDISPONIVEL', async () => {
+    process.env.FILE_UPLOAD_ENABLED = 'false';
+    try {
+      const r = await req('POST', `/databases/${dbId}/records`, adminConta, {
+        idempotencyKey: randomUUID(),
+        valores: { [textFieldId]: 'x' },
+      });
+      expect(r.status).toBe(409);
+      expect(JSON.stringify(await r.json())).toContain('CAPACIDADE_ARQUIVO_INDISPONIVEL');
+    } finally {
+      process.env.FILE_UPLOAD_ENABLED = 'true';
+    }
+  });
+
+  it('read-only sob arquivamento (RF-7/AC7): Registro ARQUIVADO → anexar/remover dão 409; ler OK', async () => {
+    const rec = await criarRegistro('Arq');
+    const f = await anexar(rec.id);
+    expect(
+      (await req('POST', `/databases/${dbId}/records/${rec.id}/archive`, adminConta)).status,
+    ).toBe(200);
+
+    // Anexar novo → 409; remover existente → 409.
+    const form = new FormData();
+    form.append('file', new Blob([PNG]), 'y.png');
+    const up = await fetch(`${baseUrl}/databases/${dbId}/records/${rec.id}/files`, {
+      method: 'POST',
+      headers: { [HEADER_CONTA]: adminConta },
+      body: form,
+    });
+    expect(up.status).toBe(409);
+    const rm = await fetch(`${baseUrl}/databases/${dbId}/records/${rec.id}/files/${f.id}`, {
+      method: 'DELETE',
+      headers: { [HEADER_CONTA]: adminConta },
+    });
+    expect(rm.status).toBe(409);
+
+    // Leitura segue OK sob arquivamento.
+    expect(
+      (await req('GET', `/databases/${dbId}/records/${rec.id}/files`, adminConta)).status,
+    ).toBe(200);
+  });
 });

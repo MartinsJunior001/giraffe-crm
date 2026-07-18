@@ -50,3 +50,9 @@ populado dado que `Card.valores` é append-only (sem GRANT de UPDATE) e o arquiv
 - **DEB-3.8-INLINE-UNIFORME:** unificar o upload inline de arquivos na submissão para os canais autenticados
   (2.7 Card create, 3.4 Record create), hoje resolvidos por "anexo geral / editar valores". Evolução futura;
   fora do escopo desta Story por decisão do dono.
+- **DEB-3.8-SOFT-DELETE-ANTERIOR (a confirmar com o dono):** na substituição do valor de um Campo Arquivo do
+  Registro (`editarValores`, A→B), o `FileObject` anterior (A) **permanece `DISPONIVEL`** como anexo geral do
+  Registro — sob a Opção 1, arquivo é anexo e a troca é só da *referência* no valor (evento `FILE_REPLACED`
+  emitido, sem perda silenciosa). A spec (RF-5/INV-3.8-06) sugere soft-delete do anterior após o novo virar
+  DISPONIVEL; isso é uma decisão de produto (manter A como anexo vs. removê-lo logicamente). Mantido o
+  comportamento "A segue anexo" por coerência com a Opção 1; revisitar com o dono se o desejado for o soft-delete.

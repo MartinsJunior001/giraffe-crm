@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
@@ -61,7 +61,10 @@ export class FileAuthzDispatcher implements FileAuthzContract {
     try {
       if (resourceType === RESOURCE_CARD) {
         if (poder === 'ler') await exigirLerCard(db, contexto, resourceId);
-        else await exigirOperarCard(db, contexto, resourceId);
+        else {
+          await exigirOperarCard(db, contexto, resourceId);
+          await this.exigirCardMutavel(db, resourceId); // read-only sob arquivamento (RF-7/AC7)
+        }
         return true;
       }
       if (resourceType === RESOURCE_RECORD) {
@@ -69,17 +72,54 @@ export class FileAuthzDispatcher implements FileAuthzContract {
         // o dono sob RLS; Registro inexistente/de outra Org ⇒ nega (404 não-enumerante).
         const record = await db.record.findUnique({
           where: { id: resourceId },
-          select: { databaseId: true },
+          select: { databaseId: true, lifecycleState: true },
         });
         if (!record) return false;
         if (poder === 'ler') await exigirLerDatabase(db, contexto, record.databaseId);
-        else await exigirOperarDatabase(db, contexto, record.databaseId);
+        else {
+          await exigirOperarDatabase(db, contexto, record.databaseId);
+          await this.exigirRecordMutavel(db, record.databaseId, record.lifecycleState); // RF-7/AC7
+        }
         return true;
       }
       return false; // resourceType desconhecido: deny-by-default.
-    } catch {
-      // Negativa das guardas (404/403) ou qualquer falha ⇒ nega (fail-closed). Nunca vaza o motivo.
+    } catch (err) {
+      // Recurso arquivado ⇒ 409 explícito (read-only sob arquivamento), propaga. Negativa das guardas (404/403)
+      // ou qualquer outra falha ⇒ nega (fail-closed, nunca vaza o motivo).
+      if (err instanceof ConflictException) throw err;
       return false;
+    }
+  }
+
+  /**
+   * Anexar/remover arquivo é MUTAÇÃO — bloqueada sob arquivamento (RF-7/AC7). O Card ARQUIVADO (ou sob Pipe
+   * arquivado) é somente-leitura: 409, não silêncio. Ler/baixar/listar (poder=ler) NÃO passa por aqui.
+   */
+  private async exigirCardMutavel(db: Db, cardId: string): Promise<void> {
+    const card = await db.card.findUnique({
+      where: { id: cardId },
+      select: { lifecycleState: true, pipe: { select: { state: true } } },
+    });
+    if (card?.lifecycleState === 'ARQUIVADO' || card?.pipe?.state === 'ARCHIVED') {
+      throw new ConflictException({ motivo: 'CARD_ARQUIVADO' });
+    }
+  }
+
+  /** Registro ARQUIVADO (ou sob Database arquivado) é somente-leitura para anexo/remoção (RF-7/AC7): 409. */
+  private async exigirRecordMutavel(
+    db: Db,
+    databaseId: string,
+    lifecycleState: string,
+  ): Promise<void> {
+    if (lifecycleState === 'ARQUIVADO') {
+      throw new ConflictException({ motivo: 'RECORD_ARQUIVADO' });
+    }
+    const database = await db.database.findUnique({
+      where: { id: databaseId },
+      select: { state: true },
+    });
+    if (database?.state === 'ARCHIVED') {
+      throw new ConflictException({ motivo: 'DATABASE_ARQUIVADO' });
     }
   }
 }
