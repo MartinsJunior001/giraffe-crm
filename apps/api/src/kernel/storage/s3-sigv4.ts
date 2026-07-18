@@ -96,12 +96,9 @@ export function assinar(e: EntradaAssinatura): Record<string, string> {
   ].join('\n');
 
   const scope = `${e.dateStamp}/${e.region}/${e.service}/aws4_request`;
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    e.amzDate,
-    scope,
-    sha256hex(canonicalRequest),
-  ].join('\n');
+  const stringToSign = ['AWS4-HMAC-SHA256', e.amzDate, scope, sha256hex(canonicalRequest)].join(
+    '\n',
+  );
 
   const chave = derivarChaveAssinatura(e.secretAccessKey, e.dateStamp, e.region, e.service);
   const signature = createHmac('sha256', chave).update(stringToSign, 'utf8').digest('hex');

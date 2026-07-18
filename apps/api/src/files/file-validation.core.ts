@@ -65,7 +65,11 @@ export function detectarTipo(bytes: Uint8Array): string | null {
 
 export type ResultadoValidacao =
   | { ok: true; mime: string }
-  | { ok: false; codigo: 'TIPO_NAO_PERMITIDO' | 'TAMANHO_EXCEDIDO' | 'VAZIO' | 'CONTAGEM_EXCEDIDA'; motivo: string };
+  | {
+      ok: false;
+      codigo: 'TIPO_NAO_PERMITIDO' | 'TAMANHO_EXCEDIDO' | 'VAZIO' | 'CONTAGEM_EXCEDIDA';
+      motivo: string;
+    };
 
 export interface EntradaValidacao {
   bytes: Uint8Array;

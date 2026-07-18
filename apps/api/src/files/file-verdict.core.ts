@@ -28,9 +28,7 @@ export interface EntradaVeredito {
   ifMatchOk: boolean;
 }
 
-export type Veredito =
-  | { veredito: 'CLEAN' }
-  | { veredito: 'BLOCKED'; motivo: string };
+export type Veredito = { veredito: 'CLEAN' } | { veredito: 'BLOCKED'; motivo: string };
 
 /**
  * Computa o veredito composto. A primeira prova que falhar bloqueia (ordem determinística, mensagem específica).
@@ -45,7 +43,10 @@ export function computarVeredito(e: EntradaVeredito): Veredito {
   }
   // Anti-troca-de-bytes: o que foi verificado tem de ser o que será promovido.
   if (e.sha256Ingest !== e.sha256Releitura) {
-    return { veredito: 'BLOCKED', motivo: 'checksum de ingestão difere do de releitura (conteúdo alterado)' };
+    return {
+      veredito: 'BLOCKED',
+      motivo: 'checksum de ingestão difere do de releitura (conteúdo alterado)',
+    };
   }
   if (!e.baseClamAVFresca) {
     // Scanner com base velha é scanner cego — recusar o veredito, não confiar num "LIMPO" sem valor.
@@ -56,7 +57,10 @@ export function computarVeredito(e: EntradaVeredito): Veredito {
   }
   if (e.clamav === 'NAO_ESCANEAVEL') {
     // isInfected === null / erro / timeout / limite excedido ⇒ suspeito, nunca OK.
-    return { veredito: 'BLOCKED', motivo: 'antivírus não conseguiu escanear (erro/timeout/limite)' };
+    return {
+      veredito: 'BLOCKED',
+      motivo: 'antivírus não conseguiu escanear (erro/timeout/limite)',
+    };
   }
   if (!e.ifMatchOk) {
     return { veredito: 'BLOCKED', motivo: 'promoção if-match falhou (objeto divergente)' };

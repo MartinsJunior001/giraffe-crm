@@ -106,7 +106,9 @@ describe('GRANT column-scoped em FileObject', () => {
     ).rejects.toThrow(/permission denied/i);
 
     // Sem DELETE (sem exclusão física — LGPD; expurgo é do binário, não da linha).
-    await expect(dbC.fileObject.deleteMany({ where: { id } })).rejects.toThrow(/permission denied/i);
+    await expect(dbC.fileObject.deleteMany({ where: { id } })).rejects.toThrow(
+      /permission denied/i,
+    );
   });
 });
 

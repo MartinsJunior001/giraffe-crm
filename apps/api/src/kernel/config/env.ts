@@ -177,7 +177,9 @@ const EnvSchema = z
     // configurado — a coerência é imposta no `.superRefine` fail-closed abaixo.
 
     /** Endpoint do storage S3-compatível (ex.: MinIO `http://127.0.0.1:9000`). Vazio = ausente. */
-    STORAGE_ENDPOINT: vazioComoAusente(z.string().url('STORAGE_ENDPOINT deve ser uma URL válida').optional()),
+    STORAGE_ENDPOINT: vazioComoAusente(
+      z.string().url('STORAGE_ENDPOINT deve ser uma URL válida').optional(),
+    ),
     /** Região do storage (S3 exige uma; irrelevante no MinIO, mas o SDK a requer). */
     STORAGE_REGION: z.string().default('us-east-1'),
     /** Bucket privado dos arquivos. */

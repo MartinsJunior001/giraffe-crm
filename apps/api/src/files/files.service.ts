@@ -56,7 +56,8 @@ const ESTADOS_QUE_CONTAM: EstadoFile[] = ['QUARENTENA', 'DISPONIVEL'];
 
 /** Conflito de concorrência na promoção (→ 409, nunca 500): P2002/P2028, como em Card (2.7)/Registro (3.4). */
 function isConflito(err: unknown): boolean {
-  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  const code =
+    typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
   return code === 'P2002' || code === 'P2028';
 }
 
@@ -190,7 +191,8 @@ export class FilesService {
         sha256Releitura,
         clamav,
         // Base fresca EXIGE data válida dentro do teto E o canário detectando (scanner não cego AGORA).
-        baseClamAVFresca: canarioOk && baseFresca(dataBase, env.CLAMAV_DB_MAX_AGE_HOURS, new Date()),
+        baseClamAVFresca:
+          canarioOk && baseFresca(dataBase, env.CLAMAV_DB_MAX_AGE_HOURS, new Date()),
         ifMatchOk: true, // a prova do if-match é a etapa seguinte; aqui não bloqueia.
       });
 
@@ -214,7 +216,10 @@ export class FilesService {
       // 6) Limpa o objeto de quarentena (o binário válido já foi copiado para a chave final; o inválido não fica).
       await this.storage.remove(qKey);
 
-      const visao = await db.fileObject.findUnique({ where: { id: criado.id }, select: SELECT_FILE });
+      const visao = await db.fileObject.findUnique({
+        where: { id: criado.id },
+        select: SELECT_FILE,
+      });
       if (!visao) throw new NotFoundException();
       return visao as FileVisao;
     } finally {
@@ -261,7 +266,8 @@ export class FilesService {
         });
       });
     } catch (err) {
-      if (isConflito(err)) throw new ConflictException('verificação concorrente; repita a requisição');
+      if (isConflito(err))
+        throw new ConflictException('verificação concorrente; repita a requisição');
       throw err;
     }
     this.auditar(contexto, 'create', 'FileScan');
@@ -278,7 +284,8 @@ export class FilesService {
     });
     // 404 não-enumerante: não existe, ou não é da Org (RLS), ou sem acesso ao recurso.
     if (!file) throw new NotFoundException();
-    if (!(await this.authz.podeLer(file.resourceType, file.resourceId))) throw new NotFoundException();
+    if (!(await this.authz.podeLer(file.resourceType, file.resourceId)))
+      throw new NotFoundException();
     if (!estaDisponivel(file.state as EstadoFile)) throw new NotFoundException(); // indisponível = 404 honesto.
     // Defesa em profundidade: a chave pertence a ESTA Org por SEGMENTO (a RLS já garante; belt-and-suspenders US3).
     if (!pertenceAoTenant(file.bucketKey, contexto.orgId)) throw new NotFoundException();
@@ -347,13 +354,20 @@ export class FilesService {
   private async carregarParaEditar(
     db: Db,
     fileId: string,
-  ): Promise<{ id: string; state: string; bucketKey: string; resourceType: string; resourceId: string }> {
+  ): Promise<{
+    id: string;
+    state: string;
+    bucketKey: string;
+    resourceType: string;
+    resourceId: string;
+  }> {
     const file = await db.fileObject.findUnique({
       where: { id: fileId },
       select: { id: true, state: true, bucketKey: true, resourceType: true, resourceId: true },
     });
     if (!file) throw new NotFoundException();
-    if (!(await this.authz.podeEditar(file.resourceType, file.resourceId))) throw new NotFoundException();
+    if (!(await this.authz.podeEditar(file.resourceType, file.resourceId)))
+      throw new NotFoundException();
     return file;
   }
 

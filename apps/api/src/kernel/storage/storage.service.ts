@@ -82,10 +82,13 @@ export class StorageService {
   }
 
   /** Drena e descarta o corpo da resposta (evita vazar socket em respostas que não consumimos). */
-  private async descartar(res: RespostaS3): Promise<void> {
-    for await (const _ of res.body) {
-      /* descarta */
-    }
+  private descartar(res: RespostaS3): Promise<void> {
+    return new Promise<void>((resolve) => {
+      res.body.resume(); // modo fluindo — descarta os dados.
+      res.body.once('end', () => resolve());
+      res.body.once('close', () => resolve());
+      res.body.once('error', () => resolve());
+    });
   }
 
   /** Põe o binário (na chave de quarentena). Devolve o ETag do objeto — âncora do if-match da promoção. */
@@ -140,11 +143,17 @@ export class StorageService {
       const status = res.status;
       await this.descartar(res);
       if (status === 200) return true;
-      this.logger.warn({ event: 'storage.copyIfMatch.falha', status }, 'if-match da promoção falhou');
+      this.logger.warn(
+        { event: 'storage.copyIfMatch.falha', status },
+        'if-match da promoção falhou',
+      );
       return false;
     } catch (err) {
       this.logger.warn(
-        { event: 'storage.copyIfMatch.erro', motivo: (err as { message?: string })?.message ?? 'erro' },
+        {
+          event: 'storage.copyIfMatch.erro',
+          motivo: (err as { message?: string })?.message ?? 'erro',
+        },
         'erro no CopyObject if-match',
       );
       return false;

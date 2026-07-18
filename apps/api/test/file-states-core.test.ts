@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  estaDisponivel,
-  planejarTransicao,
-  type EstadoFile,
-} from '../src/files/file-states.core';
+import { estaDisponivel, planejarTransicao, type EstadoFile } from '../src/files/file-states.core';
 
 /**
  * Matriz PURA da máquina de estados do FileObject (Story 3.7) — sem banco. Prova o grafo canônico: transições
@@ -14,7 +10,10 @@ const TODOS: EstadoFile[] = ['QUARENTENA', 'DISPONIVEL', 'REMOVIDO_LOGICO', 'EXP
 
 describe('promover (QUARENTENA → DISPONIVEL)', () => {
   it('promove a partir de QUARENTENA', () => {
-    expect(planejarTransicao('promover', 'QUARENTENA')).toEqual({ tipo: 'transicao', target: 'DISPONIVEL' });
+    expect(planejarTransicao('promover', 'QUARENTENA')).toEqual({
+      tipo: 'transicao',
+      target: 'DISPONIVEL',
+    });
   });
   it('idempotente se já DISPONIVEL', () => {
     expect(planejarTransicao('promover', 'DISPONIVEL')).toEqual({ tipo: 'idempotente' });
@@ -28,7 +27,10 @@ describe('promover (QUARENTENA → DISPONIVEL)', () => {
 
 describe('bloquear (QUARENTENA → BLOCKED)', () => {
   it('bloqueia a partir de QUARENTENA', () => {
-    expect(planejarTransicao('bloquear', 'QUARENTENA')).toEqual({ tipo: 'transicao', target: 'BLOCKED' });
+    expect(planejarTransicao('bloquear', 'QUARENTENA')).toEqual({
+      tipo: 'transicao',
+      target: 'BLOCKED',
+    });
   });
   it('idempotente se já BLOCKED', () => {
     expect(planejarTransicao('bloquear', 'BLOCKED')).toEqual({ tipo: 'idempotente' });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assinar, encodarCaminho, formatarData, sha256hex, SHA256_VAZIO } from '../src/kernel/storage/s3-sigv4';
+import {
+  assinar,
+  encodarCaminho,
+  formatarData,
+  sha256hex,
+  SHA256_VAZIO,
+} from '../src/kernel/storage/s3-sigv4';
 
 /**
  * Assinatura SigV4 (Story 3.7) contra o **vetor oficial documentado da AWS** (S3 "Authorization header" — PUT
@@ -33,7 +39,9 @@ describe('assinar (vetor oficial AWS — PUT test$file.text)', () => {
     expect(headers.authorization).toContain(
       'Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd',
     );
-    expect(headers.authorization).toContain('Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request');
+    expect(headers.authorization).toContain(
+      'Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request',
+    );
   });
 });
 
