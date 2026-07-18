@@ -63,6 +63,11 @@ export class StorageService {
 
     const requester = cfg.url.protocol === 'https:' ? httpsRequest : httpRequest;
 
+    // `Content-Length` explícito e NÃO assinado (fora dos SignedHeaders da SigV4). Sem ele, o `node:http` envia
+    // o corpo com `Transfer-Encoding: chunked`, que o S3/MinIO recusa (411 Length Required) — o PUT de objeto
+    // exige o tamanho declarado. Enviamos sempre (0 quando não há corpo), sem tocar a assinatura.
+    const headersSaida = { ...assinados, 'content-length': String(opts.body?.length ?? 0) };
+
     return new Promise<RespostaS3>((resolve, reject) => {
       const req = requester(
         {
@@ -71,7 +76,7 @@ export class StorageService {
           port: cfg.url.port,
           method,
           path: encodarCaminho(canonicalPath),
-          headers: assinados,
+          headers: headersSaida,
         },
         (res) => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: res }),
       );

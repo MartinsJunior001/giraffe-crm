@@ -8,6 +8,7 @@ import { DatabaseGrantsController } from './grants/database-grants.controller';
 import { DatabaseGrantsService } from './grants/database-grants.service';
 import { RecordLifecycleService } from './records/record-lifecycle.service';
 import { RecordsController } from './records/records.controller';
+import { RecordFilesController } from './records/files/record-files.controller';
 import { RecordsReadService } from './records/records-read.service';
 import { RecordsService } from './records/records.service';
 
@@ -34,6 +35,7 @@ import { RecordsService } from './records/records.service';
     DatabaseFormsController,
     DatabaseFormPublicationController,
     RecordsController,
+    RecordFilesController,
   ],
   providers: [
     DatabasesService,

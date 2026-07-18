@@ -12,6 +12,7 @@ import { KanbanReadService } from './cards/kanban-read.service';
 import { CardAccessController } from './cards/access/card-access.controller';
 import { CardAccessService } from './cards/access/card-access.service';
 import { CardLifecycleController } from './cards/lifecycle/card-lifecycle.controller';
+import { CardFilesController } from './cards/files/card-files.controller';
 import { CardLifecycleService } from './cards/lifecycle/card-lifecycle.service';
 import { CardMovementController } from './cards/movement/card-movement.controller';
 import { CardMovementService } from './cards/movement/card-movement.service';
@@ -31,6 +32,7 @@ import { TriageController } from './public-submissions/triage.controller';
 import { TriageService } from './public-submissions/triage.service';
 import { PublicConfigController } from './public-submissions/public-config.controller';
 import { PublicConfigService } from './public-submissions/public-config.service';
+import { PublicUploadSizeGuard } from './public-submissions/public-upload-size.guard';
 import { PipeGrantsController } from './grants/pipe-grants.controller';
 import { PipeGrantsService } from './grants/pipe-grants.service';
 import { PhasesController } from './phases/phases.controller';
@@ -96,6 +98,7 @@ import { PipesService } from './pipes.service';
     PublicSubmissionController,
     TriageController,
     PublicConfigController,
+    CardFilesController,
   ],
   providers: [
     PipesService,
@@ -119,6 +122,7 @@ import { PipesService } from './pipes.service';
     PublicRateLimit,
     TriageService,
     PublicConfigService,
+    PublicUploadSizeGuard,
   ],
   // Story 3.3: o Form Builder é canônico (INV-FORM-01). Estes serviços são exportados para que o módulo
   // Databases (que importa PipesModule) monte/evolua/publique o Formulário de Database SEM um segundo builder.

@@ -215,6 +215,121 @@ jobs:
         run: docker compose down -v
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # Smoke REAL da capacidade de arquivos (Story 3.7/3.8, T001b): MinIO + ClamAV NO AR, em ambiente ISOLADO.
+  # Job à parte de propósito — o gate `FILE_UPLOAD_ENABLED=true` e os serviços de storage/antivírus vivem SÓ
+  # aqui (GITHUB_ENV é por job), então não contaminam o job `testes` (db-only, que verifica o default
+  # fail-closed) nem o deploy (o Coolify usa só `-f docker-compose.yml`, jamais o override — AD-32). Exercita o
+  # caminho de verdade: `StorageService` (SigV4 sobre node:http) e `ClamavService` (INSTREAM sobre node:net).
+  # ─────────────────────────────────────────────────────────────────────────────
+  arquivos-smoke:
+    name: Arquivos (smoke real MinIO + ClamAV, isolado)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Instalar Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: pnpm
+
+      # Credenciais efêmeras — do banco (o compose exige por interpolação do arquivo inteiro) e do MinIO
+      # (compartilhadas entre o serviço e a API — senão a API não autentica). Geradas por execução, mascaradas.
+      - name: Gerar credenciais efêmeras e configurar o ambiente de arquivos
+        run: |
+          gerar() { openssl rand -hex 16; }
+          POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          BETTER_AUTH_SECRET="$(openssl rand -hex 32)"; LOGIN_HMAC_SECRET="$(openssl rand -hex 32)"
+          MINIO_USER="giraffe_files_ci"; MINIO_PASS="$(openssl rand -hex 16)"
+          for s in "$POSTGRES_PASSWORD" "$MIGRATOR_PASSWORD" "$APP_PASSWORD" \
+                   "$BETTER_AUTH_SECRET" "$LOGIN_HMAC_SECRET" "$MINIO_PASS"; do echo "::add-mask::$s"; done
+          {
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "MIGRATOR_PASSWORD=$MIGRATOR_PASSWORD"
+            echo "APP_PASSWORD=$APP_PASSWORD"
+            echo "DATABASE_URL=postgresql://giraffe_app:$APP_PASSWORD@localhost:5434/giraffe?schema=public"
+            echo "MIGRATION_DATABASE_URL=postgresql://giraffe_migrator:$MIGRATOR_PASSWORD@localhost:5434/giraffe?schema=public"
+            echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
+            echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
+            echo "BETTER_AUTH_URL=http://localhost:3001"
+            echo "CORS_ALLOWED_ORIGINS=http://localhost:3000"
+            echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
+            # COMPOSE_FILE faz TODO `docker compose` deste job carregar o override dev-files (MinIO+ClamAV).
+            # É por job (GITHUB_ENV), então não afeta os demais jobs nem o deploy.
+            echo "COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.dev-files.yml"
+            echo "MINIO_ROOT_USER=$MINIO_USER"
+            echo "MINIO_ROOT_PASSWORD=$MINIO_PASS"
+            # Gate LIGADO (só neste job): a capacidade de arquivos exige storage configurado (coerência fail-closed).
+            echo "FILE_UPLOAD_ENABLED=true"
+            echo "STORAGE_ENDPOINT=http://localhost:9000"
+            echo "STORAGE_ACCESS_KEY=$MINIO_USER"
+            echo "STORAGE_SECRET_KEY=$MINIO_PASS"
+            echo "STORAGE_BUCKET=giraffe-files"
+            echo "STORAGE_FORCE_PATH_STYLE=true"
+            echo "CLAMAV_HOST=localhost"
+            echo "CLAMAV_PORT=3310"
+            # A base EMBUTIDA da imagem `_base` é velha por construção; afrouxa o gate de frescor (o canário EICAR
+            # ainda prova que o scanner não está cego). A lógica de frescor real é provada em unidade.
+            echo "CLAMAV_DB_MAX_AGE_HOURS=876000"
+          } >> "$GITHUB_ENV"
+
+      - name: Instalar dependências (imutável)
+        run: pnpm install --frozen-lockfile
+
+      # Sobe SÓ MinIO + ClamAV (o smoke não toca o banco — exercita StorageService/ClamavService direto).
+      - name: Subir MinIO + ClamAV (override isolado)
+        run: |
+          docker compose up -d minio clamav
+          esperar_healthy() {
+            local svc="$1" tentativas="$2"
+            for _ in $(seq 1 "$tentativas"); do
+              if [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q "$svc")")" = "healthy" ]; then
+                echo "$svc healthy"; return 0
+              fi
+              sleep 3
+            done
+            echo "::error::o serviço $svc não ficou healthy"; docker compose logs "$svc"; return 1
+          }
+          # MinIO precisa ficar healthy (é confiável). Para o ClamAV, o docker healthcheck (clamdcheck.sh via TCP
+          # PING) é ADVISORY: o entrypoint da imagem roda o freshclam no boot e faz chamadas de rede ao CDN do
+          # ClamAV, rate-limitado em runners de cloud — o clamd sobe, mas o healthcheck pode não passar a tempo.
+          # Quem valida o clamd DE VERDADE é o smoke (INSTREAM real, abaixo). Se o clamav não ficar healthy,
+          # avisamos e seguimos; o smoke é o gate autoritativo (falha honesta se o clamd não responder).
+          esperar_healthy minio 20 || exit 1
+          esperar_healthy clamav 100 || echo "::warning::clamav não ficou healthy (freshclam/CDN rate-limit); o smoke validará o clamd diretamente"
+
+      - name: Criar bucket privado do MinIO (sem política pública — AD-27)
+        run: docker compose run --rm minio-setup
+
+      # O gate REAL do ClamAV/SigV4: o smoke exercita INSTREAM e SigV4 contra os serviços no ar. Se o clamd não
+      # responder ou o caminho regredir, ESTE passo fica vermelho (o healthcheck acima é só advisory).
+      - name: Smoke real de arquivos (SigV4 + ClamAV INSTREAM)
+        run: pnpm --filter @giraffe/api test:smoke
+
+      - name: Logs dos serviços (só em falha)
+        if: failure()
+        run: docker compose logs minio clamav > arquivos.log 2>&1 || true
+
+      - name: Anexar evidência da falha
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arquivos-smoke-logs
+          path: arquivos.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # A imagem sobe de verdade? Build verde não prova boot — foi a lição da Story 1.1.
   # ─────────────────────────────────────────────────────────────────────────────
   containers:

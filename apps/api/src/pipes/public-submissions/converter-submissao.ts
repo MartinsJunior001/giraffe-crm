@@ -50,6 +50,9 @@ export async function converterSubmissaoEmCard(
     pipeId: string;
     phaseId: string;
     valores: Record<string, unknown>;
+    /** `cardId` RESERVADO antes da conversão (Story 3.8/F6): os `FileObject` da submissão pública já foram
+     *  vinculados a este id, então o Card precisa nascer com ele. Ausente ⇒ o banco gera (caminho 2.8 sem arquivos). */
+    cardId?: string;
   },
   logger: PinoLogger,
 ): Promise<{ cardId: string }> {
@@ -60,6 +63,7 @@ export async function converterSubmissaoEmCard(
 
       const card = await tx.card.create({
         data: {
+          ...(dados.cardId ? { id: dados.cardId } : {}),
           orgId: contexto.orgId,
           pipeId: dados.pipeId,
           phaseId: dados.phaseId,
