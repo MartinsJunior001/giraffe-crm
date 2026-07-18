@@ -15,25 +15,41 @@
 #
 set -euo pipefail
 
-PROJ="${PROJ:-enl623bli2h2ub5kmu4ygktd}"
+# GUARDA DE ESCOPO: só o project autorizado; seleção por label EXATA (nunca pelo texto "giraffe").
+PROJ_AUTORIZADO="enl623bli2h2ub5kmu4ygktd"
+PROJ="${PROJ:-${PROJ_AUTORIZADO}}"
 ENVF="${ENVF:-/data/coolify/applications/${PROJ}/.env}"
 MIGRATION="${MIGRATION:-20260712000000_init_tenancy_rls}"
 DIR="${DIR:?defina DIR= (saída de prepara-fase-b.sh)}"
 REDE="${REDE:?defina REDE= (saída de prepara-fase-b.sh)}"
 
 stop() { echo "STOP: $*" >&2; exit 1; }
-container_de() {
-  docker ps -aq \
-    --filter "label=com.docker.compose.project=${PROJ}" \
-    --filter "label=com.docker.compose.service=$1"
-}
-
-CT_DB=$(container_de db)
-[ -n "${CT_DB}" ] || stop "container 'db' do projeto ${PROJ} não encontrado"
+[ "${PROJ}" = "${PROJ_AUTORIZADO}" ] || stop "PROJ='${PROJ}' != UUID autorizado — fora do escopo."
 test -f "${ENVF}" || stop "env-file ausente: ${ENVF}"
 test -f "${DIR}/docker-compose.migrate.yml" || stop "docker-compose.migrate.yml ausente em DIR=${DIR}"
 
+# Exatamente UM container db do projeto (label EXATA).
+mapfile -t DBS < <(docker ps -aq \
+  --filter "label=com.docker.compose.project=${PROJ}" \
+  --filter "label=com.docker.compose.service=db" 2>/dev/null)
+[ "${#DBS[@]}" -eq 1 ] || stop "esperado EXATAMENTE 1 container db do projeto ${PROJ}; encontrados ${#DBS[@]}."
+CT_DB="${DBS[0]}"
+
 q() { docker exec "${CT_DB}" psql -U postgres -d giraffe -tAc "$1" | tr -d '[:space:]'; }
+
+# ── GATE DE IDENTIDADE DE CLUSTER (antes de QUALQUER ação) ────────────────────────────────────────
+# O resolve-rolled-back roda pelo one-shot (db:5432 na REDE); a confirmação é no db real por label. Se
+# não forem o MESMO cluster, o resolve marcaria noutro banco e o db real ficaria FAILED — o exato falso
+# recovery do ciclo anterior. Provamos a identidade (system_identifier) ANTES e abortamos se divergir.
+MIGPW=$(sed -n 's/^MIGRATOR_PASSWORD=//p' "${ENVF}" | head -1)
+[ -n "${MIGPW}" ] || stop "MIGRATOR_PASSWORD ausente no .env."
+ID_REAL=$(q "select system_identifier from pg_control_system()")
+ID_ONESHOT=$(export PGPASSWORD="${MIGPW}"; docker run --rm --network "${REDE}" -e PGPASSWORD postgres:16-alpine \
+  psql -h db -p 5432 -U giraffe_migrator -d giraffe -tAc "select system_identifier from pg_control_system()" 2>/dev/null | tr -d '[:space:]')
+[ -n "${ID_REAL}" ] || stop "não obtive system_identifier do db real por label."
+[ -n "${ID_ONESHOT}" ] || stop "não obtive system_identifier do db alcançado por db:5432 na REDE."
+[ "${ID_REAL}" = "${ID_ONESHOT}" ] || stop "DIVERGÊNCIA DE CLUSTER: one-shot db:5432 (id=${ID_ONESHOT}) ≠ db real por label (id=${ID_REAL}). NÃO recuperar — o resolve agiria noutro banco (falso recovery)."
+echo "gate de cluster: one-shot e db real por label são o MESMO cluster (system_id=${ID_REAL})."
 
 # Pré-condição: a causa da P3018 tem de estar remediada.
 [ "$(q "select count(*) from pg_roles where rolname='giraffe_app'")" = "1" ] \
