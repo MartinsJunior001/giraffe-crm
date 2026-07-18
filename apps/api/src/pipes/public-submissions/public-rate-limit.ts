@@ -8,6 +8,16 @@ const POLITICA: PoliticaRateLimit = {
 };
 
 /**
+ * Teto POR ORGANIZAÇÃO das submissões públicas COM ARQUIVO (Story 3.8/F6). Compõe com o limite por IP+publicId:
+ * upload+scan é caro, então há um orçamento por tenant, cobrado ANTES do trabalho caro. Chave por `orgId` (não
+ * falsificável — o `orgId` vem do `publicId` resolvido no servidor, nunca do cliente).
+ */
+const POLITICA_ARQUIVOS: PoliticaRateLimit = {
+  janelaMs: 10 * 60 * 1000,
+  teto: 30, // submissões-com-arquivo por Organização na janela
+};
+
+/**
  * Rate limit da submissão pública por **IP confiável + `publicId`** (Story 2.8, baseline antiabuso).
  *
  * É a **política de domínio** sobre o primitivo técnico `RateLimiter` (kernel/antiabuso): define a chave
@@ -30,6 +40,17 @@ export class PublicRateLimit {
     if (excedido) {
       throw new HttpException(
         'muitas submissões; tente novamente mais tarde',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /** Registra uma submissão-com-arquivo POR ORGANIZAÇÃO (Story 3.8/F6); 429 se o teto na janela foi excedido. */
+  async registrarArquivos(orgId: string): Promise<void> {
+    const { excedido } = await this.rateLimiter.contar(`pub-files:${orgId}`, POLITICA_ARQUIVOS);
+    if (excedido) {
+      throw new HttpException(
+        'muitas submissões com arquivo; tente novamente mais tarde',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

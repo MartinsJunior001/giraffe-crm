@@ -11,7 +11,11 @@ import { Readable } from 'node:stream';
 import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
-import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import {
+  definirContextoOrg,
+  type TenantContext,
+  withTenantContext,
+} from '../kernel/db/tenant-context';
 import { getEnv } from '../kernel/config/env';
 import { ScanSlotSemaphore } from '../kernel/antiabuso/scan-slot';
 import { StorageService } from '../kernel/storage/storage.service';
@@ -99,7 +103,7 @@ export class FilesService {
     }
   }
 
-  private auditar(contexto: ContextoOrganizacional, action: string, resource: string): void {
+  private auditar(contexto: TenantContext, action: string, resource: string): void {
     this.logger.info(
       {
         event: 'audit',
@@ -128,6 +132,47 @@ export class FilesService {
       throw new NotFoundException(); // 404 não-enumerante (sem acesso ⇒ nem confirma existência).
     }
     const { contexto, db } = this.db();
+    return this.enviarNoContexto(contexto, db, resourceType, resourceId, arquivo);
+  }
+
+  /**
+   * Upload no canal **PÚBLICO** (não autenticado, Story 3.8/F6). A autorização aqui **não** passa pelo
+   * `FileAuthzContract` (que exige um principal no `RequestContext`, ausente no público): quem autoriza é o
+   * chamador — a submissão pública já validou o `publicId`, aplicou o rate limit e **reservou o `cardId`** a que
+   * estes arquivos se vinculam. O contexto de tenant é **explícito** (do `publicId` resolvido), nunca do cliente.
+   * Reusa integralmente a verificação composta fail-closed e a compensação do caminho autenticado.
+   */
+  async enviarPublico(
+    contexto: TenantContext,
+    resourceType: string,
+    resourceId: string,
+    arquivo: { buffer: Buffer; nomeOriginal: string },
+  ): Promise<FileVisao> {
+    this.exigirCapacidade();
+    const db = withTenantContext(this.prisma, contexto, this.logger);
+    // Sem evento no upload: no fluxo público o `resourceId` é um `cardId` RESERVADO cujo Card ainda NÃO existe —
+    // um `CardHistory` agora violaria a FK. A criação do anexo é registrada pelo evento `CREATED` do Card.
+    return this.enviarNoContexto(contexto, db, resourceType, resourceId, arquivo, {
+      emitirEvento: false,
+    });
+  }
+
+  /**
+   * Núcleo do upload — contagem por recurso, validação (tamanho/magic-bytes), slot do semáforo, aceite em
+   * quarentena, verificação composta fail-closed, promoção atômica (com evento) e **compensação**. Compartilhado
+   * pelo caminho autenticado (`enviar`, com autz de recurso) e pelo público (`enviarPublico`, autz pelo canal). O
+   * `contexto`/`db` são recebidos prontos — a fronteira de autorização é decidida por quem chama. `emitirEvento`
+   * controla o `FILE_ATTACHED` na promoção (desligado no público, onde o Card ainda não existe).
+   */
+  private async enviarNoContexto(
+    contexto: TenantContext,
+    db: Db,
+    resourceType: string,
+    resourceId: string,
+    arquivo: { buffer: Buffer; nomeOriginal: string },
+    opts: { emitirEvento?: boolean } = {},
+  ): Promise<FileVisao> {
+    const emitirEvento = opts.emitirEvento !== false;
     const env = getEnv();
 
     // Teto por recurso: conta os que ocupam vaga (QUARENTENA/DISPONIVEL).
@@ -225,6 +270,7 @@ export class FilesService {
         sha256Ingest,
         sha256Releitura,
         veredito,
+        emitirEvento,
       });
       criadoId = undefined; // promovido/bloqueado com sucesso — não há mais o que compensar.
 
@@ -247,6 +293,35 @@ export class FilesService {
     }
   }
 
+  /**
+   * Compensação do canal PÚBLICO (Story 3.8/F6): quando a orquestração falha DEPOIS de promover arquivos mas
+   * antes de o Card nascer, os `FileObject` ficam vinculados a um `cardId` que não existirá — órfãos. Marca cada
+   * um DISPONIVEL/QUARENTENA → REMOVIDO_LOGICO (some do estado disponível — "sem órfão DISPONIVEL") e remove o
+   * binário. **Best-effort e nunca lança**: a falha original é o que importa; a compensação só evita o órfão. Sem
+   * authz (o canal público autorizou por `publicId`/rate-limit e é dono do `cardId` reservado).
+   */
+  async compensarPublico(contexto: TenantContext, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+    try {
+      const db = withTenantContext(this.prisma, contexto, this.logger);
+      const arquivos = await db.fileObject.findMany({
+        where: { id: { in: fileIds }, state: { in: ['DISPONIVEL', 'QUARENTENA'] } },
+        select: { id: true, bucketKey: true },
+      });
+      for (const a of arquivos) {
+        await db.fileObject
+          .updateMany({
+            where: { id: a.id, state: { in: ['DISPONIVEL', 'QUARENTENA'] } },
+            data: { state: 'REMOVIDO_LOGICO' },
+          })
+          .catch(() => {});
+        await this.removerSilencioso(a.bucketKey);
+      }
+    } catch {
+      /* best-effort: se a compensação falhar, o órfão fica REMOVIDO_LOGICO/… mas nunca DISPONIVEL utilizável */
+    }
+  }
+
   /** Remove um objeto do storage best-effort — nunca lança (usado em limpeza/compensação). */
   private async removerSilencioso(key: string): Promise<void> {
     try {
@@ -262,7 +337,7 @@ export class FilesService {
    * exceção original é o que importa; a compensação só evita o estado preso.
    */
   private async compensarFalha(
-    contexto: ContextoOrganizacional,
+    contexto: TenantContext,
     criadoId: string | undefined,
     qKey: string,
     bucketKey: string,
@@ -286,7 +361,7 @@ export class FilesService {
    * (com contexto — `definirContextoOrg`), como a publicação (2.6)/submissão (2.7). CLEAN→DISPONIVEL; senão BLOCKED.
    */
   private async promover(
-    contexto: ContextoOrganizacional,
+    contexto: TenantContext,
     dados: {
       fileId: string;
       resourceType: string;
@@ -296,6 +371,7 @@ export class FilesService {
       sha256Ingest: string;
       sha256Releitura: string;
       veredito: 'CLEAN' | 'BLOCKED';
+      emitirEvento: boolean;
     },
   ): Promise<void> {
     const alvo: EstadoFile = dados.veredito === 'CLEAN' ? 'DISPONIVEL' : 'BLOCKED';
@@ -330,7 +406,7 @@ export class FilesService {
         // Evento de anexo na MESMA transação (AD-13): só o arquivo que ficou DISPONIVEL vira FILE_ATTACHED na
         // trilha do recurso dono. Um veredito BLOCKED não anexa nada — não emite. O sink (no-op por padrão)
         // roteia CARD→CardHistory / RECORD→RecordHistory; `resourceType` sem trilha ⇒ silêncio, sem falhar.
-        if (alvo === 'DISPONIVEL') {
+        if (alvo === 'DISPONIVEL' && dados.emitirEvento) {
           await this.eventSink.registrar(tx, contexto, {
             resourceType: dados.resourceType,
             resourceId: dados.resourceId,

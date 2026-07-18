@@ -217,6 +217,22 @@ const EnvSchema = z
     FILE_MAX_BYTES: z.coerce.number().int().positive().max(52_428_800).default(10_485_760),
     /** Contagem máxima de arquivos por recurso (Q1 = 10). Validado por faixa, fail-closed. */
     FILE_MAX_PER_RESOURCE: z.coerce.number().int().positive().max(1000).default(10),
+
+    // ── Story 3.8 — limites do CANAL PÚBLICO (Q4/T013) ─────────────────────────────────────────
+    // O canal público (não autenticado) é o ponto mais atacado: além do limite por arquivo (FILE_MAX_BYTES),
+    // impõe tetos próprios por Campo, por submissão (contagem) e por submissão (bytes totais). Faixa validada,
+    // fail-closed — um valor ausente/ruim cai no default conservador, nunca em "ilimitado".
+    /** Máx. de arquivos por Campo Arquivo numa submissão pública. */
+    PUBLIC_FILE_MAX_PER_FIELD: z.coerce.number().int().positive().max(100).default(5),
+    /** Máx. de arquivos somados em TODA a submissão pública. */
+    PUBLIC_FILE_MAX_PER_SUBMISSION: z.coerce.number().int().positive().max(100).default(10),
+    /** Máx. de BYTES somados em toda a submissão pública (teto de DoS). Default 25 MiB. */
+    PUBLIC_FILE_MAX_TOTAL_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(104_857_600)
+      .default(26_214_400),
     /** Teto de verificações concorrentes por Organização (semáforo `ScanSlot`). Fail-closed no teto (429). */
     SCAN_MAX_CONCURRENT_PER_ORG: z.coerce.number().int().positive().max(100).default(3),
     /** TTL do slot de verificação (segundos) — auto-liberação de slot órfão. */

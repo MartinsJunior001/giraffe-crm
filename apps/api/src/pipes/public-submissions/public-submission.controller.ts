@@ -1,9 +1,23 @@
-import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Param,
+  Post,
+  Req,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import type { IncomingMessage } from 'node:http';
 import { proxiesConfiaveisDoAmbiente, resolverIpCliente } from '../../kernel/auth/client-ip';
 import { SemContextoOrganizacional } from '../../kernel/context/sem-contexto.decorator';
+import { MULTER_MAX_BYTES } from '../../files/file-http.util';
 import { parseSubmissaoPublica, validarPublicId } from './public-submissions.dto';
-import { PublicSubmissionService } from './public-submission.service';
+import { type ArquivoPublico, PublicSubmissionService } from './public-submission.service';
+
+/** Barreira DURA do multipart público (DoS); os limites finos do canal (por Campo/submissão/total) são do serviço. */
+const MULTER_LIMITS_PUBLICO = { fileSize: MULTER_MAX_BYTES, files: 100, fields: 10, parts: 120 };
 
 /**
  * Endpoint PÚBLICO da submissão do Formulário inicial (Story 2.8). **Sem autenticação e sem contexto**:
@@ -20,15 +34,48 @@ export class PublicSubmissionController {
 
   @SemContextoOrganizacional()
   @Post('forms/:publicId/submit')
+  @UseInterceptors(AnyFilesInterceptor({ limits: MULTER_LIMITS_PUBLICO }))
   async submeter(
     @Param('publicId') publicId: string,
-    @Body() body: unknown,
+    @Body() body: Record<string, unknown>,
+    @UploadedFiles() arquivos: { fieldname: string; buffer: Buffer; originalname: string }[],
     @Req() req: IncomingMessage,
   ): Promise<{ ok: true }> {
     const id = validarPublicId(publicId);
-    const dto = parseSubmissaoPublica(body);
     const ip = this.ipCliente(req);
-    return this.submissao.submeter(id, ip, dto);
+
+    // Sem partes de arquivo ⇒ caminho JSON da 2.8 (inalterado). Com arquivos ⇒ orquestração inline da 3.8 (F6).
+    if (!arquivos || arquivos.length === 0) {
+      return this.submissao.submeter(id, ip, parseSubmissaoPublica(body));
+    }
+
+    // Multipart: `valores` chega como string JSON num campo de texto; `idempotencyKey` como texto.
+    const dto = parseSubmissaoPublica(this.envelopeMultipart(body));
+    const arquivosPublicos: ArquivoPublico[] = arquivos.map((a) => ({
+      campoId: a.fieldname,
+      buffer: a.buffer,
+      nomeOriginal: a.originalname,
+    }));
+    return this.submissao.submeterComArquivos(id, ip, { ...dto, arquivos: arquivosPublicos });
+  }
+
+  /** Normaliza o envelope multipart em `{ valores, idempotencyKey }`: `valores` vem como string JSON. */
+  private envelopeMultipart(body: Record<string, unknown>): {
+    valores: unknown;
+    idempotencyKey?: unknown;
+  } {
+    let valores: unknown = {};
+    const bruto = body?.valores;
+    if (typeof bruto === 'string' && bruto.trim() !== '') {
+      try {
+        valores = JSON.parse(bruto);
+      } catch {
+        throw new BadRequestException('valores inválido');
+      }
+    } else if (bruto !== undefined) {
+      valores = bruto;
+    }
+    return { valores, idempotencyKey: body?.idempotencyKey };
   }
 
   /** IP confiável do cliente: socket + cadeia XFF só quando o peer é um proxy confiável (nunca falsificável). */
