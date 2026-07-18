@@ -323,6 +323,7 @@ model Organization {
   recordHistories   RecordHistory[]
   fileObjects       FileObject[]
   fileScans         FileScan[]
+  cardRecordLinks   CardRecordLink[]
 
   @@map("Organization")
 }
@@ -718,6 +719,7 @@ model Card {
   phaseEntries     CardPhaseEntry[]
   phaseValues      CardPhaseValues[]
   movementEvents   MovementEvent[]
+  recordLinks      CardRecordLink[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -743,12 +745,16 @@ model CardHistory {
   summary   String
   /// Ator que originou o evento (quando disponível).
   actorId   String?  @db.Uuid
+  /// Correlaciona eventos de uma MESMA operação entre trilhas (Story 3.9): `LINKED`/`UNLINKED` do Card e do
+  /// Registro compartilham este valor. Nullable (eventos anteriores não têm). Não projetado pela leitura (2.17).
+  correlationId String? @db.Uuid
   createdAt DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([orgId, cardId, createdAt])
+  @@index([orgId, correlationId])
   @@map("CardHistory")
 }
 
@@ -1114,6 +1120,7 @@ model Record {
   form         Form            @relation(fields: [formId], references: [id], onDelete: Cascade)
   formVersion  FormVersion     @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
   history      RecordHistory[]
+  cardLinks    CardRecordLink[]
 
   // Um retry da mesma operação lógica não cria um 2º Registro no mesmo Database.
   @@unique([orgId, databaseId, idempotencyKey])
@@ -1140,12 +1147,16 @@ model RecordHistory {
   summary   String
   /// Ator/iniciador que originou o evento (quando disponível).
   actorId   String?  @db.Uuid
+  /// Correlaciona eventos de uma MESMA operação entre trilhas (Story 3.9): `LINKED`/`UNLINKED` do Registro e do
+  /// Card compartilham este valor. Nullable (eventos anteriores não têm). Não projetado pela leitura (3.6).
+  correlationId String? @db.Uuid
   createdAt DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   record       Record       @relation(fields: [recordId], references: [id], onDelete: Cascade)
 
   @@index([orgId, recordId, createdAt])
+  @@index([orgId, correlationId])
   @@map("RecordHistory")
 }
 
@@ -1263,6 +1274,49 @@ enum FileState {
   REMOVIDO_LOGICO
   EXPURGADO
   BLOCKED
+}
+
+/// Estado do vínculo Card↔Registro (Story 3.9). `ACTIVE` = vínculo vigente; `REMOVED` = desvinculado (soft —
+/// sem exclusão física, preserva a trilha). Desvincular é `state = REMOVED`, não DELETE.
+enum CardRecordLinkState {
+  ACTIVE
+  REMOVED
+}
+
+/// CardRecordLink — vínculo explícito **N–N** entre Card e Registro (Story 3.9). Entidade DISTINTA
+/// (`Card ≠ Registro`): um Card pode ter vários Registros e vice-versa. Org-scoped, isolamento pelo BANCO
+/// (RLS ENABLE+FORCE + WITH CHECK no INSERT e UPDATE). Runtime recebe `SELECT/INSERT/UPDATE` — **sem DELETE**
+/// (desvincular é `state=REMOVED`). O par único é imposto pelo banco via índice único **parcial**
+/// `(orgId, cardId, recordId) WHERE state='ACTIVE'` (raw SQL na migration — Prisma 6.19.3 não expressa parcial):
+/// a 2ª criação ativa do mesmo par colide no INSERT (P2002→idempotente/409), sem leitura-antes-de-escrever.
+/// **O vínculo NUNCA concede acesso** — cada recurso mantém sua autorização canônica (Card por pipe-authz;
+/// Registro por database-authz); criar/remover exige operar OS DOIS. `correlationId` correlaciona os eventos
+/// `LINKED`/`UNLINKED` gravados no `CardHistory` e no `RecordHistory` na MESMA transação (AD-13). Em
+/// `MODELOS_AUDITADOS`.
+model CardRecordLink {
+  id            String              @id @default(uuid()) @db.Uuid
+  orgId         String              @db.Uuid
+  cardId        String              @db.Uuid
+  recordId      String              @db.Uuid
+  state         CardRecordLinkState @default(ACTIVE)
+  /// Da operação que criou o vínculo — mesmo valor dos dois eventos `LINKED` (Card e Registro).
+  correlationId String              @db.Uuid
+  /// Ator que criou o vínculo (quando disponível).
+  createdBy     String?             @db.Uuid
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  /// Instante da remoção lógica (null enquanto ACTIVE).
+  removedAt     DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  record       Record       @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, cardId])
+  @@index([orgId, recordId])
+  // Nota: a unicidade "um vínculo ATIVO por (orgId, cardId, recordId)" é índice PARCIAL na migration
+  // (WHERE state='ACTIVE') — não expressável aqui no Prisma 6.19.3.
+  @@map("CardRecordLink")
 }
 
 /// Veredito da verificação (Story 3.7). Binário e fail-closed: qualquer coisa que não seja comprovadamente limpa
