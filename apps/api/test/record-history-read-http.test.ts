@@ -31,6 +31,8 @@ const viewerConta = randomUUID();
 const viewerMemb = randomUUID();
 const semAcessoConta = randomUUID();
 const semAcessoMemb = randomUUID();
+const perdaConta = randomUUID(); // recebe acesso, lê o histórico, PERDE o acesso e é bloqueado depois
+const perdaMemb = randomUUID();
 const dbId = randomUUID();
 
 let nomeId = '';
@@ -89,6 +91,7 @@ beforeAll(async () => {
       { id: adminConta, email: `rh-admin-${adminConta}@x.test`, name: 'Admin' },
       { id: viewerConta, email: `rh-viewer-${viewerConta}@x.test`, name: 'Viewer' },
       { id: semAcessoConta, email: `rh-noacc-${semAcessoConta}@x.test`, name: 'Sem acesso' },
+      { id: perdaConta, email: `rh-perda-${perdaConta}@x.test`, name: 'Perde acesso' },
     ],
   });
   const dbC = withTenantContext(migrator, { orgId: ORG_C }, semLog);
@@ -103,6 +106,7 @@ beforeAll(async () => {
         role: 'MEMBER',
         state: 'ACTIVE',
       },
+      { id: perdaMemb, accountId: perdaConta, orgId: ORG_C, role: 'MEMBER', state: 'ACTIVE' },
     ],
   });
   await dbC.database.create({ data: { id: dbId, orgId: ORG_C, name: 'Base de Histórico' } });
@@ -159,10 +163,12 @@ afterAll(async () => {
     const dbC = withTenantContext(migrator, { orgId: ORG_C }, semLog);
     await dbC.database.deleteMany({ where: { id: dbId } }).catch(() => {});
     await dbC.membership
-      .deleteMany({ where: { id: { in: [adminMemb, viewerMemb, semAcessoMemb] } } })
+      .deleteMany({ where: { id: { in: [adminMemb, viewerMemb, semAcessoMemb, perdaMemb] } } })
       .catch(() => {});
     await migrator.account
-      .deleteMany({ where: { id: { in: [adminConta, viewerConta, semAcessoConta] } } })
+      .deleteMany({
+        where: { id: { in: [adminConta, viewerConta, semAcessoConta, perdaConta] } },
+      })
       .catch(() => {});
   }
   await app?.close();
@@ -237,5 +243,78 @@ describe('AC6: paginação determinística por cursor', () => {
     // cursor/limite inválidos → 400.
     expect((await req('GET', `${rota()}?cursor=nao-uuid`, adminConta)).status).toBe(400);
     expect((await req('GET', `${rota()}?limite=0`, adminConta)).status).toBe(400);
+  });
+});
+
+describe('AC4 (obrigatório): perda de acesso bloqueia consultas POSTERIORES', () => {
+  it('concede → lê (200) → revoga o grant → lê de novo (404): autz recalculada, histórico não persiste', async () => {
+    // 1. Concede acesso de leitura (VIEWER) ao usuário sobre o Database dono do Registro.
+    const concessao = await req('POST', `/databases/${dbId}/grants`, adminConta, {
+      membershipId: perdaMemb,
+      role: 'VIEWER',
+    });
+    expect(concessao.status).toBe(201);
+    const grantId = ((await concessao.json()) as { id: string }).id;
+
+    // 2. Com acesso ATUAL, consulta o histórico → sucesso.
+    expect((await req('GET', rota(), perdaConta)).status).toBe(200);
+
+    // 3. Revoga o grant (soft-delete — DELETE do grant, 3.2). O acesso ATUAL desaparece.
+    expect((await req('DELETE', `/databases/${dbId}/grants/${grantId}`, adminConta)).status).toBe(
+      200,
+    );
+
+    // 4/5. Nova consulta → 404 não-enumerante. O acesso histórico (ter lido antes; ter sido ator de eventos) NÃO
+    // concede acesso agora — a autorização é recalculada na consulta.
+    expect((await req('GET', rota(), perdaConta)).status).toBe(404);
+  });
+});
+
+describe('AC2 (obrigatório): evento de arquivo (3.8) respeita a allowlist da projeção', () => {
+  it('um FILE_REPLACED na trilha sai só com id/type/summary/actorId/occurredAt — sem bucketKey/binário/URL/payload', async () => {
+    // A 3.8 (no main) escreve FILE_ATTACHED/FILE_REPLACED/FILE_REMOVED no RecordHistory. Simula um evento de
+    // arquivo escrevendo a MESMA linha que o write-side de arquivo produz (só metadados; o `summary` carrega a
+    // referência segura `fileId`, jamais a chave de objeto). RecordHistory (3.4) não tem coluna de binário/URL.
+    const fileId = randomUUID();
+    const dbC = withTenantContext(migrator, { orgId: ORG_C }, semLog);
+    await dbC.recordHistory.create({
+      data: {
+        orgId: ORG_C,
+        recordId,
+        type: 'FILE_REPLACED',
+        summary: `Arquivo substituído (${fileId})`,
+        actorId: adminConta,
+      },
+    });
+
+    const res = await req('GET', rota(), adminConta);
+    expect(res.status).toBe(200);
+    const texto = await res.text();
+    const pg = JSON.parse(texto) as Pagina;
+    const arquivo = pg.eventos.find((e) => e.type === 'FILE_REPLACED');
+    expect(arquivo).toBeDefined();
+
+    // Só a allowlist contratada; a referência segura (fileId) pode aparecer no summary, nada além.
+    expect(Object.keys(arquivo!).sort()).toEqual([
+      'actorId',
+      'id',
+      'occurredAt',
+      'summary',
+      'type',
+    ]);
+    expect(arquivo!.summary).toContain(fileId); // referência segura permitida
+
+    // Ausência de qualquer dado interno/sensível na resposta inteira.
+    for (const proibido of [
+      'bucketKey',
+      'orgId',
+      'recordId',
+      'payload',
+      'valores',
+      ORG_C,
+      recordId,
+    ]) {
+      expect(texto).not.toContain(proibido);
+    }
   });
 });
