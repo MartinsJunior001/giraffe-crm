@@ -1,7 +1,7 @@
 ---
 story_key: tech-d01-hop-web-api-autenticado
 epic: tech
-status: backlog
+status: review
 release: L6 / Staging (débito D-01)
 risco: ALTO
 origem: Decisão do dono 2026-07-17 — ao adotar o padrão nativo do Coolify (sem rede customizada, sem IP fixo da Web), a confiança da API não pode mais depender de um endereço estático em `TRUSTED_PROXY_IPS`. Esta tech story substitui essa dependência por um hop Web→API autenticado, compatível com rede dinâmica.
@@ -84,3 +84,29 @@ Débito aberto por decisão do dono em 2026-07-17, ao rejeitar a topologia multi
 supersedido) em favor do padrão nativo documentado do Coolify. O risco residual aceito no compose
 (proxy com conectividade de rede até db/api, sem rota pública) está documentado no
 `docker-compose.yml`; este hop fecha a lacuna de confiança do caminho Web→API que o IP fixo cobria.
+
+## Implementação (2026-07-18)
+
+Núcleo de assinatura reusa `node:crypto` (`createHmac` sha256 + `timingSafeEqual`), sem dependência
+nova — o mesmo primitivo do HMAC de login. Envelope `h1.<payloadB64url>.<sigHex>`, payload
+`{ v, ts, ip, m, p }` (versão da chave, timestamp ms, IP do cliente, método, caminho).
+
+- **API** — `apps/api/src/kernel/auth/internal-hop.ts` (núcleo puro `assinarHop`/`verificarHop` +
+  `configHopDoAmbiente`); integrado em `auth.controller.ts`, a ÚNICA rota que consome o IP (o G2 do
+  Better Auth). Fail-closed: com o segredo configurado (modo hop), `X-Forwarded-For`/hop sem prova
+  válida → **403**; sem prova e sem XFF (probe/loopback) → cai para o socket. Sem o segredo (dev/CI) →
+  comportamento histórico (socket + `TRUSTED_PROXY_IPS`), zero regressão.
+- **Web** — `apps/web/lib/internal-hop.ts` (espelho `assinarHop`/`cabecalhoHop`, formato idêntico);
+  `lib/auth.ts::loginNaApi` assina quando há segredo (`getInternalHmac`) e para de mandar o XFF cru.
+- **Env** — `INTERNAL_HMAC_SECRET` (+ `KEY_VERSION`/`PREVIOUS_*`) na API (`env.ts`, com `superRefine`
+  de coerência de rotação) e na Web (`lib/env.ts`); repassadas no `docker-compose.yml`; documentadas no
+  `.env.example`. Opcional — ausência = modo direto.
+- **Testes** — `apps/api/test/internal-hop.test.ts` (20 casos puros: assinatura, malformação,
+  falsificação, amarração método+caminho, janela/expiração, rotação AC6, IP inválido) +
+  `apps/api/test/internal-hop-http.test.ts` (integração real, `AppModule` com o hop LIGADO: 403
+  fail-closed para XFF forjado / assinatura inválida / segredo errado / replay / rota trocada; prova
+  válida aceita; **o IP do envelope é a chave do G2**) + `apps/web/test/internal-hop.test.ts` (paridade
+  de formato por vetor fixo + fail-closed do emissor). AC1–AC7 cobertos.
+
+**Pendente para "done":** revisão de Segurança + Rede (exigência do dono) e validação no staging real
+(segredo provisionado, gate autenticado re-executado com o hop ativo).
