@@ -113,9 +113,15 @@ contagens **iguais** às da origem. Espere `VEREDITO=RESTORE_OK`.
 ```bash
 bash scripts/ops/l6/validate-schema-rls.sh
 ```
-Espere: `giraffe_app` BYPASSRLS=`f`/SUPER=`f`; RLS `t`/FORCE `t` nas organizacionais; policies por
-tabela; `DELETE` a giraffe_app = 0 nas append-only; `Account` só `SELECT`; UPDATE de `Card`
-column-scoped; migrations aplicadas sem rollback; 1 Organization e ≥1 Membership ADMIN ACTIVE.
+Emite veredito **inequívoco**: `VALIDATE_SCHEMA_RLS_OK` (exit 0) ou `VALIDATE_SCHEMA_RLS_FALHOU` (exit 1).
+Verifica: `giraffe_app` `BYPASSRLS=f`/`SUPER=f`; RLS `ENABLE`+`FORCE` em **todas as organizacionais** e a
+**allowlist de globais** sem RLS (`Account`/`Auth*`/`LoginFailure`/**`PublicFormRoute`**/**`RateLimit`**
+por design — qualquer tabela sem RLS fora dela = falha); `DELETE` a `giraffe_app` = 0; `Account` só
+`SELECT`; `UPDATE` de `Card` column-scoped; **exatamente `ESPERADO_MIGRATIONS` (default 19) finalizadas**;
+**zero migrations não resolvidas** (`finished NULL & rolled_back NULL`); **todo histórico `rolled_back`
+com reaplicação finalizada** (recovery legítimo ≠ falha pendente); 1 Organization e ≥1 Admin ACTIVE.
+Regressão: `bash scripts/ops/l6/test-validate-schema.sh` → `VALIDATE_REGRESSAO_OK` (recovery válido /
+falha pendente / recuperada sem reaplicação / RLS-FORCE removido). Só com `VALIDATE_SCHEMA_RLS_OK` avance.
 
 ### Passo 9 — /health e /ready (pela borda)
 ```bash
