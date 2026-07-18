@@ -10,24 +10,28 @@
 #
 set -euo pipefail
 
-PROJ="${PROJ:-enl623bli2h2ub5kmu4ygktd}"
+# GUARDA DE ESCOPO: só o project autorizado; seleção por label EXATA (nunca pelo texto "giraffe").
+PROJ_AUTORIZADO="enl623bli2h2ub5kmu4ygktd"
+PROJ="${PROJ:-${PROJ_AUTORIZADO}}"
 ENVF="${ENVF:-/data/coolify/applications/${PROJ}/.env}"
 MIGRATION="${MIGRATION:-20260712000000_init_tenancy_rls}"
 
 stop() { echo "STOP: $*" >&2; exit 1; }
-container_de() {
-  docker ps -aq \
-    --filter "label=com.docker.compose.project=${PROJ}" \
-    --filter "label=com.docker.compose.service=$1"
-}
+[ "${PROJ}" = "${PROJ_AUTORIZADO}" ] || stop "PROJ='${PROJ}' != UUID autorizado — fora do escopo."
 
-CT_DB=$(container_de db)
-[ -n "${CT_DB}" ] || stop "container 'db' do projeto ${PROJ} não encontrado"
+# Exatamente UM container db do projeto (label EXATA).
+mapfile -t DBS < <(docker ps -aq \
+  --filter "label=com.docker.compose.project=${PROJ}" \
+  --filter "label=com.docker.compose.service=db" 2>/dev/null)
+[ "${#DBS[@]}" -eq 1 ] || stop "esperado EXATAMENTE 1 container db do projeto ${PROJ}; encontrados ${#DBS[@]}."
+CT_DB="${DBS[0]}"
 
 q() { docker exec "${CT_DB}" psql -U postgres -d giraffe -tAc "$1" | tr -d '[:space:]'; }
 existe_tabela() { [ "$(q "select count(*) from information_schema.tables where table_schema='public' and table_name='$1'")" != "0" ]; }
 
-echo "== diagnóstico da falha P3018 na migration ${MIGRATION} (READ-ONLY) =="
+echo "== diagnóstico da falha da migration ${MIGRATION} (READ-ONLY, db real por label) =="
+echo "-- identidade do cluster (db real por label, sanitizada) --"
+echo "  system_id=$(q "select system_identifier from pg_control_system()")"
 
 echo "-- papéis --"
 echo "giraffe_app existe:      $([ "$(q "select count(*) from pg_roles where rolname='giraffe_app'")" = "1" ] && echo sim || echo NAO)  (esperado: NAO — causa da P3018)"

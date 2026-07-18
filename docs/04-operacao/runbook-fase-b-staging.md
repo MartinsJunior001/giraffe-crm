@@ -210,11 +210,18 @@ sem provar o estado físico.
    ```bash
    DIR="$DIR" REDE="$REDE" bash scripts/ops/l6/recover-failed-migration.sh
    ```
-   Só marca `rolled-back` (via `db-migrate.mjs resolve-rolled-back`, **nunca** `--applied`) se provar
-   **zero** objetos parciais; com objeto parcial, bloqueia fail-closed e manda ensaiar o `down.sql`
-   autoritativo em banco descartável. Preserva o backup pré-migration.
+   **Gate de identidade de cluster** (obrigatório): antes de qualquer ação, prova que o `db:5432` do
+   one-shot e o **db real por label** são o **mesmo cluster** (`system_identifier`); divergiu →
+   **STOP `DIVERGÊNCIA DE CLUSTER`** (evita o falso recovery — marcar num cluster e o db real seguir
+   FAILED). Guarda de escopo (UUID) e **exatamente 1 db** do projeto. Só marca `rolled-back` (via
+   `db-migrate.mjs resolve-rolled-back`, **nunca** `--applied`) se provar **zero** objetos parciais **no
+   db real**; com objeto parcial, **bloqueia** (`RECOVER_BLOCKED_PARCIAL`) e manda ensaiar o `down.sql`
+   autoritativo em banco descartável. Atua **só** na `20260712000000_init_tenancy_rls`. Confirma
+   `rolled_back_at` preenchido **no db real por label**. Preserva o backup. Regressão que reproduz o
+   falso recovery: `bash scripts/ops/l6/test-recover-cluster.sh` → `RECOVER_CLUSTER_REGRESSAO_OK`.
 
-4. **Repetir o migrate** (passos 4–5) e exigir `MIGRATE_ONESHOT_OK`.
+4. **Repetir o migrate** (passos 4–5) e exigir **19 migrations finalizadas, zero pendências,
+   `Account`/`AuthCredential` presentes no db real e `MIGRATE_ONESHOT_OK`**.
 
 Prova end-to-end reproduzível (build da imagem migrate; não toca o staging):
 `bash scripts/ops/l6/test-recovery-e2e.sh` → espera `RECOVERY_E2E_OK` (P3018 reproduzida → reconcilia
