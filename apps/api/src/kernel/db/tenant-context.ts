@@ -42,6 +42,8 @@ const MODELOS_AUDITADOS = new Set([
   'MovementEvent',
   'Record',
   'RecordHistory',
+  'FileObject',
+  'FileScan',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
