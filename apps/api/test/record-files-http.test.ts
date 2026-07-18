@@ -285,6 +285,38 @@ describe('Campo Arquivo no Registro (F2) — referência tipada com vínculo', (
     ).toBe(400);
   });
 
+  it('F8: a coluna FILE aparece na tabela com a referência (sem vazar bucketKey); filtro por FILE → 400', async () => {
+    const rec = await criarRegistro('Tabela');
+    const f = await anexar(rec.id);
+    await req('PATCH', `/databases/${dbId}/records/${rec.id}`, adminConta, {
+      valores: { [textFieldId]: 'Tabela', [fileFieldId]: f.id },
+    });
+
+    interface Pagina {
+      linhas: { id: string; valores: Record<string, unknown> }[];
+      colunas: { fieldId: string; type: string }[];
+    }
+    const res = await req('GET', `/databases/${dbId}/records`, adminConta);
+    expect(res.status).toBe(200);
+    const corpo = await res.text();
+    const pg = JSON.parse(corpo) as Pagina;
+
+    // A coluna FILE é exibível na definição da tabela...
+    expect(pg.colunas.some((c) => c.fieldId === fileFieldId && c.type === 'FILE')).toBe(true);
+    // ...e a linha mostra a REFERÊNCIA (fileId), não a chave interna.
+    const linha = pg.linhas.find((l) => l.id === rec.id)!;
+    expect(linha.valores[fileFieldId]).toBe(f.id);
+    // Nada de bucketKey/orgId/segmento de storage na resposta.
+    expect(corpo).not.toContain('bucketKey');
+    expect(corpo).not.toContain(ORG_C);
+
+    // FILE segue gated para filtro (3.5/record-query.core): filtrar por Campo Arquivo → 400.
+    const filtro = encodeURIComponent(JSON.stringify([{ fieldId: fileFieldId, op: 'igual', valor: f.id }]));
+    expect((await req('GET', `/databases/${dbId}/records?filtros=${filtro}`, adminConta)).status).toBe(
+      400,
+    );
+  });
+
   it('cross-tenant no anexo (Ana/Org A) → 404 não-enumerante', async () => {
     const rec = await criarRegistro('T');
     const form = new FormData();
