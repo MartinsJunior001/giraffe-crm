@@ -1,17 +1,21 @@
 import { All, Controller, Inject, Req, Res } from '@nestjs/common';
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { SemContextoOrganizacional } from '../context/sem-contexto.decorator';
-import { proxiesConfiaveisDoAmbiente, resolverIpCliente } from './client-ip';
+import { normalizarIp, proxiesConfiaveisDoAmbiente, resolverIpCliente } from './client-ip';
+import { configHopDoAmbiente, HEADER_HOP, verificarHop, type ConfigHop } from './internal-hop';
 import { AUTH, type Auth } from './auth.tokens';
 
 /**
  * O header pelo qual o Better Auth lê o IP (é o default dele).
  *
- * Nós o **sobrescrevemos** com o IP resolvido a partir do socket — ver `client-ip.ts`. O valor que
- * o cliente enviou nunca chega ao Better Auth: se chegasse, bastaria forjá-lo para trocar de
- * identidade a cada requisição e o G2 nunca dispararia.
+ * Nós o **sobrescrevemos** com o IP resolvido pela nossa camada — ver `client-ip.ts` (modo direto) e
+ * `internal-hop.ts` (modo hop, D-01). O valor que o cliente enviou nunca chega ao Better Auth: se
+ * chegasse, bastaria forjá-lo para trocar de identidade a cada requisição e o G2 nunca dispararia.
  */
 const HEADER_IP = 'x-forwarded-for';
+
+/** Resultado da resolução de IP para o handler de auth: um IP (talvez `undefined`) ou rejeição fail-closed. */
+type ResolucaoIp = { rejeitar: false; ip: string | undefined } | { rejeitar: true };
 
 /**
  * Monta o handler do Better Auth sob `/api/auth/*`.
@@ -22,19 +26,38 @@ const HEADER_IP = 'x-forwarded-for';
  *
  * A dispensa é declarada **por método**, não na classe — a lição do CR-04 da Story 1.3: na classe,
  * toda rota futura acrescentada aqui nasceria fora do guard sem uma linha no diff dizendo isso.
+ *
+ * ## Resolução de IP (D-01)
+ *
+ * Esta é a ÚNICA rota que consome o IP do cliente (o G2, rate limit por origem, vive no Better Auth).
+ * Dois modos, escolhidos pela presença de `INTERNAL_HMAC_SECRET`:
+ *
+ * - **direto** (dev/teste/CI, sem o segredo): o IP vem do socket + `TRUSTED_PROXY_IPS`, como sempre.
+ * - **hop** (staging/produção atrás do proxy do Coolify): a Web PROVA o IP do cliente com um cabeçalho
+ *   assinado por requisição. Sem prova válida, `X-Forwarded-For` não é honrado — e uma tentativa de
+ *   declarar IP sem prova (ou uma prova inválida/expirada/replay) é **recusada com 403** (fail-closed).
+ *   Uma chamada direta sem `X-Forwarded-For` (probe/loopback) cai para o socket: não forja nada.
  */
 @Controller('api/auth')
 export class AuthController {
-  /** Lido uma vez: a lista de proxies não muda em runtime, e reler o ambiente por requisição seria
-   * trabalho repetido no caminho quente do login. */
+  /** Lido uma vez: nem a lista de proxies nem a config do hop mudam em runtime. */
   private readonly proxiesConfiaveis = proxiesConfiaveisDoAmbiente();
+  private readonly configHop: ConfigHop = configHopDoAmbiente();
 
   constructor(@Inject(AUTH) private readonly auth: Auth) {}
 
   @SemContextoOrganizacional()
   @All('*splat')
   async handler(@Req() req: ExpressRequest, @Res() res: ExpressResponse): Promise<void> {
-    const resposta = await this.auth.handler(paraRequestWeb(req, this.proxiesConfiaveis));
+    const resolucao = this.resolverIp(req);
+    if (resolucao.rejeitar) {
+      // Fail-closed: hop exigido, prova ausente/inválida/expirada. Resposta NEUTRA — não revela o
+      // motivo (assinatura vs. janela vs. rota), para não dar ao atacante um oráculo da verificação.
+      res.status(403).send();
+      return;
+    }
+
+    const resposta = await this.auth.handler(paraRequestWeb(req, resolucao.ip));
 
     res.status(resposta.status);
 
@@ -50,6 +73,48 @@ export class AuthController {
 
     res.send(await resposta.text());
   }
+
+  /**
+   * Resolve o IP do cliente para o Better Auth, ou sinaliza rejeição fail-closed (modo hop).
+   *
+   * Modo direto: comportamento histórico (socket + `TRUSTED_PROXY_IPS`), sem rejeição.
+   * Modo hop: só uma prova assinada válida autoriza um IP declarado. Sem prova e sem `X-Forwarded-For`,
+   * cai para o socket (probe/loopback/cliente direto que não forja nada).
+   */
+  private resolverIp(req: ExpressRequest): ResolucaoIp {
+    if (!this.configHop.modoHop) {
+      const bruto = req.headers[HEADER_IP];
+      const ip = resolverIpCliente({
+        peer: req.socket.remoteAddress,
+        forwarded: Array.isArray(bruto) ? bruto.join(',') : bruto,
+        proxiesConfiaveis: this.proxiesConfiaveis,
+      });
+      return { rejeitar: false, ip };
+    }
+
+    const bruto = req.headers[HEADER_HOP];
+    const header = Array.isArray(bruto) ? bruto[0] : bruto;
+    const path = new URL(req.originalUrl, 'http://interno').pathname;
+    const r = verificarHop({
+      header,
+      method: req.method,
+      path,
+      segredos: this.configHop.segredos,
+      agora: Date.now(),
+    });
+    if (r.ok) return { rejeitar: false, ip: r.ip };
+
+    // Sem prova E sem X-Forwarded-For: ninguém tentou declarar um IP. É o probe/loopback/cliente
+    // direto legítimo — usa o socket (o próprio peer, que não pode ser falsificado).
+    const temXff = req.headers[HEADER_IP] !== undefined;
+    if (r.motivo === 'ausente' && !temXff) {
+      const peer = req.socket.remoteAddress;
+      return { rejeitar: false, ip: peer === undefined ? undefined : normalizarIp(peer) };
+    }
+
+    // Declarou um IP (X-Forwarded-For ou hop) sem prova válida: recusa.
+    return { rejeitar: true };
+  }
 }
 
 /**
@@ -59,9 +124,9 @@ export class AuthController {
  * seria a mesma assimetria que abre request smuggling — o proxy enxerga um conjunto de headers, a
  * aplicação enxerga outro.
  *
- * A **exceção** é o header de IP, que é reescrito com o valor resolvido a partir do socket.
+ * A **exceção** é o header de IP, reescrito com o valor JÁ RESOLVIDO pelo controller (socket ou hop).
  */
-function paraRequestWeb(req: ExpressRequest, proxiesConfiaveis: readonly string[]): Request {
+function paraRequestWeb(req: ExpressRequest, ip: string | undefined): Request {
   const host = req.get('host') ?? 'localhost';
   const url = new URL(req.originalUrl, `${req.protocol}://${host}`);
 
@@ -69,7 +134,8 @@ function paraRequestWeb(req: ExpressRequest, proxiesConfiaveis: readonly string[
   for (const [nome, valor] of Object.entries(req.headers)) {
     if (valor === undefined) continue;
     const chave = nome.toLowerCase();
-    if (chave === HEADER_IP) continue; // resolvido abaixo, a partir do socket
+    if (chave === HEADER_IP) continue; // resolvido pelo controller, a partir do socket ou do hop
+    if (chave === HEADER_HOP) continue; // cabeçalho interno: consumido aqui, nunca repassado adiante
     // `content-length`/`transfer-encoding` descrevem o corpo ORIGINAL; nós o reserializamos
     // (`JSON.stringify` abaixo), então o tamanho muda. Encaminhá-los deixaria o header em desacordo
     // com o corpo — hoje o undici recalcula e salva, mas depender disso é frágil. Deixa o `Request`
@@ -78,15 +144,6 @@ function paraRequestWeb(req: ExpressRequest, proxiesConfiaveis: readonly string[
     if (Array.isArray(valor)) for (const v of valor) headers.append(nome, v);
     else headers.append(nome, valor);
   }
-
-  const bruto = req.headers[HEADER_IP];
-  const ip = resolverIpCliente({
-    peer: req.socket.remoteAddress,
-    // Node junta headers repetidos por vírgula (salvo `set-cookie`), que é exatamente o formato de
-    // uma cadeia de encaminhamento — então array e string colapsam no mesmo separador.
-    forwarded: Array.isArray(bruto) ? bruto.join(',') : bruto,
-    proxiesConfiaveis,
-  });
 
   // `set`, não `append`: o Better Auth passa a ver UM valor, o nosso. O que o cliente mandou morre
   // aqui.

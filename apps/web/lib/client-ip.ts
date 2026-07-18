@@ -13,9 +13,10 @@ import { isIP } from 'node:net';
  *
  * ## O que a Web encaminha à API
  *
- * SÓ o IP derivado — nunca a cadeia recebida. A API confia na Web pelo IP fixo dela
- * (`TRUSTED_PROXY_IPS`) e lê este único valor; reenviar a cadeia inteira só daria ao cliente
- * material para confundir o próximo salto.
+ * SÓ o IP derivado — nunca a cadeia recebida. Com o hop autenticado (D-01) esse IP viaja DENTRO de um
+ * envelope assinado (`lib/internal-hop.ts`), e a API o honra pela ASSINATURA, não mais por um IP fixo
+ * da Web (que no padrão nativo do Coolify é dinâmico). Em modo direto (sem segredo), segue como um
+ * X-Forwarded-For único; reenviar a cadeia inteira só daria ao cliente material para confundir o próximo salto.
  *
  * ## Fail-closed
  *
