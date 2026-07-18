@@ -1,7 +1,7 @@
 ---
 story_key: 3-6-historico-do-registro-read-side
 epic: 3
-status: ready-for-dev
+status: done
 release: E3 (Wave 4 — Databases, Registros, Vínculos e Arquivos)
 risco: MÉDIO
 baseline_commit: f738220
@@ -109,3 +109,21 @@ FR-19; D3.5; AD-15/30. **Consome:** write-side (3.4 — `RecordHistory`), autori
 | Data | Descrição |
 |------|-----------|
 | 2026-07-16 | Story criada (create-story). sprint-status 3-6 backlog → ready-for-dev na branch `story/3-6-historico-do-registro-read-side`. |
+| 2026-07-18 | Implementação retomada e integrada com o main (3.7/3.8) por merge normal (`db141df`); base parcial preservada (`efe2664` + bundle). PR #113 mergeado (`ebb9ddb`), CI 5/5. Story `done`. |
+
+## Review Findings (T010 — 4 revisores adversariais)
+
+Registro completo em `gates/3-6/T010-review-e-conclusao.md`. **0 CRITICAL / 0 HIGH.**
+
+- **Segurança/Autz:** autz por acesso ATUAL (`exigirLerDatabase`), 404 não-enumerante, histórico não
+  concede (SC-2105); isolamento cross-tenant provado (RLS). **AD-30 verificado:** o `summary` dos eventos
+  de arquivo (3.8) carrega só a referência `fileId` — sem `bucketKey`/URL/PII —, então a projeção allowlist
+  da timeline não vaza material sensível.
+- **Correção/Edge:** cursor `[createdAt, id]` sem off-by-one; teto 100; `type` desconhecido e legados sem
+  `actorId` tratados.
+- **Observabilidade/LGPD:** sem log de PII; projeção exclui `orgId`/`recordId`/payload; read-side puro.
+- **Aceite:** AC1–AC7 (HTTP) + RLS = 7/7; regressão dos vizinhos 17/17; **suíte serial 852/852**; typecheck limpo.
+
+Gates de conclusão (security/observability/lgpd/migration/performance): a 3.6 é **read-side puro** — sem
+migration e sem GRANT novo (o runtime já tem `SELECT` em `RecordHistory`, append-only desde 3.4); nenhuma
+PII nova; sem N+1 (cursor + teto). `Card ≠ Registro` preservado.
