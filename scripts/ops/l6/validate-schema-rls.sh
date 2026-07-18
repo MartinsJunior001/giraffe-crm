@@ -9,17 +9,18 @@
 #
 set -euo pipefail
 
-PROJ="${PROJ:-enl623bli2h2ub5kmu4ygktd}"
+# GUARDA DE ESCOPO: só o project autorizado; seleção por label EXATA (nunca pelo texto "giraffe").
+PROJ_AUTORIZADO="enl623bli2h2ub5kmu4ygktd"
+PROJ="${PROJ:-${PROJ_AUTORIZADO}}"
 stop() { echo "STOP: $*" >&2; exit 1; }
+[ "${PROJ}" = "${PROJ_AUTORIZADO}" ] || stop "PROJ='${PROJ}' != UUID autorizado — fora do escopo."
 
-container_de() {
-  docker ps -aq \
-    --filter "label=com.docker.compose.project=${PROJ}" \
-    --filter "label=com.docker.compose.service=$1"
-}
-
-CT_DB=$(container_de db)
-[ -n "${CT_DB}" ] || stop "container 'db' do projeto ${PROJ} não encontrado"
+# Exatamente UM container db do projeto (label EXATA).
+mapfile -t DBS < <(docker ps -aq \
+  --filter "label=com.docker.compose.project=${PROJ}" \
+  --filter "label=com.docker.compose.service=db" 2>/dev/null)
+[ "${#DBS[@]}" -eq 1 ] || stop "esperado EXATAMENTE 1 container db do projeto ${PROJ}; encontrados ${#DBS[@]}."
+CT_DB="${DBS[0]}"
 
 # Todo acesso é SELECT, como o superusuário do container. Read-only por construção.
 q() { docker exec "${CT_DB}" psql -U postgres -d giraffe -tAc "$1" | tr -d '\r'; }
