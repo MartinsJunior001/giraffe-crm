@@ -170,6 +170,46 @@ const EnvSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+
+    // ── Story 3.7 — capacidade compartilhada de arquivos (storage/antivírus/limites) ─────────
+    // Estes serviços (MinIO/ClamAV) existem só em dev/CI (AD-32). Com o gate desligado (default),
+    // são opcionais e a capacidade fica indisponível de forma honesta. Ligá-lo EXIGE storage
+    // configurado — a coerência é imposta no `.superRefine` fail-closed abaixo.
+
+    /** Endpoint do storage S3-compatível (ex.: MinIO `http://127.0.0.1:9000`). Vazio = ausente. */
+    STORAGE_ENDPOINT: vazioComoAusente(z.string().url('STORAGE_ENDPOINT deve ser uma URL válida').optional()),
+    /** Região do storage (S3 exige uma; irrelevante no MinIO, mas o SDK a requer). */
+    STORAGE_REGION: z.string().default('us-east-1'),
+    /** Bucket privado dos arquivos. */
+    STORAGE_BUCKET: z.string().default('giraffe-files'),
+    /** Credencial de acesso do storage (dev/CI). Segredo — nunca em log/health. Vazio = ausente. */
+    STORAGE_ACCESS_KEY: vazioComoAusente(z.string().optional()),
+    /** Credencial secreta do storage (dev/CI). Segredo — nunca em log/health. Vazio = ausente. */
+    STORAGE_SECRET_KEY: vazioComoAusente(z.string().optional()),
+    /** MinIO exige path-style (bucket no path, não no host). Só `'false'` desliga; default liga. */
+    STORAGE_FORCE_PATH_STYLE: z
+      .string()
+      .optional()
+      .transform((v) => v !== 'false'),
+
+    /** Host do clamd (TCP). Dev/CI. */
+    CLAMAV_HOST: z.string().default('127.0.0.1'),
+    /** Porta do clamd (padrão 3310). */
+    CLAMAV_PORT: z.coerce.number().int().positive().max(65535).default(3310),
+    /**
+     * Idade máxima da base de assinaturas do ClamAV (horas). Base mais velha que isto ⇒ o veredito
+     * é RECUSADO (fail-closed): um scanner com base velha é um scanner cego. Default conservador.
+     */
+    CLAMAV_DB_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
+
+    /** Tamanho máximo por arquivo (bytes). Limita também o buffer de upload (DoS). Default 10 MiB. */
+    FILE_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+    /** Contagem máxima de arquivos por recurso (Q1 = 10). Validado por faixa, fail-closed. */
+    FILE_MAX_PER_RESOURCE: z.coerce.number().int().positive().max(1000).default(10),
+    /** Teto de verificações concorrentes por Organização (semáforo `ScanSlot`). Fail-closed no teto (429). */
+    SCAN_MAX_CONCURRENT_PER_ORG: z.coerce.number().int().positive().max(100).default(3),
+    /** TTL do slot de verificação (segundos) — auto-liberação de slot órfão. */
+    SCAN_SLOT_TTL_SECONDS: z.coerce.number().int().positive().default(120),
   })
   /**
    * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em
@@ -250,6 +290,37 @@ const EnvSchema = z
         code: 'custom',
         message:
           'LOGIN_HMAC_PREVIOUS_KEY_VERSION não pode ser igual a LOGIN_HMAC_KEY_VERSION (a rotação ficaria irrastreável)',
+      });
+    }
+  })
+  /**
+   * Coerência do gate de arquivos (3.7, AD-28). Ligar `FILE_UPLOAD_ENABLED` sem storage configurado
+   * é a receita de uma capacidade "ligada" que aceita upload e não tem onde guardar — falha opaca na
+   * 1ª requisição. Fail-closed: com o gate ON, o storage é obrigatório e a API não sobe sem ele.
+   *
+   * As mensagens citam apenas NOMES de variáveis — as credenciais nunca podem vazar para log/stderr.
+   */
+  .superRefine((env, ctx) => {
+    if (!env.FILE_UPLOAD_ENABLED) return;
+
+    const faltando = (
+      [
+        ['STORAGE_ENDPOINT', env.STORAGE_ENDPOINT],
+        ['STORAGE_ACCESS_KEY', env.STORAGE_ACCESS_KEY],
+        ['STORAGE_SECRET_KEY', env.STORAGE_SECRET_KEY],
+        ['STORAGE_BUCKET', env.STORAGE_BUCKET],
+      ] as const
+    )
+      .filter(([, v]) => v === undefined || v === '')
+      .map(([nome]) => nome);
+
+    if (faltando.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'FILE_UPLOAD_ENABLED=true exige storage configurado — variáveis ausentes: ' +
+          faltando.join(', ') +
+          ' (a capacidade não pode ligar sem onde guardar o binário — fail-closed AD-28)',
       });
     }
   });

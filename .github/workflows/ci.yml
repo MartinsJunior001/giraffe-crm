@@ -116,6 +116,10 @@ jobs:
         run: |
           gerar() { openssl rand -hex 16; }
           POSTGRES_PASSWORD="$(gerar)"; MIGRATOR_PASSWORD="$(gerar)"; APP_PASSWORD="$(gerar)"
+          # Credenciais efêmeras do MinIO (storage de arquivos — Story 3.7). Geradas por execução, nunca fixas
+          # (Constitution VI). Usadas TANTO pelo serviço `minio` (MINIO_ROOT_*) quanto pela API (STORAGE_*).
+          MINIO_USER="giraffe_files_ci"; MINIO_PASS="$(openssl rand -hex 16)"
+          echo "::add-mask::$MINIO_PASS"
           # Segredos da 1.4 (sessão e HMAC do G1). São necessários por dois motivos: o `docker compose
           # up -d db` interpola o arquivo INTEIRO — e o serviço `api` os exige via `${VAR:?}` mesmo
           # subindo só o `db`; e o `pnpm test` sobe o AppModule real (login-http), cujo `getEnv()` os
@@ -143,22 +147,51 @@ jobs:
             # O compose exige (`:?`) a origem pública da Web para interpolar o serviço `web`,
             # mesmo subindo só o `db` — o arquivo inteiro é interpolado.
             echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
+            # ── Story 3.7 — capacidade de arquivos (dev/CI): MinIO + ClamAV pelo override isolado ──────────
+            # COMPOSE_FILE faz TODO `docker compose` deste job carregar o override dev-files (MinIO+ClamAV),
+            # sem afetar outros jobs (GITHUB_ENV é por job) nem o deploy (Coolify usa `-f docker-compose.yml`).
+            echo "COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.dev-files.yml"
+            # Credenciais do MinIO — o serviço e a API compartilham as MESMAS (senão a API não autentica).
+            echo "MINIO_ROOT_USER=$MINIO_USER"
+            echo "MINIO_ROOT_PASSWORD=$MINIO_PASS"
+            # Gate LIGADO no CI (exige storage configurado — coerência fail-closed do env).
+            echo "FILE_UPLOAD_ENABLED=true"
+            echo "STORAGE_ENDPOINT=http://localhost:9000"
+            echo "STORAGE_ACCESS_KEY=$MINIO_USER"
+            echo "STORAGE_SECRET_KEY=$MINIO_PASS"
+            echo "STORAGE_BUCKET=giraffe-files"
+            echo "STORAGE_FORCE_PATH_STYLE=true"
+            echo "CLAMAV_HOST=localhost"
+            echo "CLAMAV_PORT=3310"
+            # A base EMBUTIDA da imagem `_base` é velha por construção; afrouxa o gate de frescor no CI (o canário
+            # EICAR ainda prova que o scanner não está cego). A lógica de frescor real é provada no teste de unidade.
+            echo "CLAMAV_DB_MAX_AGE_HOURS=876000"
           } >> "$GITHUB_ENV"
 
       - name: Instalar dependências (imutável)
         run: pnpm install --frozen-lockfile
 
       # Volume novo a cada execução ⇒ o bootstrap de papéis roda de verdade, todas as vezes.
-      - name: Subir o PostgreSQL (bootstrap de papéis versionado)
+      # COMPOSE_FILE inclui o override dev-files, então sobem também MinIO e ClamAV (Story 3.7).
+      - name: Subir PostgreSQL + MinIO + ClamAV (bootstrap de papéis versionado)
         run: |
-          docker compose up -d db
-          for _ in $(seq 1 30); do
-            if [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q db)")" = "healthy" ]; then
-              echo "banco healthy"; exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::o banco não ficou healthy"; docker compose logs db; exit 1
+          docker compose up -d db minio clamav
+          esperar_healthy() {
+            local svc="$1" tentativas="$2"
+            for _ in $(seq 1 "$tentativas"); do
+              if [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q "$svc")")" = "healthy" ]; then
+                echo "$svc healthy"; return 0
+              fi
+              sleep 2
+            done
+            echo "::error::o serviço $svc não ficou healthy"; docker compose logs "$svc"; return 1
+          }
+          # ClamAV carrega a base de assinaturas no 1º boot — start_period longo (até ~5 min).
+          esperar_healthy db 30 && esperar_healthy minio 30 && esperar_healthy clamav 180
+
+      # Cria o bucket privado do storage (one-shot; sai 0). Sem política pública (buckets privados — AD-27).
+      - name: Criar bucket privado do MinIO
+        run: docker compose run --rm minio-setup
 
       # Banco vazio ⇒ a migration é EXERCITADA a cada execução, nunca presumida.
       - name: Aplicar migrations (papel giraffe_migrator)
