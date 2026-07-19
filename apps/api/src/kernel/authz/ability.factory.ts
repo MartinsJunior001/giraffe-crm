@@ -61,5 +61,23 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Database', { orgId });
   }
 
+  // Automação (Story 4.1). `ler Automacao` é GROSSEIRA, como `ler Pipe`/`ler Database`: confirma apenas
+  // que o papel pode alcançar *alguma* Automação na Org. QUEM administra e quem só lê é a guarda FINA,
+  // decidida no `AutomationsService` por `pipe-authz.ts` com o Pipe carregado — inclusive o 404
+  // não-enumerante, que o guard não poderia dar por não carregar o recurso (DBT-AUTHZ-01).
+  //
+  // NÃO existe `administrar Automacao` aqui de propósito: se a criação exigisse `administrar` no guard,
+  // um Membro do Pipe levaria 403 ANTES da guarda fina — e o formato do erro já revelaria que o Pipe
+  // existe, justamente o que a não-enumeração evita.
+  //
+  // Sobre o Convidado, o comportamento REAL (não o desejado): esta ability é concedida a QUALQUER
+  // Membership ativa, GUEST inclusive — o Convidado PASSA o guard. Quem o barra é a guarda fina, e só
+  // enquanto ele não tiver `PipeGrant` ACTIVE (sem concessão, `resolverPoderNoPipe` devolve 404
+  // não-enumerante). Havendo concessão, ele alcança o Pipe com o poder dela: `PipeGrant` NÃO impõe teto
+  // por papel de Organização — diferente de `DatabaseGrant`, que o impõe. Portanto o "Convidado não
+  // acessa" de D4.3 ainda não é invariante imposto do lado de Pipe; o teto é remediação SEPARADA,
+  // rastreada como `DEB-PIPEGRANT-GUEST-CEILING`, e não é implementada nesta Story.
+  can('ler', 'Automacao', { orgId });
+
   return build();
 }

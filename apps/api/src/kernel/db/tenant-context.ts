@@ -46,6 +46,9 @@ const MODELOS_AUDITADOS = new Set([
   'FileScan',
   'CardRecordLink',
   'AccountAvatar',
+  // Story 4.1. `Automation` é a ÚNICA tabela da Story — não há satélite (nem versão, nem execução:
+  // versões são 4.2 e a trilha de Execuções é 4.8). Quando elas chegarem, entram aqui com suas Stories.
+  'Automation',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

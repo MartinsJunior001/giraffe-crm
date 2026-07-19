@@ -328,6 +328,7 @@ model Organization {
   fileScans         FileScan[]
   cardRecordLinks   CardRecordLink[]
   accountAvatars    AccountAvatar[]
+  automations       Automation[]
 
   @@map("Organization")
 }
@@ -354,13 +355,19 @@ model Pipe {
   /// Momento do arquivamento (null quando ativo). Arquivar preserva os dados; só muda estado.
   archivedAt DateTime?
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  grants       PipeGrant[]
-  phases       Phase[]
-  forms        Form[]
-  cards        Card[]
+  organization   Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  grants         PipeGrant[]
+  phases         Phase[]
+  forms          Form[]
+  cards          Card[]
   movementEvents MovementEvent[]
+  automations    Automation[]
 
+  /// Chave-alvo da FK COMPOSTA tenant-safe (Story 4.1, F-A1). Redundante como IDENTIDADE (`id` já é PK),
+  /// mas necessária como DESTINO: é ela que permite a um dependente referenciar o PAR `(orgId, id)` e
+  /// assim provar, NO BANCO, que ele e o Pipe pertencem à MESMA Organização — em vez de deixar isso por
+  /// conta de uma releitura no serviço. Ver `Automation.pipe`.
+  @@unique([orgId, id])
   // Todo acesso organizacional começa por `orgId`; o catálogo filtra por estado.
   @@index([orgId, state])
   @@map("Pipe")
@@ -445,14 +452,14 @@ model Phase {
   /// Campo de override da expiração (null = sem override).
   expirationFieldId     String? @db.Uuid
 
-  organization Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  pipe         Pipe             @relation(fields: [pipeId], references: [id], onDelete: Cascade)
-  forms        Form[]
-  cards        Card[]
-  phaseEntries CardPhaseEntry[]
-  phaseValues  CardPhaseValues[]
-  movementEventsAsSource MovementEvent[] @relation("MovementEventSource")
-  movementEventsAsTarget MovementEvent[] @relation("MovementEventTarget")
+  organization           Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  pipe                   Pipe              @relation(fields: [pipeId], references: [id], onDelete: Cascade)
+  forms                  Form[]
+  cards                  Card[]
+  phaseEntries           CardPhaseEntry[]
+  phaseValues            CardPhaseValues[]
+  movementEventsAsSource MovementEvent[]   @relation("MovementEventSource")
+  movementEventsAsTarget MovementEvent[]   @relation("MovementEventTarget")
 
   // Acesso começa por Org; a listagem por Pipe filtra estado e ordena por position.
   @@index([orgId, pipeId, state, position])
@@ -740,19 +747,19 @@ model Card {
 /// Na 2.7 há um único tipo de evento: `CREATED` (criação do Card pela submissão). O evento é escrito na MESMA
 /// transação atômica do INSERT do Card (AD-13): não há Card sem evento nem evento sem Card.
 model CardHistory {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @db.Uuid
-  cardId    String   @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  cardId        String   @db.Uuid
   /// Vocabulário do evento (2.7: apenas `CREATED`). String — a taxonomia completa é das Stories 2.10+.
-  type      String
+  type          String
   /// Resumo legível do evento (sem PII desnecessária).
-  summary   String
+  summary       String
   /// Ator que originou o evento (quando disponível).
-  actorId   String?  @db.Uuid
+  actorId       String?  @db.Uuid
   /// Correlaciona eventos de uma MESMA operação entre trilhas (Story 3.9): `LINKED`/`UNLINKED` do Card e do
   /// Registro compartilham este valor. Nullable (eventos anteriores não têm). Não projetado pela leitura (2.17).
-  correlationId String? @db.Uuid
-  createdAt DateTime @default(now())
+  correlationId String?  @db.Uuid
+  createdAt     DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
@@ -1119,10 +1126,10 @@ model Record {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  database     Database        @relation(fields: [databaseId], references: [id], onDelete: Cascade)
-  form         Form            @relation(fields: [formId], references: [id], onDelete: Cascade)
-  formVersion  FormVersion     @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  database     Database         @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  form         Form             @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion  FormVersion      @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
   history      RecordHistory[]
   cardLinks    CardRecordLink[]
 
@@ -1142,19 +1149,19 @@ model Record {
 /// não há Registro/mutação sem evento. Correção = NOVO evento (não altera o original — imutabilidade do banco).
 /// A CONSULTA da timeline (projeção/autorização por acesso atual/mascaramento) é a 3.6 (read-side).
 model RecordHistory {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @db.Uuid
-  recordId  String   @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  recordId      String   @db.Uuid
   /// Vocabulário do evento (3.4: CREATED/VALUES_UPDATED/ARCHIVED/RESTORED). String — a taxonomia cresce em 3.8/3.9.
-  type      String
+  type          String
   /// Resumo legível do evento (sem PII desnecessária).
-  summary   String
+  summary       String
   /// Ator/iniciador que originou o evento (quando disponível).
-  actorId   String?  @db.Uuid
+  actorId       String?  @db.Uuid
   /// Correlaciona eventos de uma MESMA operação entre trilhas (Story 3.9): `LINKED`/`UNLINKED` do Registro e do
   /// Card compartilham este valor. Nullable (eventos anteriores não têm). Não projetado pela leitura (3.6).
-  correlationId String? @db.Uuid
-  createdAt DateTime @default(now())
+  correlationId String?  @db.Uuid
+  createdAt     DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   record       Record       @relation(fields: [recordId], references: [id], onDelete: Cascade)
@@ -1208,7 +1215,7 @@ model FileObject {
   /// Instante do expurgo físico do binário (null enquanto não expurgado). Remoção lógica precede o expurgo.
   purgedAt     DateTime?
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   scans        FileScan[]
   /// Story 3.10: o slot de avatar que aponta para este arquivo (quando `resourceType='ACCOUNT'`).
   avatars      AccountAvatar[]
@@ -1382,4 +1389,65 @@ model AccountAvatar {
   @@unique([orgId, accountId])
   @@index([orgId, fileId])
   @@map("AccountAvatar")
+}
+
+/// Estado da Automação (Story 4.1 — coluna; Story 4.2 — TRANSIÇÕES).
+///
+/// `INACTIVE` é o default e é o que torna a 4.1 segura de entregar ANTES do motor: "só a ativa dispara"
+/// (D4.3), então nada criado por esta Story pode disparar — por CONSTRUÇÃO, não por ausência de código.
+/// O runtime da 4.1 não recebe GRANT de UPDATE, logo sequer CONSEGUE levar uma Automação a `ACTIVE`.
+enum AutomationState {
+  INACTIVE
+  ACTIVE
+  ARCHIVED
+}
+
+/// Automation — a Automação declarativa (Story 4.1, FR-21/RN-100/RN-101).
+///
+/// Pertence a EXATAMENTE UM Pipe (RN-100) e nunca atravessa Organização (NFR-3). A estrutura é
+/// `quando` (Evento) → `condicoes` (AND) → `entao` (Ações), persistida em JSONB e validada por núcleo
+/// PURO (`automation-config.ts`, fail-closed com allowlist). Os CATÁLOGOS de Evento/Condição/Ação são
+/// 4.3/4.4/4.5 — a 4.1 valida a ESTRUTURA e as REFERÊNCIAS, não o vocabulário (AD-11).
+///
+/// Isolamento pelo BANCO: RLS ENABLE **e** FORCE, policies por `orgId = current_org_id()` com `WITH
+/// CHECK` no INSERT e no UPDATE. GRANT do runtime = `SELECT, INSERT` — **sem UPDATE** (editar/transicionar
+/// é 4.2, que abrirá o privilégio junto do seu consumidor e do teste que prova o escopo dele, como `Card`
+/// fez entre a 2.7 e a 2.11) e **sem DELETE** ("não há exclusão definitiva", D4.3, garantido pelo banco).
+model Automation {
+  id                  String          @id @default(uuid()) @db.Uuid
+  orgId               String          @db.Uuid
+  pipeId              String          @db.Uuid
+  name                String
+  state               AutomationState @default(INACTIVE)
+  /// Versão do SCHEMA do documento de configuração (não da Automação — versões dela são a 4.2).
+  /// Carimbada pelo servidor, nunca aceita do cliente. É o que torna migrável um JSON persistido: sem
+  /// ela, 4.3/4.4/4.5 não distinguiriam "config antiga válida" de "config corrompida". É COLUNA, e não
+  /// chave dentro do JSON, para ser consultável — "quais linhas ainda estão na v1?".
+  configSchemaVersion Int             @default(1)
+  /// QUANDO — o Evento gatilho. Objeto com `tipo` (catálogo = 4.3) e `refs` opcionais.
+  quando              Json
+  /// CONDIÇÕES — array combinado por E/AND (D4.1). Vazio = sem Condição: a Ação executa direto.
+  condicoes           Json            @default("[]")
+  /// ENTÃO — array de Ações, NÃO VAZIO (uma Automação sem Ação não é uma Automação).
+  entao               Json
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// FK **COMPOSTA** tenant-safe (F-A1). Referencia o PAR `(orgId, id)` de `Pipe`, não só o `id`.
+  ///
+  /// Com uma FK simples em `pipeId`, um INSERT com `orgId` próprio e `pipeId` ALHEIO passaria: o `WITH
+  /// CHECK` da RLS só olha o `orgId` (que é legítimo), e a verificação de FK roda com BYPASS de row
+  /// security — encontraria o Pipe da outra Organização e aceitaria. Sobraria apenas a releitura no
+  /// serviço guardando o invariante-mãe, e nesta base quem isola é o banco, não a aplicação.
+  ///
+  /// Com o par, o vazamento cross-tenant deixa de ser questão de código e vira violação de FK.
+  /// `RESTRICT` porque o runtime não tem DELETE em `Pipe`: apagar um Pipe com Automação é erro
+  /// explícito, nunca cascata silenciosa.
+  pipe Pipe @relation(fields: [orgId, pipeId], references: [orgId, id], onDelete: Restrict)
+
+  /// A consulta do motor (4.6) é "Automações ATIVAS de um Pipe"; a desta Story é "Automações de um Pipe".
+  @@index([orgId, pipeId, state])
+  @@map("Automation")
 }
