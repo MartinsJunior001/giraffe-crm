@@ -39,6 +39,8 @@ import { PhasesController } from './phases/phases.controller';
 import { PhasesService } from './phases/phases.service';
 import { PhaseMilestonesController } from './phases/milestones/phase-milestones.controller';
 import { PhaseMilestonesService } from './phases/milestones/phase-milestones.service';
+import { AutomationsController } from './automations/automations.controller';
+import { AutomationsService } from './automations/automations.service';
 import { PipesController } from './pipes.controller';
 import { PipesService } from './pipes.service';
 
@@ -99,6 +101,7 @@ import { PipesService } from './pipes.service';
     TriageController,
     PublicConfigController,
     CardFilesController,
+    AutomationsController,
   ],
   providers: [
     PipesService,
@@ -123,6 +126,7 @@ import { PipesService } from './pipes.service';
     TriageService,
     PublicConfigService,
     PublicUploadSizeGuard,
+    AutomationsService,
   ],
   // Story 3.3: o Form Builder é canônico (INV-FORM-01). Estes serviços são exportados para que o módulo
   // Databases (que importa PipesModule) monte/evolua/publique o Formulário de Database SEM um segundo builder.

@@ -61,5 +61,17 @@ export function construirAbility(papel: PapelEfetivo, orgId: string): AppAbility
     can('administrar', 'Database', { orgId });
   }
 
+  // Automação (Story 4.1). `ler Automacao` é GROSSEIRA, como `ler Pipe`/`ler Database`: confirma apenas
+  // que o papel pode alcançar *alguma* Automação na Org. QUEM administra (Admin da Org / Admin do Pipe),
+  // quem só lê (Membro do Pipe) e quem não acessa (Convidado, sem `PipeGrant`) é a guarda FINA, decidida
+  // no `AutomationsService` por `pipe-authz.ts` com o Pipe carregado — inclusive o 404 não-enumerante,
+  // que o guard não poderia dar por não carregar o recurso (DBT-AUTHZ-01).
+  //
+  // NÃO existe `administrar Automacao` aqui de propósito: se a criação exigisse `administrar` no guard,
+  // um Membro do Pipe levaria 403 ANTES da guarda fina — e o formato do erro já revelaria que o Pipe
+  // existe, justamente o que a não-enumeração evita. O `GUEST` não tem `PipeGrant`, então cai em 404 no
+  // serviço; o gate de Convidado é a ausência de concessão, não uma exceção no guard.
+  can('ler', 'Automacao', { orgId });
+
   return build();
 }

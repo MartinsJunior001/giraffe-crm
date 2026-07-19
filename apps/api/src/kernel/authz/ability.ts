@@ -29,7 +29,7 @@ export type AcaoAutorizada = 'ler' | 'administrar';
  * Épico consumir este substrato (o próprio arquivo prevê "eles chegam com regra própria nos Épicos") —
  * NÃO é uma alteração do mecanismo (C3 permanece congelado), é extensão do catálogo.
  */
-export type SujeitoAutorizado = 'Organizacao' | 'Pipe' | 'Database';
+export type SujeitoAutorizado = 'Organizacao' | 'Pipe' | 'Database' | 'Automacao';
 
 /**
  * Forma do sujeito `Organizacao` para as `conditions` (escopo por `id`). O CASL tipa as conditions e
@@ -57,7 +57,18 @@ export interface Database {
   readonly orgId: string;
 }
 
-/** A ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id }` para Org, `{ orgId }` para Pipe/Database). */
+/**
+ * Forma do sujeito `Automacao` para as `conditions` (Story 4.1). Escopo por `orgId`, simétrico à RLS.
+ *
+ * Sujeito PRÓPRIO, e não um reuso de `Pipe`: embora toda Automação pertença a exatamente um Pipe
+ * (RN-100), quem pode administrá-la é decidido por regra própria (D4.3), e o catálogo de sujeitos é
+ * justamente onde um Épico registra a sua entidade.
+ */
+export interface Automacao {
+  readonly orgId: string;
+}
+
+/** A ação × (nome | forma) do sujeito, com `conditions` tipo-Mongo (`{ id }` para Org, `{ orgId }` para os demais). */
 export type AppAbility = MongoAbility<
-  [AcaoAutorizada, SujeitoAutorizado | Organizacao | Pipe | Database]
+  [AcaoAutorizada, SujeitoAutorizado | Organizacao | Pipe | Database | Automacao]
 >;
