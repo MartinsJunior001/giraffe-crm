@@ -10,14 +10,14 @@ Estados: `backlog` · `assigned` · `in-progress` · `pr-open` · `in-review` ·
 
 | Story | Estado | Writer | QA | Branch / worktree | PR | CI | Bloqueio | Próxima ação | Prio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 4.1 — Modelo, escopo e referências da Automação | `in-review` | Writer A | pendente em `e511a86e` | `story/4-1-modelo-automacao-pipe` / `wt-4-1` | #124 (aberto, `MERGEABLE`/`CLEAN`) | 5/5 verde em `e511a86e` | QA final não emitido no HEAD atual | **QA revisar `e511a86e`** e publicar veredito no PR; só então a Lane 0 libera o merge | P0 |
+| 4.1 — Modelo, escopo e referências da Automação | `closed` | Writer A | `APPROVED @ e511a86e` | `story/4-1-modelo-automacao-pipe` / `wt-4-1` | #124 **merged** (`2b69f0e`) · closure #125 **merged** (`3032702`) | 5/5 verde em `3032702` | — | — | P0 |
 | 1.9 — Troca explícita de Organização | `assigned` | Writer B | — | `story/1-9-troca-explicita-de-organizacao` / `wt-1-9` (em `b6fa176`, sem commit próprio) | — | — | — | BMAD + Spec Kit — não iniciada | P0 |
 
-### Bloqueio ativo — 4.1 aguarda QA no HEAD corrente
+### 4.1 encerrada — 19/07/2026
 
-O `QA_STATUS: APPROVED` de 19/07 17:48 vale para `a7b10506`, **não** para o HEAD atual. A própria Lane 0 retratou aquele SHA às 18:23 (“**Não aprovar `a7b10506`**”) ao mandar M1/M2 para dentro do ciclo; o Writer entregou `e511a86e` às 18:33 e declarou `READY_FOR_QA`. **Nenhum veredito de QA existe em `e511a86e`** — o último evento do PR é o pedido de revisão.
+`origin/main` = **`3032702a4bc0f4e9b5bc2a4aa05f759789bd1310`**, CI 5/5 verde. `sprint-status`: `epic-4: in-progress`, `4-1-…: done` — **Épico 4 em 1/9**.
 
-O delta `a7b10506..e511a86e` foi conferido pela Lane 0 e é textual: em `ability.factory.ts` só linhas de comentário mudam (`can('ler','Automacao',{orgId})` intacto) e nos dois testes só três strings de rótulo de `it`. **Isso não substitui o veredito**: quem integra não aprova o que vai mergear (§ Papéis). Evento pendente: `CI_GREEN_READY_FOR_QA` → **QA**.
+Registro do ciclo, porque a lição não é sobre esta Story: a aprovação `@ a7b10506` foi **retratada** para que M1/M2 entrassem no mesmo ciclo, e o merge só ocorreu com `QA_STATUS: APPROVED @ e511a86e` — o HEAD exato. Um `QA_STATUS` antigo com HEAD novo é condição de parada, não autorização. A Lane 0 havia conferido que o delta era textual e **ainda assim não mergeou sem o veredito**: conferir ≠ aprovar (§ Papéis).
 
 ## Débitos e P0 fora do PR #124
 
@@ -44,5 +44,5 @@ Superfícies com Writer exclusivo enquanto a Story estiver em voo. Quem não é 
 
 Um merge por vez, ordenado pela Lane 0. **Uma migration integrada por vez.**
 
-1. 4.1 (detém o slot de migration)
+1. ~~4.1~~ — integrada em `2b69f0e`, closure em `3032702`. **Slot de migration liberado.**
 2. 1.9 (sem migration; pode integrar fora do slot)
