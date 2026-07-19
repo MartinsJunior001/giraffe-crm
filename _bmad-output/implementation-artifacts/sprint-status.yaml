@@ -102,7 +102,7 @@ development_status:
   epic-2-retrospective: optional
 
   # ===== Wave 4 — Épico 3: Databases, Registros, Vínculos e Arquivos =====
-  epic-3: in-progress
+  epic-3: done
   3-1-ciclo-de-vida-e-catalogo-de-databases: done
   3-2-papeis-e-acesso-por-database: done
   3-3-formulario-de-database-schema-visual-do-registro: done
@@ -112,7 +112,7 @@ development_status:
   3-7-capacidade-compartilhada-de-arquivos: done
   3-8-campo-arquivo-funcional-e-anexo-geral: done
   3-9-vinculo-card-registro-n-n: done
-  3-10-integracao-fr32-avatar: backlog
+  3-10-integracao-fr32-avatar: done
   epic-3-retrospective: optional
 
   # ===== Wave 5 — Épico 4: Automações internas =====
