@@ -81,7 +81,7 @@ Se a seção não gerar uma entrega versionável, não crie commit e registre ap
 
 ## Protocolo Autônomo de Aceleração
 
-Obrigatório para todas as sessões e agentes. Ele define **ritmo, autonomia e continuidade** — não redefine os gates: quais skills rodam e quando continua sendo o que diz **Processo obrigatório**, e o que nunca pode ser cortado continua sendo **Isolamento multi-tenant** e **Convenções que o código já assume**.
+Obrigatório para todas as sessões e agentes. Ele define **papéis, ritmo, autonomia, comunicação e continuidade** — não redefine os gates: quais skills rodam e quando continua sendo o que diz **Processo obrigatório**, e o que nunca pode ser cortado continua sendo **Isolamento multi-tenant** e **Convenções que o código já assume**.
 
 ### Objetivo operacional
 
@@ -97,9 +97,19 @@ A autonomia é de **ritmo**, não de alçada: restrições de segurança e de pe
 
 ### Fonte de verdade
 
-Reconcilie nesta ordem: `origin/main` → código efetivamente mergeado → `sprint-status` → PRD/UX/Arquitetura/Épicos/Stories → Spec Kit → PRs e CI → branches e worktrees → MEMORY e checkpoints.
+Reconcilie **sempre nesta ordem**, do mais autoritativo ao mais volátil:
 
-Evidência real prevalece sobre checkpoint antigo. **Nunca sobrescreva código mergeado com informação histórica desatualizada.**
+1. `origin/main` — código efetivamente mergeado;
+2. **PRs e CI do GitHub** — o estado verificado do trabalho em voo;
+3. `sprint-status`;
+4. artefatos BMAD e Spec Kit (PRD/UX/Arquitetura/Épicos/Stories);
+5. branches e worktrees;
+6. **board operacional**;
+7. MEMORY e checkpoints.
+
+PRs e CI vêm **logo depois do `main`** porque são a evidência mecânica mais fresca do que existe: um `sprint-status` desatualizado ou um checkpoint escrito antes de uma queda descrevem intenção, enquanto um check do CI descreve fato.
+
+Evidência real prevalece sobre checkpoint antigo. **Um checkpoint nunca prevalece sobre o estado real do repositório**, e **nunca sobrescreva código mergeado com informação histórica desatualizada.** Isso não torna o checkpoint um pedido de autorização (ver **Autonomia**): ele acelera a retomada, mas quem decide o que é verdade é o repositório.
 
 ### Fluxo obrigatório
 
@@ -109,19 +119,78 @@ Etapas podem ser **consolidadas** quando seguro, mas suas **evidências não pod
 
 A atualização de `sprint-status.yaml` e do status da Story é automática **pelo workflow BMAD responsável** — a autonomia acelera o disparo do workflow, **não** autoriza edição manual desses artefatos (ver **Processo obrigatório**).
 
+### Papéis
+
+Papéis são **funções**, não pessoas nem quantidade fixa de sessões. Um papel pode estar vago; nenhum papel acumula merge com implementação da mesma Story.
+
+- **Lane 0 — Orquestrador e Release.** Fonte central de ownership; escolhe a próxima Story e a atribui; mantém a fila de integração e a fila de migrations; acompanha PR, CI, staging e closure; mantém o board. **Não implementa código funcional de Story** e é o **único agente autorizado a ordenar merge e closure**. A separação existe para que quem integra não seja quem se autoavalia.
+- **Writer (A, B, …) — implementação.** Writer **exclusivo de uma** Story, com branch e worktree exclusivos. Implementa, testa, corrige findings e prepara o PR. **Não faz closure** e **não se autoatribui Story**. Um Writer não edita arquivo, contrato, migration ou superfície reservada à Story de outro Writer.
+- **QA/Revisor — verificação.** Revisão **read-only**: não escreve na branch do Writer. Publica os findings **no PR**. Verifica segurança, isolamento/RLS, migrations, rollback, testes negativos e regressão. **Não faz merge nem closure.**
+
 ### Ownership e worktrees
 
 - Um único Writer funcional **por Story** e um único Writer **por worktree**; uma Story em andamento por Writer.
-- Ownership registrado **antes** da escrita. Nenhum arquivo ou contrato crítico com Writers concorrentes; nenhuma migration concorrente sem coordenação do Lead Integrator.
+- **Ownership é atribuído pela Lane 0 e registrado antes da escrita.** Nenhum arquivo ou contrato crítico com Writers concorrentes; nenhuma migration concorrente — a fila de migrations é da Lane 0.
 - Antes de editar, confira branches, worktrees, Writers e alterações existentes. Se outro Writer estiver ativo, **não duplique o trabalho** e preserve as alterações dele.
 - **Não** use `force`, `reset`, `clean` nem remoção de worktree para resolver colisão — conflito se resolve **semanticamente**, sem apagar trabalho válido.
-- Sessão sem ownership funcional assume Orquestração, revisão, planejamento ou outra lane comprovadamente independente.
+- Sessão sem ownership funcional assume uma lane **não-funcional** — Orquestração, revisão ou planejamento — e **nunca uma Story**: assumir Story sem atribuição da Lane 0 é exatamente a colisão que este protocolo previne.
 
 ### Paralelismo seguro
 
 Paralelize somente Stories **realmente** independentes. Lane 0: orquestração, integração, `main`, CI, staging e release. Lane 1: caminho crítico. Lanes adicionais: fluxos P0 independentes. Lane de qualidade: E2E, segurança, LGPD, migrations, backup, observabilidade e rollback.
 
 WIP máximo de uma Story por Writer; planejamento no máximo uma Story à frente; branches curtas; PRs pequenos e verticais; integração frequente; `main` sempre verde. Nenhum paralelismo artificial e nenhuma edição concorrente do mesmo contrato.
+
+### Barramento de comunicação
+
+Agentes se comunicam por **artefatos que persistem**, nunca por transcrição de chat. O dono **não é o transportador de mensagens rotineiras** entre sessões.
+
+**Depois que existe PR, o PR é o canal oficial da Story.** Os findings do QA são publicados no PR; o Writer responde e corrige **no mesmo PR**; evidências de teste são anexadas ao PR ou aos arquivos de gates; a Lane 0 acompanha o PR e o CI diretamente, sem depender de alguém repetir o resultado. Decisão material fica registrada no PR **e** na documentação durável correspondente — um comentário de PR sozinho não é onde uma decisão de arquitetura sobrevive.
+
+**Antes de existir PR**, ownership e estado resumido ficam no **board**. Só a Lane 0 altera o ownership oficial; Writers consultam o board e fazem anticolisão **antes** de escrever.
+
+### Board operacional
+
+`_bmad-output/implementation-artifacts/board-operacional.md` — colunas: Story · estado · Writer · QA · branch/worktree · PR · CI · bloqueio · próxima ação · prioridade.
+
+**Escrito exclusivamente pela Lane 0.** Writers e QA leem, não editam: um board que todos escrevem vira o conflito de merge que ele deveria evitar. Ele é **fotografia operacional** — nunca fonte superior ao GitHub ou ao `origin/main` (ver **Fonte de verdade**). Divergiu do repositório, o board está errado.
+
+É também onde vive o estado que **não pode entrar neste arquivo**: SHA atual, Story em andamento, PR atual, nomes de branch e worktree, datas e ownership do momento. Este arquivo descreve **processo estável**; estado volátil que virasse instrução permanente envelheceria em silêncio e passaria a mentir.
+
+### Roteamento determinístico
+
+Eventos nomeados, para que cada agente saiba se a próxima ação é dele sem precisar perguntar:
+
+| Evento                           | Quem age        | Ação                                       |
+| -------------------------------- | --------------- | ------------------------------------------ |
+| `STORY_ASSIGNED`                 | Writer indicado | anticolisão e reconciliação, depois inicia |
+| `IMPLEMENTATION_READY`           | Writer          | publica branch/PR com evidências           |
+| `CI_GREEN_READY_FOR_QA`          | QA              | inicia a revisão                           |
+| `QA_FINDINGS`                    | Writer da Story | corrige no próprio PR                      |
+| `QA_APPROVED`                    | Lane 0          | valida a fila de integração                |
+| `MERGED`                         | Lane 0          | executa o closure BMAD                     |
+| `CLOSURE_DONE`                   | Lane 0          | libera a próxima Story elegível            |
+| `BLOCKED` por mais de duas horas | Lane 0          | decide a alternativa                       |
+
+**Escalar ao dono** apenas: decisão de produto; migration destrutiva; segredo indisponível; risco Critical/High sem mitigação — os mesmos casos de **Condições de parada**, aqui sem duplicar a lista.
+
+### Limite da automação entre terminais
+
+Este arquivo define **comportamento**, não dispara processo: um documento não acorda outra sessão. A consequência é operacional e precisa estar explícita:
+
+- um terminal ocioso **não assume Story sozinho**;
+- **ownership não se infere do silêncio** de outro agente;
+- um terminal só começa Story nova quando a Lane 0 **registrar a atribuição**;
+- um agente **ativo** que detecta o evento que lhe corresponde **continua sem pedir autorização**;
+- um agente **encerrado** só volta por um mecanismo externo de orquestração;
+- hooks podem **notificar**, mas **não concedem ownership**;
+- automação de dispatch **não contorna** gates, anticolisão nem separação de Writers.
+
+### Fila de revisão (QA)
+
+Com mais de um PR aguardando: **1)** Critical/High e migrations; **2)** caminho crítico P0; **3)** PR mais próximo da integração; **4)** baixo risco.
+
+**O CI roda antes da revisão.** Revisor não gasta atenção em PR que ainda falha em check mecânico — lint e typecheck a máquina encontra sozinha, e o custo real do revisor é a análise que ela não faz.
 
 ### Decisões técnicas
 
@@ -141,7 +210,11 @@ Prefira mudanças verticais pequenas, padrões existentes, testes direcionados d
 
 Ordem obrigatória: implementação → **todos** os testes obrigatórios → revisão → CI verde → merge da implementação **completa** → confirmação da evidência em `origin/main` → closure → atualização do `sprint-status`.
 
-**Nunca faça closure enquanto código ou teste obrigatório estiver apenas em outra branch ou na fila de merge.** Havendo múltiplos PRs dependentes, coordene explicitamente a ordem.
+A Lane 0 — e só ela — libera o merge, e **somente** quando: CI verde; nenhum finding Critical/High aberto; findings obrigatórios resolvidos; migration **e rollback comprovados** quando aplicável; integração com `origin/main` atualizada; ownership e escopo íntegros.
+
+**Nunca faça closure enquanto código ou teste obrigatório estiver apenas em outra branch ou na fila de merge.** O closure só ocorre depois de **todos** os PRs obrigatórios da Story estarem no `main`. Havendo múltiplos PRs dependentes, coordene explicitamente a ordem.
+
+**Nenhum comentário isolado é trava técnica de merge.** Bloqueio se expressa por gate verificável, check obrigatório ou status operacional explícito — um bloqueio que só existe na prosa de um comentário não sobrevive a uma troca de sessão.
 
 ### Gates que não podem ser cortados
 
@@ -157,9 +230,15 @@ Antes de parar: preserve o estado → registre o bloqueio → **continue todas a
 
 ### Continuidade
 
-Ao concluir uma Story: merge e closure → atualizar status e checkpoint → encontrar a próxima Story P0 elegível → atribuir ownership exclusivo → continuar automaticamente. **Não espere o usuário mandar "continue".**
+Ao concluir uma Story: merge e closure → atualizar status e checkpoint → **a Lane 0** identifica a próxima Story P0 elegível e atribui ownership exclusivo → o agente atribuído continua automaticamente. **Não espere o usuário mandar "continue"** — mas também não se autoatribua: a atribuição é da Lane 0 (ver **Papéis**).
 
-Antes de compactar ou encerrar uma sessão, registre: SHA do `main`; branch, worktree e owner; PR, CI e testes; alterações não publicadas; decisões e bloqueios; a **próxima ação exata** e a instrução de retomada. A próxima sessão continua do checkpoint, sem reconstruir o projeto do zero.
+**Continue automaticamente** quando as quatro condições valerem juntas: a próxima ação está na sua alçada; as dependências estão satisfeitas; o ownership está confirmado; não há colisão nem condição material de parada. Não peça autorização para testar, corrigir lint/formatação, integrar `origin/main`, responder findings, atualizar o próprio PR, acompanhar CI, preparar evidências ou fazer deploy em staging já autorizado por este protocolo.
+
+Cada sessão tem um **nome estável** ligado ao papel ou à Story, para que a retomada seja endereçável.
+
+Antes de compactar ou encerrar uma sessão, registre: SHA do `main`; branch, worktree e owner; PR, CI e testes; alterações não publicadas; decisões e bloqueios; a **próxima ação exata** e a instrução de retomada.
+
+**Ao retomar:** restaure a sessão nomeada → `git fetch` → releia PR, CI e board → revalide ownership → inspecione worktree e alterações existentes → continue do último estado **real confirmado**. O checkpoint orienta a retomada, **não a substitui**: ele descreve o que era verdade quando foi escrito, e uma queda costuma acontecer exatamente entre o checkpoint e o fato.
 
 ## Invariantes conceituais (nunca erodir)
 
