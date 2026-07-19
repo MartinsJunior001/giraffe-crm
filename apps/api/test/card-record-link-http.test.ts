@@ -4,8 +4,9 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { IncomingMessage } from 'node:http';
 import { PrismaClient } from '../generated/prisma';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/kernel/db/prisma.service';
 import {
   PRINCIPAL_PROVIDER,
   type Principal,
@@ -337,5 +338,70 @@ describe('concorrência e fronteira do banco (AC6/9/16/19)', () => {
     } finally {
       await appClient.$disconnect();
     }
+  });
+});
+
+describe('atomicidade — rollback total quando a escrita de um evento falha (contrato #20 / teste obrigatório #15)', () => {
+  it('falha na 2ª escrita de história desfaz o vínculo E o 1º evento (mesma fronteira transacional)', async () => {
+    // Card e Registro DEDICADOS (sem LINKED prévio) — a asserção de "nada persistiu" fica inequívoca.
+    const cardAtom = await criarCard('atom-c');
+    const recordAtom = await criarRegistro('atom-r');
+
+    // Injeta falha DETERMINÍSTICA na escrita do RecordHistory (a 2ª história), DENTRO da MESMA tx
+    // interativa do serviço — sem tocar o código de produção. O `tx` real é preservado (definirContextoOrg,
+    // cardRecordLink.create, cardHistory.create seguem funcionando); só `recordHistory.create` passa a rejeitar.
+    const prisma = app.get(PrismaService);
+    const original = prisma.$transaction.bind(prisma) as (...a: unknown[]) => Promise<unknown>;
+    const spy = vi.spyOn(prisma, '$transaction').mockImplementation(((
+      arg: unknown,
+      opts: unknown,
+    ) => {
+      if (typeof arg !== 'function') return original(arg, opts);
+      return original((tx: Record<string, unknown>) => {
+        const txProxy = new Proxy(tx, {
+          get(alvo, prop) {
+            if (prop === 'recordHistory') {
+              return new Proxy(alvo.recordHistory as object, {
+                get(rt, rp) {
+                  if (rp === 'create')
+                    return () => Promise.reject(new Error('falha injetada: RecordHistory.create'));
+                  return (rt as Record<string, unknown>)[rp as string];
+                },
+              });
+            }
+            return (alvo as Record<string, unknown>)[prop as string];
+          },
+        });
+        return (arg as (t: unknown) => Promise<unknown>)(txProxy);
+      }, opts);
+    }) as typeof prisma.$transaction);
+
+    try {
+      const res = await req('POST', linkRota(cardAtom), adminConta, { recordId: recordAtom });
+      // A falha não é P2002/P2028 (conflito) → o serviço a propaga → 5xx (não 201, não 409 idempotente).
+      expect(res.status).toBeGreaterThanOrEqual(500);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // ROLLBACK TOTAL: nada da operação persistiu — nem vínculo, nem UM dos históricos (sem evento órfão,
+    // sem estado divergente entre Card e Registro).
+    expect(await linksAtivos({ cardId: cardAtom, recordId: recordAtom })).toBe(0);
+    expect(await db().cardRecordLink.count({ where: { cardId: cardAtom } })).toBe(0);
+    const chLinked = await db().cardHistory.count({ where: { cardId: cardAtom, type: 'LINKED' } });
+    const rhLinked = await db().recordHistory.count({
+      where: { recordId: recordAtom, type: 'LINKED' },
+    });
+    expect(chLinked).toBe(0); // o 1º evento (CardHistory) foi desfeito junto com o vínculo
+    expect(rhLinked).toBe(0); // o 2º nunca chegou a persistir
+    expect(chLinked).toBe(rhLinked); // consistência: nenhum lado ficou com LINKED órfão
+
+    // CONTROLE: sem a falha, o MESMO par vincula normalmente (prova que o rollback foi causado pela falha
+    // injetada, não por indisponibilidade do par) — e os DOIS históricos ganham o LINKED.
+    const ok = await req('POST', linkRota(cardAtom), adminConta, { recordId: recordAtom });
+    expect(ok.status).toBe(201);
+    expect(await linksAtivos({ cardId: cardAtom, recordId: recordAtom })).toBe(1);
+    expect((await tiposHistoricoCard(cardAtom)).some((e) => e.type === 'LINKED')).toBe(true);
+    expect((await tiposHistoricoRecord(recordAtom)).some((e) => e.type === 'LINKED')).toBe(true);
   });
 });
