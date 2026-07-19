@@ -79,6 +79,46 @@ export class CardRecordLinkService {
     return record.databaseId;
   }
 
+  /**
+   * **Somente-leitura integral sob arquivamento** (3.1 D1) aplicada ao vínculo (AC17 da 3.9: "arquivamento segue o
+   * contrato existente"). Vincular/desvincular é MUTAÇÃO dos três recursos — grava a linha do vínculo e um evento
+   * na trilha de Card **e** de Registro — então um lado ARQUIVADO barra a operação com **409**, no mesmo vocabulário
+   * de 3.1/3.4 (`DATABASE_ARQUIVADO`/`RECORD_ARQUIVADO`).
+   *
+   * A autorização NÃO cobre isto: `exigirOperarCard`/`exigirOperarDatabase` resolvem **poder**, não estado — quem
+   * pode operar um Card ativo continua podendo depois de arquivá-lo. Sem esta guarda, arquivar não congelava nada.
+   *
+   * O dano seria **permanente**: `CardHistory`/`RecordHistory` têm GRANT só `SELECT`/`INSERT` (append-only), então um
+   * `LINKED` escrito na trilha de um recurso arquivado não pode ser corrigido nem apagado depois.
+   *
+   * Vale para vincular **e** desvincular: read-only é read-only, e o fluxo é restaurar → desvincular → arquivar
+   * (mesma decisão do renomear-sob-arquivamento em 3.1). `FINALIZADO` **não** bloqueia: só `ARQUIVADO` congela
+   * (2.11 — `finalizado` é estado operacional, não somente-leitura).
+   */
+  private async exigirLadosNaoArquivados(
+    db: Db,
+    cardId: string,
+    recordId: string,
+    databaseId: string,
+  ): Promise<void> {
+    const [card, record, database] = await Promise.all([
+      db.card.findUnique({ where: { id: cardId }, select: { lifecycleState: true } }),
+      db.record.findUnique({ where: { id: recordId }, select: { lifecycleState: true } }),
+      db.database.findUnique({ where: { id: databaseId }, select: { state: true } }),
+    ]);
+    // Ausência aqui é 404 (não-enumerante), não 409: o recurso pode ter sumido entre a autz e esta leitura.
+    if (!card || !record || !database) throw new NotFoundException();
+    if (card.lifecycleState === 'ARQUIVADO') {
+      throw new ConflictException({ motivo: 'CARD_ARQUIVADO' });
+    }
+    if (record.lifecycleState === 'ARQUIVADO') {
+      throw new ConflictException({ motivo: 'RECORD_ARQUIVADO' });
+    }
+    if (database.state === 'ARCHIVED') {
+      throw new ConflictException({ motivo: 'DATABASE_ARQUIVADO' });
+    }
+  }
+
   /** Autorização de MUTAÇÃO do vínculo: operar o Card **E** operar o Database do Registro. Ordem: Card primeiro. */
   private async exigirOperarOsDois(
     db: Db,
@@ -89,13 +129,15 @@ export class CardRecordLinkService {
     await exigirOperarCard(db, contexto, cardId); // 404 sem acesso ao Card; 403 só-lê
     const databaseId = await this.databaseIdDoRegistro(db, recordId);
     await exigirOperarDatabase(db, contexto, databaseId); // 404 sem acesso ao Database; 403 VIEWER
+    // Estado DEPOIS do poder: quem não tem acesso recebe 404, sem aprender que o recurso está arquivado.
+    await this.exigirLadosNaoArquivados(db, cardId, recordId, databaseId);
     return databaseId;
   }
 
   /**
-   * Cria o vínculo (idempotente). 404 sem acesso a um dos lados / Card ou Registro inexistente; 409 conflito de
-   * concorrência não resolvível como idempotente. Re-vincular par já ativo devolve o vínculo existente (sem novo
-   * evento).
+   * Cria o vínculo (idempotente). 404 sem acesso a um dos lados / Card ou Registro inexistente; 409 se um dos lados
+   * está ARQUIVADO (somente-leitura integral) ou por conflito de concorrência não resolvível como idempotente.
+   * Re-vincular par já ativo devolve o vínculo existente (sem novo evento).
    */
   async vincular(cardId: string, recordId: string): Promise<VinculoVisao> {
     const { contexto, db } = this.db();
@@ -160,8 +202,9 @@ export class CardRecordLinkService {
   }
 
   /**
-   * Remove o vínculo (idempotente). 404 sem acesso a um dos lados / Registro inexistente. Desvincular par não
-   * ativo (já removido ou inexistente) é no-op determinístico (200, sem evento). Sem exclusão física.
+   * Remove o vínculo (idempotente). 404 sem acesso a um dos lados / Registro inexistente; 409 se um dos lados está
+   * ARQUIVADO (o fluxo é restaurar → desvincular → arquivar). Desvincular par não ativo (já removido ou
+   * inexistente) é no-op determinístico (200, sem evento). Sem exclusão física.
    */
   async desvincular(cardId: string, recordId: string): Promise<{ removido: boolean }> {
     const { contexto, db } = this.db();
