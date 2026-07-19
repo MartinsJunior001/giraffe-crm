@@ -38,6 +38,8 @@ let cardId = '';
 let card2Id = '';
 let recordId = '';
 let record2Id = '';
+// Database descartável do teste de arquivamento (AC17) — removido no afterAll.
+let baseArquivavel = '';
 
 class PrincipalDeTeste implements PrincipalProvider {
   resolver(req: IncomingMessage): Promise<Principal | null> {
@@ -190,7 +192,9 @@ afterAll(async () => {
     await dbC.cardRecordLink
       .deleteMany({ where: { orgId: ORG_C, cardId: { in: [cardId, card2Id] } } })
       .catch(() => {});
-    await dbC.database.deleteMany({ where: { id: dbId } }).catch(() => {});
+    await dbC.database
+      .deleteMany({ where: { id: { in: [dbId, baseArquivavel].filter(Boolean) } } })
+      .catch(() => {});
     await dbC.pipe.deleteMany({ where: { id: pipeId } }).catch(() => {});
     await dbC.membership
       .deleteMany({ where: { id: { in: [adminMemb, soCardMemb] } } })
@@ -403,5 +407,101 @@ describe('atomicidade — rollback total quando a escrita de um evento falha (co
     expect(await linksAtivos({ cardId: cardAtom, recordId: recordAtom })).toBe(1);
     expect((await tiposHistoricoCard(cardAtom)).some((e) => e.type === 'LINKED')).toBe(true);
     expect((await tiposHistoricoRecord(recordAtom)).some((e) => e.type === 'LINKED')).toBe(true);
+  });
+});
+
+/**
+ * **Somente-leitura integral sob arquivamento** (3.1 D1) aplicada ao vínculo — AC17 da 3.9 ("arquivamento segue o
+ * contrato existente"). Regressão do defeito pós-merge: a autorização resolve PODER, não estado, então quem operava
+ * o Card/Database continuava vinculando depois de arquivá-lo, gravando `LINKED` na trilha de um recurso arquivado —
+ * dano permanente, porque `CardHistory`/`RecordHistory` são append-only (GRANT só SELECT/INSERT).
+ *
+ * Atores próprios (Card/Registro dedicados): arquivar os fixtures compartilhados quebraria os testes vizinhos.
+ */
+describe('somente-leitura sob arquivamento (AC17)', () => {
+  it('Registro ARQUIVADO → 409 RECORD_ARQUIVADO ao vincular, e NADA é escrito na trilha', async () => {
+    const c = await criarCard('arq-c1');
+    const r = await criarRegistro('arq-r1');
+
+    expect((await req('POST', `/databases/${dbId}/records/${r}/archive`, adminConta)).status).toBe(
+      200,
+    );
+
+    const bloqueado = await req('POST', linkRota(c), adminConta, { recordId: r });
+    expect(bloqueado.status).toBe(409);
+    expect(((await bloqueado.json()) as { motivo?: string }).motivo).toBe('RECORD_ARQUIVADO');
+
+    // O vínculo não existe E a trilha do Registro arquivado não ganhou um LINKED que jamais poderia ser apagado.
+    expect(await linksAtivos({ cardId: c, recordId: r })).toBe(0);
+    expect((await tiposHistoricoRecord(r)).map((e) => e.type)).not.toContain('LINKED');
+    expect((await tiposHistoricoCard(c)).map((e) => e.type)).not.toContain('LINKED');
+
+    // Restaurar reabre a operação: o bloqueio é do ESTADO, não uma negativa permanente.
+    expect((await req('POST', `/databases/${dbId}/records/${r}/restore`, adminConta)).status).toBe(
+      200,
+    );
+    expect((await req('POST', linkRota(c), adminConta, { recordId: r })).status).toBe(201);
+  });
+
+  it('Card ARQUIVADO → 409 CARD_ARQUIVADO até para DESVINCULAR (restaurar → desvincular → arquivar)', async () => {
+    const c = await criarCard('arq-c2');
+    const r = await criarRegistro('arq-r2');
+    expect((await req('POST', linkRota(c), adminConta, { recordId: r })).status).toBe(201);
+
+    expect((await req('POST', `/cards/${c}/archive`, adminConta)).status).toBe(200);
+
+    const desvinculo = await req('DELETE', `${linkRota(c)}/${r}`, adminConta);
+    expect(desvinculo.status).toBe(409);
+    expect(((await desvinculo.json()) as { motivo?: string }).motivo).toBe('CARD_ARQUIVADO');
+    // O vínculo continua ATIVO: read-only significa que nem remover é permitido sob arquivamento.
+    expect(await linksAtivos({ cardId: c, recordId: r })).toBe(1);
+    expect((await tiposHistoricoCard(c)).map((e) => e.type)).not.toContain('UNLINKED');
+
+    expect((await req('POST', `/cards/${c}/restore`, adminConta)).status).toBe(200);
+    expect((await req('DELETE', `${linkRota(c)}/${r}`, adminConta)).status).toBe(200);
+    expect(await linksAtivos({ cardId: c, recordId: r })).toBe(0);
+  });
+
+  it('Database ARQUIVADO → 409 DATABASE_ARQUIVADO (o Registro herda a somente-leitura do dono)', async () => {
+    const c = await criarCard('arq-c3');
+    const r = await criarRegistro('arq-r3');
+    // Database próprio: arquivar o `dbId` compartilhado inviabilizaria os demais testes. Registrado no
+    // módulo para o `afterAll` removê-lo — um Database arquivado residual na Org C quebraria o vizinho.
+    baseArquivavel = randomUUID();
+    await db().database.create({
+      data: { id: baseArquivavel, orgId: ORG_C, name: '3.9 arquivada' },
+    });
+    await req('POST', `/databases/${baseArquivavel}/form/fields`, adminConta, {
+      label: 'Nome',
+      type: 'TEXT_SHORT',
+    });
+    await req('POST', `/databases/${baseArquivavel}/form/publish`, adminConta);
+    const rArquivavel = (
+      (await (
+        await req('POST', `/databases/${baseArquivavel}/records`, adminConta, {
+          idempotencyKey: 'arq-r4',
+          valores: {},
+        })
+      ).json()) as Ident
+    ).id;
+
+    expect((await req('POST', `/databases/${baseArquivavel}/archive`, adminConta)).status).toBe(
+      200,
+    );
+
+    const bloqueado = await req('POST', linkRota(c), adminConta, { recordId: rArquivavel });
+    expect(bloqueado.status).toBe(409);
+    expect(((await bloqueado.json()) as { motivo?: string }).motivo).toBe('DATABASE_ARQUIVADO');
+    expect(await linksAtivos({ cardId: c, recordId: rArquivavel })).toBe(0);
+
+    // Sanidade: o Database ATIVO segue vinculando — o 409 é do arquivamento, não uma quebra geral.
+    expect((await req('POST', linkRota(c), adminConta, { recordId: r })).status).toBe(201);
+  });
+
+  it('FINALIZADO não bloqueia: só ARQUIVADO congela (finalizar ≠ somente-leitura)', async () => {
+    const c = await criarCard('arq-c5');
+    const r = await criarRegistro('arq-r5');
+    expect((await req('POST', `/cards/${c}/finalize`, adminConta)).status).toBe(200);
+    expect((await req('POST', linkRota(c), adminConta, { recordId: r })).status).toBe(201);
   });
 });
