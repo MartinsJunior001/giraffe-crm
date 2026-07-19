@@ -116,8 +116,8 @@ development_status:
   epic-3-retrospective: optional
 
   # ===== Wave 5 — Épico 4: Automações internas =====
-  epic-4: backlog
-  4-1-modelo-escopo-e-referencias-da-automacao: backlog
+  epic-4: in-progress
+  4-1-modelo-escopo-e-referencias-da-automacao: done
   4-2-ciclo-de-vida-e-gestao-da-automacao: backlog
   4-3-catalogo-de-eventos-gatilhos: backlog
   4-4-catalogo-de-condicoes-e-avaliacao-and: backlog
