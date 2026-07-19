@@ -45,6 +45,7 @@ const MODELOS_AUDITADOS = new Set([
   'FileObject',
   'FileScan',
   'CardRecordLink',
+  'AccountAvatar',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
