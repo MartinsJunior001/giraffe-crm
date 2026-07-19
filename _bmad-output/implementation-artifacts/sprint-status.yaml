@@ -111,7 +111,7 @@ development_status:
   3-6-historico-do-registro-read-side: done
   3-7-capacidade-compartilhada-de-arquivos: done
   3-8-campo-arquivo-funcional-e-anexo-geral: done
-  3-9-vinculo-card-registro-n-n: backlog
+  3-9-vinculo-card-registro-n-n: done
   3-10-integracao-fr32-avatar: backlog
   epic-3-retrospective: optional
 
