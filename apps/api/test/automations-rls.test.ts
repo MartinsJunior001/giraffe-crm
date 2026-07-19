@@ -11,12 +11,20 @@ import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-co
  * Prova, além do padrão de RLS já consolidado:
  *
  *   · **F-A1 — a FK COMPOSTA tenant-safe.** Este é o teste central da Story: um INSERT com `orgId`
- *     próprio e `pipeId` de OUTRA Organização é recusado pelo BANCO, não pelo serviço. A fase vermelha
- *     do gate é explícita — o mesmo INSERT com o par COERENTE passa, provando que o que barrou foi o
- *     par cruzado e não um erro incidental.
+ *     próprio e `pipeId` de OUTRA Organização é recusado pelo BANCO, não pelo serviço. A cobertura aqui
+ *     é por **controle positivo e negativo** — o par coerente é aceito, o par cruzado é rejeitado —, o
+ *     que prova que o que barrou foi o par cruzado e não um erro incidental.
  *   · **GRANT como fronteira de escopo.** A 4.1 CRIA e LÊ: `SELECT`/`INSERT` concedidos, `UPDATE` e
  *     `DELETE` NEGADOS (`permission denied`). É isso que torna a Story segura antes do motor — o
  *     runtime não consegue levar uma Automação a `ACTIVE`.
+ *
+ * **O que estes testes NÃO fazem — e a distinção importa.** Nenhum `it` aqui derruba a constraint ou
+ * afrouxa a policy: eles exercitam a proteção **presente**. A remoção da `Automation_orgId_pipeId_fkey`
+ * e o afrouxamento do `WITH CHECK`, com observação da gravação cross-tenant, limpeza dos invasores,
+ * restauração e reconfirmação, foram um **drill MANUAL em banco descartável**, registrado na mensagem do
+ * commit e no PR — **não** estão versionados aqui, e portanto **não são reproduzíveis** por `pnpm test`.
+ * Automatizar esse drill é débito próprio (L1). Rotular estes testes de "fase vermelha" induziria a crer
+ * que a derrubada acontece dentro deles, que é exatamente o erro que a prática existe para evitar.
  *
  * Escrita sempre na **Org C** com Pipe descartável (`randomUUID`) — nunca reusar as fixtures de leitura
  * (TEST-ISO-01).
@@ -167,7 +175,7 @@ describe('GRANT — a fronteira que prova o escopo da 4.1', () => {
 });
 
 describe('F-A1 — FK composta tenant-safe (o vínculo é garantido pelo BANCO)', () => {
-  it('FASE VERDE: o par COERENTE (mesma Org) é aceito', async () => {
+  it('aceita o par COERENTE — Automação e Pipe na mesma Organização', async () => {
     const pipeC = await criarPipe(ORG_C);
     const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
 
@@ -180,7 +188,7 @@ describe('F-A1 — FK composta tenant-safe (o vínculo é garantido pelo BANCO)'
     expect(criada.pipeId).toBe(pipeC);
   });
 
-  it('FASE VERMELHA: `orgId` próprio + `pipeId` de OUTRA Organização é recusado pelo BANCO', async () => {
+  it('rejeita o par CROSS-TENANT — `orgId` próprio + `pipeId` de OUTRA Organização', async () => {
     // Pipe real, existente, porém da Org A.
     const pipeAlheio = await criarPipe(ORG_A);
 

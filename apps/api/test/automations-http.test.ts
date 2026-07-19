@@ -387,8 +387,9 @@ describe('AC-7 — gate de estado: Pipe arquivado', () => {
     expect((await res.json()) as { motivo?: string }).toMatchObject({ motivo: 'PIPE_ARQUIVADO' });
   });
 
-  it('FASE VERMELHA do gate: o MESMO payload no MESMO Pipe ATIVO é aceito', async () => {
-    // Prova que o 409 acima veio do ESTADO do Pipe, não de um defeito do payload.
+  it('CONTROLE do gate: o MESMO payload num Pipe ATIVO é aceito', async () => {
+    // Controle positivo do teste acima: prova que o 409 veio do ESTADO do Pipe, e não de um defeito do
+    // payload. Não há derrubada de proteção aqui — é o gate de arquivamento exercitado nos dois sentidos.
     const pipeAtivo = await criarPipe(ORG_A, 'ACTIVE');
     const res = await req('POST', `/pipes/${pipeAtivo}/automations`, ANA, {
       name: 'x',
