@@ -9,9 +9,11 @@ import { exigirLerDatabase, exigirOperarDatabase } from '../databases/database-a
 
 type Db = ReturnType<typeof withTenantContext>;
 
-/** `resourceType`s concretos que a 3.8 liga (allowlist fail-closed; tipo desconhecido → nega). */
+/** `resourceType`s concretos que a 3.8/3.10 ligam (allowlist fail-closed; tipo desconhecido → nega). */
 const RESOURCE_CARD = 'CARD';
 const RESOURCE_RECORD = 'RECORD';
+/** Story 3.10 — avatar da própria Conta. O `resourceId` é o `accountId` dono do arquivo. */
+const RESOURCE_ACCOUNT = 'ACCOUNT';
 
 /**
  * Implementação REAL da porta `FileAuthzContract` da 3.7 (Story 3.8, frente F1). A 3.7 é agnóstica de domínio;
@@ -81,6 +83,17 @@ export class FileAuthzDispatcher implements FileAuthzContract {
           await this.exigirRecordMutavel(db, record.databaseId, record.lifecycleState); // RF-7/AC7
         }
         return true;
+      }
+      if (resourceType === RESOURCE_ACCOUNT) {
+        // SELF-ONLY (Story 3.10): o "recurso dono" do avatar é a própria Conta, e ninguém — nem o Admin da
+        // Org — envia, troca ou baixa o avatar de outra pessoa. Ler e editar são a MESMA condição: não há
+        // "ler o avatar alheio" nesta Fase (roster é E8), então não se abre leitura sem consumidor (AD-11).
+        //
+        // Não há gate de arquivamento aqui (ao contrário de Card/Registro): a Conta não tem ciclo de vida
+        // arquivável nesta Fase. E não há consulta ao banco: a decisão é uma comparação de identidade do
+        // contexto já resolvido pelo servidor. A RLS de `AccountAvatar` é o backstop — mesmo que esta
+        // comparação fosse burlada, a policy self-only negaria a escrita.
+        return contexto.accountId === resourceId;
       }
       return false; // resourceType desconhecido: deny-by-default.
     } catch (err) {

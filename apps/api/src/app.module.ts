@@ -8,6 +8,7 @@ import { AuthModule } from './kernel/auth/auth.module';
 import { AuthzModule } from './kernel/authz/authz.module';
 import { ContextModule } from './kernel/context/context.module';
 import { DbModule } from './kernel/db/db.module';
+import { AccountsModule } from './accounts/accounts.module';
 import { DatabasesModule } from './databases/databases.module';
 import { FILE_AUTHZ_CONTRACT } from './files/file-authz.contract';
 import { FILE_EVENT_SINK } from './files/file-event-sink';
@@ -100,6 +101,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
       { provide: FILE_AUTHZ_CONTRACT, useClass: FileAuthzDispatcher },
       { provide: FILE_EVENT_SINK, useClass: FileEventDispatcher },
     ),
+    // Depois de `FilesModule.register`: o avatar (3.10) consome o `FilesService` com os dispatchers REAIS,
+    // que só existe por causa do registro global acima.
+    AccountsModule,
   ],
 })
 export class AppModule {}
