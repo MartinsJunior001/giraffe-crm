@@ -27,6 +27,8 @@ const ANA = '11111111-1111-1111-1111-111111111111';
 interface Chamada {
   readonly accountId: string;
   readonly orgIdPedido?: string | undefined;
+  /** Story 1.9: de ONDE veio o pedido — `x-org-id` do cliente ou a preferência da sessão. */
+  readonly origem?: 'header' | 'preferencia' | undefined;
 }
 
 /** Monta o guard com dublês, registrando o que chegou ao resolvedor. */
@@ -35,8 +37,11 @@ function montar(headers: IncomingMessage['headers']) {
   const eventos: Record<string, unknown>[] = [];
 
   const resolver = {
-    resolver: (accountId: string, orgIdPedido?: string) => {
-      chamadas.push({ accountId, orgIdPedido });
+    // Story 1.9: o resolvedor passou a receber `{ orgId, origem }` em vez de uma string solta — a
+    // origem define a semântica de falha (header REJEITA; preferência CADUCA), então o dublê a
+    // registra e os testes de normalização passam a provar as duas coisas de uma vez.
+    resolver: (accountId: string, pedido?: { orgId: string; origem: 'header' | 'preferencia' }) => {
+      chamadas.push({ accountId, orgIdPedido: pedido?.orgId, origem: pedido?.origem });
       return Promise.resolve({ orgId: ORG_A, accountId });
     },
   } as unknown as OrgContextResolver;
@@ -104,6 +109,8 @@ describe('normalização do pedido', () => {
     await ativar();
 
     expect(chamadas[0]?.orgIdPedido).toBe(ORG_B);
+    // E veio do HEADER — a origem é o que decide se um valor inválido derruba ou caduca.
+    expect(chamadas[0]?.origem).toBe('header');
   });
 
   it('espaço em volta é aparado', async () => {
@@ -112,6 +119,8 @@ describe('normalização do pedido', () => {
     await ativar();
 
     expect(chamadas[0]?.orgIdPedido).toBe(ORG_B);
+    // E veio do HEADER — a origem é o que decide se um valor inválido derruba ou caduca.
+    expect(chamadas[0]?.origem).toBe('header');
   });
 
   it('sem o header, o resolvedor recebe `undefined` — não uma string vazia', async () => {
