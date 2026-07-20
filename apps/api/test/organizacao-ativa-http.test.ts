@@ -11,10 +11,10 @@ import { AppModule } from '../src/app.module';
  * produção, login real, banco real. Sem costura de identidade — o que se prova aqui é justamente a
  * cadeia sessão → preferência → contexto, e substituí-la por um provider de teste provaria nada.
  *
- * **BRUNO é o sujeito porque ele pertence às DUAS Organizações do seed** (A e B) — o próprio seed o
- * documenta como "o caso que prova". É fixture de **LEITURA**: nenhuma Membership dele é criada,
- * alterada ou removida aqui (TEST-ISO-01). O que este arquivo escreve são **sessões**, que ele
- * mesmo cria pelo login e limpa no final.
+ * **EVA é o sujeito porque ela pertence às DUAS Organizações do seed** (A e B, ambas ACTIVE). O
+ * comentário do seed diz que Bruno é multi-org, mas o ESTADO real dele em B é SUSPENDED — ler o
+ * comentário em vez do dado custou uma rodada inteira de falhas. Eva é fixture de **LEITURA**:
+ * nenhuma Membership é tocada; o que esta suíte escreve são **sessões**, e só as próprias.
  */
 
 const ORG_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -23,9 +23,6 @@ const ORG_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 const EVA = '55555555-5555-5555-5555-555555555555'; // ACTIVE em A e B — a multi-org do seed
 const EVA_EMAIL = 'eva@exemplo.test';
-// Bruno (ACTIVE em A, SUSPENDED em B) é o contraexemplo do seed: ele NÃO é multi-org ativo, e foi
-// justamente essa leitura apressada do comentário do seed que o teste corrigiu. Quem é multi-org é Eva.
-const BRUNO = '22222222-2222-2222-2222-222222222222';
 const CARLA_EMAIL = 'carla@exemplo.test'; // ACTIVE só em B — caso de Organização única
 const SENHA = 'senha-de-desenvolvimento-123';
 
