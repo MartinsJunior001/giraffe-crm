@@ -37,11 +37,31 @@ export class OrgContextResolver {
   /**
    * Resolve o contexto a partir das Memberships ATIVAS da conta.
    *
-   * `orgIdPedido` é o que veio do cliente (header/rota). Ele nunca é fonte de autoridade: ou casa
-   * com uma Membership ativa, ou a requisição é rejeitada. Jamais é "corrigido em silêncio" —
-   * corrigir em silêncio ensina o cliente a mandar qualquer coisa e ainda esconde a tentativa.
+   * `pedido` é o que veio de fora. Ele nunca é fonte de autoridade: ou casa com uma Membership
+   * ativa, ou não vale. Quem decide é sempre a Membership.
+   *
+   * **Duas ORIGENS de pedido, com semânticas de falha deliberadamente diferentes (Story 1.9):**
+   *
+   * - `'header'` — o cliente AFIRMOU uma Organização nesta requisição (`x-org-id`). Se não casar,
+   *   a requisição é REJEITADA. Jamais é "corrigido em silêncio": corrigir em silêncio ensina o
+   *   cliente a mandar qualquer coisa e ainda esconde a tentativa.
+   *
+   * - `'preferencia'` — a escolha PERSISTIDA na sessão (`AuthSession.activeOrganizationId`). Não é
+   *   afirmação por requisição, é um default guardado, e ele ENVELHECE por fora: basta a Membership
+   *   ser suspensa ou revogada depois da troca. Uma preferência que não casa é IGNORADA, e as
+   *   regras normais reaplicam (única Membership ativa ⇒ entra nela; várias ⇒ 403 "escolha
+   *   obrigatória"). Isso NÃO é correção silenciosa de um pedido — é um default que caducou.
+   *
+   * O que as duas origens têm em comum, e é o que importa: **nenhuma delas concede acesso**. Uma
+   * preferência apontando para uma Organização onde a Membership não está mais ACTIVE nunca resolve
+   * naquele contexto — a autoridade continua sendo a Membership, conferida a cada requisição.
    */
-  async resolver(accountId: string, orgIdPedido?: string): Promise<ContextoOrganizacional> {
+  async resolver(
+    accountId: string,
+    pedido?: { orgId: string; origem: 'header' | 'preferencia' },
+  ): Promise<ContextoOrganizacional> {
+    const orgIdPedido = pedido?.orgId;
+    const origem = pedido?.origem;
     // Rejeita o que é sintaticamente inválido. Note o que esta guarda NÃO é: ela não protege o
     // banco de injeção — o `orgIdPedido` nunca entra em query nenhuma (a consulta abaixo filtra
     // por `accountId`; o pedido só é comparado em memória, no `some()`). Quem protege o banco são
@@ -52,6 +72,16 @@ export class OrgContextResolver {
     // pedida" — um evento de tentativa de acesso cruzado, quando na verdade foi um cliente com um
     // bug de formatação. Um sinal de segurança que confunde as duas coisas é um sinal que ninguém
     // consegue usar.
+    //
+    // Story 1.9 — por que esta guarda vale para AMBAS as origens, sem ramo especial para a
+    // preferência: `AuthSession.activeOrganizationId` é coluna **`uuid`** no PostgreSQL, que rejeita
+    // valor sintaticamente inválido na própria gravação (`invalid input syntax for type uuid` —
+    // provado em `preferencia-uuid-constraint.test.ts`). Preferência malformada não é um estado
+    // persistível, e escrever tratamento para ela seria lógica para um caso impossível, com o efeito
+    // colateral de sugerir ao próximo leitor que ele acontece.
+    //
+    // O `x-org-id`, ao contrário, vem do cliente e PODE ser malformado — é exatamente por isso que a
+    // guarda continua aqui.
     if (orgIdPedido !== undefined && !UUID.test(orgIdPedido)) {
       this.negar(accountId, orgIdPedido, 'orgId malformado');
     }
@@ -88,6 +118,28 @@ export class OrgContextResolver {
     // `find`, não `some`: além de decidir se é permitida, precisamos do PAPEL daquela Membership —
     // é ele que vira o teto de autorização (Story 1.6).
     const permitida = ativas.find((m) => m.orgId === orgIdPedido);
+
+    // Story 1.9 — PREFERÊNCIA OBSOLETA. É o caso central desta Story: o usuário trocou para a Org X,
+    // e depois a Membership dele em X foi suspensa ou revogada. A preferência continua gravada na
+    // sessão, mas NÃO PODE conceder acesso — se pudesse, suspender uma Membership não tiraria o
+    // acesso de ninguém, que é exatamente o buraco que a 1.3 fechou e que a sessão não pode reabrir.
+    //
+    // A preferência caduca e as regras normais reaplicam: com uma única Membership ativa restante,
+    // o usuário entra nela; com várias, recebe 403 e precisa escolher de novo. Em nenhum caminho a
+    // Organização obsoleta é usada.
+    if (!permitida && origem === 'preferencia') {
+      this.logger.warn(
+        {
+          event: 'context.preferencia_descartada',
+          accountId,
+          orgIdPedido,
+          motivo: 'sem Membership ativa na Organização preferida',
+        },
+        'preferência de Organização descartada',
+      );
+      return this.resolver(accountId);
+    }
+
     if (!permitida) {
       this.negar(accountId, orgIdPedido, 'sem Membership ativa na Organização pedida');
     }

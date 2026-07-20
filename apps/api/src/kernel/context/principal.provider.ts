@@ -3,6 +3,18 @@ import type { IncomingMessage } from 'node:http';
 /** Quem está fazendo a requisição. Só a identidade — papel e permissão são da Story 1.6. */
 export interface Principal {
   readonly accountId: string;
+
+  /**
+   * Organização escolhida explicitamente e PERSISTIDA na sessão (Story 1.9).
+   *
+   * É PREFERÊNCIA, jamais autoridade: entra na resolução como pedido de precedência MENOR que o
+   * `x-org-id`, e o `OrgContextResolver` a confere contra a Membership ATIVA como confere qualquer
+   * outro pedido. Se a Membership for suspensa depois da troca, ela caduca e não concede nada.
+   *
+   * Opcional porque a identidade existe antes de haver escolha — e porque os providers de teste
+   * que só afirmam `accountId` continuam válidos.
+   */
+  readonly orgIdPreferido?: string;
 }
 
 /** Token de injeção do port. */

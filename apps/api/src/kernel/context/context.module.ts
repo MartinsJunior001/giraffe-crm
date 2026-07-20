@@ -1,6 +1,8 @@
 import { Global, MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ContextoIndisponivelFilter } from './contexto-indisponivel.filter';
+import { OrganizacaoAtivaController } from './organizacao-ativa.controller';
+import { OrganizacaoAtivaService } from './organizacao-ativa.service';
 import { OrgContextResolver } from './org-context.resolver';
 import { RequestContext } from './request-context';
 import { RequestContextMiddleware } from './request-context.middleware';
@@ -18,9 +20,13 @@ import { TenantContextGuard } from './tenant-context.guard';
  */
 @Global()
 @Module({
+  // Story 1.9: consulta e troca da Organização ativa. Vive aqui, e não num módulo de domínio,
+  // porque é operação sobre o CONTEXTO — a mesma fronteira técnica do resolvedor que a consome.
+  controllers: [OrganizacaoAtivaController],
   providers: [
     RequestContext,
     OrgContextResolver,
+    OrganizacaoAtivaService,
     // O `PRINCIPAL_PROVIDER` NÃO é registrado aqui — quem o fornece é o `AuthModule` (Story 1.4).
     //
     // Registrá-lo nos dois seria pior que redundante: um provider LOCAL vence um provider global de
