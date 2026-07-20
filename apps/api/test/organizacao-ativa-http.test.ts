@@ -44,18 +44,42 @@ const migratorUrl = process.env.MIGRATION_DATABASE_URL;
  */
 const sessoes = new Map<string, string>();
 
+/**
+ * IDs das sessões que ESTA suíte criou — as únicas que ela pode apagar.
+ *
+ * Apagar por `userId` seria destrutivo demais: a mesma conta pode ter sessões criadas por outra
+ * suíte rodando antes (ou, num futuro paralelo, ao lado), e o teardown de um teste não pode
+ * derrubar a sessão de ninguém mais. É o mesmo princípio de escopo que a própria Story impõe ao
+ * produto — só se altera a sessão que se resolveu, nunca "todas as da conta".
+ */
+const sessoesCriadas: string[] = [];
+
 async function sessaoDe(email: string): Promise<string> {
   const cache = sessoes.get(email);
   if (cache) return cache;
   const cookie = await login(email);
   sessoes.set(email, cookie);
+  await registrarSessao(cookie);
   return cookie;
 }
 
-/** Estado inicial explícito da preferência (null = "ainda não escolheu"). */
-async function preferir(userId: string, orgId: string | null): Promise<void> {
+/** Resolve o ID da sessão recém-criada a partir do token do cookie, e o guarda para o teardown. */
+async function registrarSessao(cookie: string): Promise<void> {
+  const bruto = /better-auth\.session_token=([^;]+)/.exec(cookie)?.[1] ?? '';
+  const token = decodeURIComponent(bruto);
+  const candidatas = await prisma.authSession.findMany({ select: { id: true, token: true } });
+  // O cookie carrega `<token>.<assinatura>`; a coluna guarda só o token — daí o `startsWith`.
+  const minha = candidatas.find((s) => token.startsWith(s.token));
+  if (minha) sessoesCriadas.push(minha.id);
+}
+
+/**
+ * Estado inicial explícito da preferência (null = "ainda não escolheu"), aplicado SÓ às sessões
+ * desta suíte — pelo mesmo motivo do teardown: não se mexe na sessão de quem não é seu.
+ */
+async function preferir(_userId: string, orgId: string | null): Promise<void> {
   await prisma.authSession.updateMany({
-    where: { userId },
+    where: { id: { in: sessoesCriadas } },
     data: { activeOrganizationId: orgId },
   });
 }
@@ -121,13 +145,49 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Só sessões — nenhuma Membership foi tocada.
+  // Só as sessões que ESTA suíte criou, por ID — nunca "todas as da conta". Nenhuma Membership foi
+  // tocada aqui. Ver `sessoesCriadas`: um teardown amplo derrubaria a sessão de outra suíte.
   if (prisma) {
-    await prisma.authSession.deleteMany({ where: { userId: { in: [EVA, BRUNO] } } });
-
+    if (sessoesCriadas.length > 0) {
+      await prisma.authSession.deleteMany({ where: { id: { in: sessoesCriadas } } });
+    }
     await prisma.$disconnect();
   }
   await app?.close();
+});
+
+describe('isolamento do teardown desta suíte', () => {
+  it('uma sessão PREEXISTENTE da mesma conta não entra na lista de remoção', async () => {
+    // Sessão "de outra suíte": criada direto no banco, nunca por `sessaoDe`.
+    const alheia = await prisma.authSession.create({
+      data: {
+        id: randomUUID(),
+        token: `preexistente-${randomUUID()}`,
+        userId: EVA,
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+      select: { id: true },
+    });
+
+    try {
+      // Garante que a suíte já criou ao menos uma sessão própria.
+      await sessaoDe(EVA_EMAIL);
+
+      // O teardown apaga por ID e só o que registrou. A sessão alheia não está lá — logo, sobrevive.
+      expect(sessoesCriadas.length).toBeGreaterThan(0);
+      expect(sessoesCriadas).not.toContain(alheia.id);
+
+      // E o `preferir()` desta suíte também não a alcança.
+      await preferir(EVA, ORG_A);
+      const depois = await prisma.authSession.findUnique({
+        where: { id: alheia.id },
+        select: { activeOrganizationId: true },
+      });
+      expect(depois?.activeOrganizationId).toBeNull();
+    } finally {
+      await prisma.authSession.deleteMany({ where: { id: alheia.id } });
+    }
+  });
 });
 
 describe('AC-1 / AC-2 — listagem de Organizações elegíveis', () => {
