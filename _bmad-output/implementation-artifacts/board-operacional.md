@@ -12,26 +12,29 @@ Estados: `backlog` · `assigned` · `in-progress` · `pr-open` · `in-review` ·
 
 | Terminal | Papel | Atribuição atual |
 | --- | --- | --- |
-| 1 | **Lane 0** — orquestração, integração, release | board, fila, merge, closure |
-| 2 | **Writer A** | **LIVRE** — aguarda atribuição (1.9 encerrada) |
-| 3 | **QA** compartilhado | **TECH-S1 (#126) é o topo da fila** |
-| 4 | **Writer B** | TECH-S1 — PR #126 aberto, aguardando QA |
+| 1 | **Lane 0** — orquestração, integração, release | board, fila, merge, closure · **não escreve código funcional** |
+| 2 | **Writer A** | **Story 8.1** — Casca do Painel Administrativo e guarda de acesso |
+| 3 | **QA** compartilhado | **aguarda** o novo HEAD do #126 + CI verde — não revisa antes |
+| 4 | **Writer B** | **Reconciliar o PR #126** com `origin/main` atual |
 
 ## Stories em voo
 
 | Story | Estado | Writer | QA | Branch / worktree | PR | CI | Bloqueio | Próxima ação | Prio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TECH-S1 — Hardening de cabeçalhos de borda | `in-review` | Terminal 4 (Writer B) | **pendente** em `982f493e` | `tech/s1-hardening-cabecalhos-borda` / `wt-s1-borda` | **#126** aberto, `MERGEABLE/CLEAN` | — | QA ainda não emitiu veredito | **QA revisar `982f493e`** e publicar `QA_STATUS` no PR | P0 (segurança de produção) |
+| TECH-S1 — Hardening de cabeçalhos de borda | `in-progress` (reconciliação) | Terminal 4 (Writer B) | **suspenso** — aguarda novo HEAD | `tech/s1-hardening-cabecalhos-borda` / `wt-s1-borda` | **#126** aberto | reexecutar após reconciliar | — | **Writer B integra `ef746f3`** → CI verde → só então QA | P0 (segurança de produção) |
+| 8.1 — Casca do Painel Administrativo e guarda de acesso | `assigned` | **Terminal 2 (Writer A)** | — | `story/8-1-casca-painel-administrativo` / `wt-8-1` (a criar de `ef746f3`) | — | — | — | criar worktree → BMAD → Spec Kit → implementar → PR | P0 (**caminho crítico**) |
 | 4.2 — Ciclo de vida e gestão da Automação | `blocked` | — | — | — | — | — | **ver abaixo** | **não iniciar** | P0 |
 | 1.9 — Troca explícita de Organização | `closed` | — | `APPROVED @ bfc40404` | `story/1-9-…` / `wt-1-9` | #127 **merged** (`ecf94b0`) · closure #128 **merged** (`ef746f3`) | 5/5 verde em `ef746f3` | — | **DONE** | P0 |
 | 4.1 — Modelo, escopo e referências da Automação | `closed` | — | `APPROVED @ e511a86e` | `story/4-1-…` / `wt-4-1` | #124 **merged** (`2b69f0e`) · closure #125 **merged** (`3032702`) | 5/5 verde | — | **DONE** | P0 |
 
 ### 4.2 — bloqueada, dois motivos independentes
 
-1. **Dependência da 8.2** — não satisfeita.
+1. **Cadeia do Épico 8** — `8.1 → 8.2` (`epics.md:750`). A 8.2 é a dependência direta e ela mesma depende da 8.1, que **começa agora**. É por isso que a 8.1 é caminho crítico e não uma Story qualquer da fila.
 2. **`P0-PIPEGRANT-GUEST-CEILING`** — remediação obrigatória **antes** da 4.2, pendente de **decisão de Produto**. A 4.2 é a dona de "Convidado não acessa Automações" (D4.3 / FR-22) e não pode ser aceita sobre uma resolução de poder que ignora o papel de Organização.
 
-Nenhum dos dois se resolve dentro da 4.2. **Não iniciar.**
+Nenhum dos dois se resolve dentro da 4.2. **Não iniciar.** Fechar a 8.1 derruba **um** dos dois — o outro é decisão do dono, não implementação.
+
+**1.11 — não iniciar agora** (decisão da Lane 0). Está elegível e sem gate, mas não destrava nada; a capacidade do Writer A vai para o caminho crítico.
 
 ### 4.1 encerrada — 19/07/2026
 
@@ -44,11 +47,11 @@ Registro do ciclo, porque a lição não é sobre esta Story: a aprovação `@ a
 Ordem, conforme `CLAUDE.md` § Fila de revisão. **O CI roda antes da revisão**; QA não revisa PR que ainda falha em check mecânico, nem **revisa SHA já revisado** — o veredito é sempre `@ <sha>` do HEAD corrente.
 
 1. qualquer finding **CRITICAL/HIGH** e migrations;
-2. **TECH-S1** — segurança de produção;
-3. **Story 1.9**;
+2. **TECH-S1 (#126)** — segurança de produção — **somente após o novo HEAD reconciliado e o CI verde nele**;
+3. **Story 8.1**, quando o PR existir;
 4. ordem de chegada, quando as severidades empatarem.
 
-Pode aguardar por `/loop`.
+**O QA não revisa o #126 no HEAD atual (`982f493e`).** Ele foi aberto antes do merge da 1.9; revisar agora gastaria a revisão num SHA que vai ser substituído — e o veredito, que é sempre `@ <sha>`, nasceria inválido. Pode aguardar por `/loop`.
 
 ## Débitos e itens fora de Story
 
@@ -89,9 +92,12 @@ Superfícies com Writer exclusivo enquanto a Story estiver em voo. Quem não é 
 
 | Superfície | Reservada por |
 | --- | --- |
-| `apps/web/next.config.ts` | **Writer B (TECH-S1)** — até o merge do #126 |
-| testes web de cabeçalhos | **Writer B (TECH-S1)** — até o merge do #126 |
-| artefatos exclusivos do gate TECH-S1 | **Writer B (TECH-S1)** — até o merge do #126 |
+| `apps/web/next.config.ts` · `middleware.ts` | **Writer B (TECH-S1)** — até o merge do #126 |
+| testes web de cabeçalhos · artefatos do gate TECH-S1 | **Writer B (TECH-S1)** — até o merge do #126 |
+| rota/casca do Painel Administrativo (`apps/web/app/**` do Painel) | **Writer A (8.1)** |
+| guarda de acesso do Painel no servidor + `ability.ts` / `ability.factory.ts` | **Writer A (8.1)** |
+
+**Atenção — as duas Stories tocam `apps/web`.** Não é colisão: TECH-S1 é `next.config.ts` + `middleware.ts` + testes de cabeçalho; a 8.1 é rota, navegação e casca do Painel. **Arquivos disjuntos, diretório comum.** Writer A **não** toca `next.config.ts` nem `middleware.ts` enquanto o #126 estiver aberto — se a guarda do Painel parecer exigir o middleware, é escalada à Lane 0, não edição.
 
 **Liberadas** — sem dono até nova atribuição da Lane 0: `apps/api/prisma/schema.prisma`, o **slot único de migration**, `ability.ts` / `ability.factory.ts`, `apps/api/src/pipes/`, `MODELOS_AUDITADOS` (fim da 4.1); `apps/api/src/kernel/context/` e a superfície web de seleção de Organização (fim da 1.9).
 
