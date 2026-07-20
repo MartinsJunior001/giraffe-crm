@@ -6,25 +6,25 @@ Fotografia do estado operacional. **Escrito exclusivamente pela Lane 0** — Wri
 
 Estados: `backlog` · `assigned` · `in-progress` · `pr-open` · `in-review` · `ready-to-merge` · `merged` · `closed` · `blocked`.
 
-**Base atual:** `origin/main` = `3032702a4bc0f4e9b5bc2a4aa05f759789bd1310` — CI 5/5 verde. Toda Story nova parte deste SHA ou posterior confirmado por `git fetch`.
+**Base atual:** `origin/main` = `ef746f3cd1bad98878218ceff7aa9886cdec0b5a` — CI 5/5 verde. Toda Story nova parte deste SHA ou posterior confirmado por `git fetch`.
 
 ## Terminais e papéis
 
 | Terminal | Papel | Atribuição atual |
 | --- | --- | --- |
 | 1 | **Lane 0** — orquestração, integração, release | board, fila, merge, closure |
-| 2 | **Writer A** | Story 1.9 — Troca explícita de Organização |
-| 3 | **QA** compartilhado | fila de revisão (abaixo) |
-| 4 | **Writer B** | TECH-S1 — Hardening de cabeçalhos de borda |
+| 2 | **Writer A** | **LIVRE** — aguarda atribuição (1.9 encerrada) |
+| 3 | **QA** compartilhado | **TECH-S1 (#126) é o topo da fila** |
+| 4 | **Writer B** | TECH-S1 — PR #126 aberto, aguardando QA |
 
 ## Stories em voo
 
 | Story | Estado | Writer | QA | Branch / worktree | PR | CI | Bloqueio | Próxima ação | Prio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 4.1 — Modelo, escopo e referências da Automação | `closed` | — | `APPROVED @ e511a86e` | `story/4-1-modelo-automacao-pipe` / `wt-4-1` | #124 **merged** (`2b69f0e`) · closure #125 **merged** (`3032702`) | 5/5 verde em `3032702` | — | **DONE** | P0 |
-| 1.9 — Troca explícita de Organização | `assigned` | **Terminal 2 (Writer A)** | — | `story/1-9-troca-explicita-de-organizacao` / `wt-1-9` | — | — | — | fast-forward para `3032702` → BMAD → Spec Kit → implementar → PR | P0 |
-| TECH-S1 — Hardening de cabeçalhos de borda | `assigned` | **Terminal 4 (Writer B)** | — | `tech/s1-hardening-cabecalhos-borda` / `wt-s1-borda` (a criar de `3032702`) | — | — | — | criar worktree → BMAD/Spec Kit proporcional → implementar → PR | P0 (segurança de produção) |
+| TECH-S1 — Hardening de cabeçalhos de borda | `in-review` | Terminal 4 (Writer B) | **pendente** em `982f493e` | `tech/s1-hardening-cabecalhos-borda` / `wt-s1-borda` | **#126** aberto, `MERGEABLE/CLEAN` | — | QA ainda não emitiu veredito | **QA revisar `982f493e`** e publicar `QA_STATUS` no PR | P0 (segurança de produção) |
 | 4.2 — Ciclo de vida e gestão da Automação | `blocked` | — | — | — | — | — | **ver abaixo** | **não iniciar** | P0 |
+| 1.9 — Troca explícita de Organização | `closed` | — | `APPROVED @ bfc40404` | `story/1-9-…` / `wt-1-9` | #127 **merged** (`ecf94b0`) · closure #128 **merged** (`ef746f3`) | 5/5 verde em `ef746f3` | — | **DONE** | P0 |
+| 4.1 — Modelo, escopo e referências da Automação | `closed` | — | `APPROVED @ e511a86e` | `story/4-1-…` / `wt-4-1` | #124 **merged** (`2b69f0e`) · closure #125 **merged** (`3032702`) | 5/5 verde | — | **DONE** | P0 |
 
 ### 4.2 — bloqueada, dois motivos independentes
 
@@ -56,6 +56,8 @@ Pode aguardar por `/loop`.
 | --- | --- | --- |
 | `P0-PIPEGRANT-GUEST-CEILING` (= `DEB-PIPEGRANT-GUEST-CEILING`) | aberto — depende de decisão de Produto (`prd.md:865`; precedente que a fecha em `prd.md:970`) | **bloqueia a 4.2**; não bloqueou o #124 (`SECURITY_TRIAGE: A`) |
 | `DEB-BMAD-CLOSURE-WORKFLOW` | **aberto — dono: automação** | ver abaixo |
+| `DEB-ENV-TEST-REPRODUZIVEL` | **aberto — dono: Lane 4 / infraestrutura** · **P0 de confiabilidade de testes**, antes do feature freeze | ver abaixo |
+| `DEB-TESTE-UPDATE-SEM-WHERE` (F1 da 1.9, LOW) | aberto | nenhum hoje — o cast `::uuid` aborta antes da escrita; risco latente |
 | `DEB-TENANT-COMPOSITE-FK-RETROFIT` | aberto | retrofit do par `(orgId, id)` em E2/E3 |
 | Automatizar o drill destrutivo da FK composta (L1) | aberto | nenhum — declarado no docstring de `automations-rls.test.ts` |
 
@@ -67,28 +69,39 @@ Ou seja: a regra e a realidade não se descrevem com o mesmo vocabulário, e hoj
 
 **A automação deve converter esse precedente numa skill verificável** — a prática já é uniforme o bastante para ser codificada. **Não alterar o processo durante as Stories em voo:** trocar o procedimento de closure no meio de 1.9/TECH-S1 introduziria variável nova sem nenhum ganho de velocidade.
 
+### `DEB-ENV-TEST-REPRODUZIVEL`
+
+| Campo | Conteúdo |
+| --- | --- |
+| **Problema** | Ambiente local derivado de `.env.example` **não reproduz o CI** — as duas execuções partem de configurações diferentes. |
+| **Efeito atual** | 17 falhas locais, incluindo falhas de **autenticação** — entre elas **T013 com 401**. Verde no CI, vermelho na máquina, mesma árvore. |
+| **Risco** | Uma falha **real** futura ser classificada como "ambiental conhecida". Quanto mais tempo as 17 durarem sem causa fechada, menos alguém investiga a 18ª. |
+| **Correção** | Criar `.env.test` **versionado e seguro** (sem segredo real, determinístico, equivalente ao que o CI monta), adotado por padrão pela suíte local. |
+| **Prioridade** | **P0 de confiabilidade de testes**, antes do feature freeze. |
+| **Responsável** | **Lane 4 / infraestrutura** |
+| **Fechamento** | Suíte local e CI com configuração **equivalente**: as 17 somem ou ganham causa própria, e um vermelho local volta a significar defeito. |
+
+**As 17 falhas locais são AMBIENTAIS — nunca verdes.** O que sustentou o aceite da 1.9 foi o CI verde no HEAD exato, não a alegação local.
+
 ## Reservas ativas (anticolisão)
 
 Superfícies com Writer exclusivo enquanto a Story estiver em voo. Quem não é o dono não edita.
 
 | Superfície | Reservada por |
 | --- | --- |
-| `apps/api/src/kernel/context/` | **Writer A (1.9)** |
-| superfície web de seleção de Organização | **Writer A (1.9)** |
-| `apps/web/next.config.ts` | **Writer B (TECH-S1)** |
-| testes web de cabeçalhos | **Writer B (TECH-S1)** |
-| artefatos exclusivos do gate TECH-S1 | **Writer B (TECH-S1)** |
+| `apps/web/next.config.ts` | **Writer B (TECH-S1)** — até o merge do #126 |
+| testes web de cabeçalhos | **Writer B (TECH-S1)** — até o merge do #126 |
+| artefatos exclusivos do gate TECH-S1 | **Writer B (TECH-S1)** — até o merge do #126 |
 
-**Liberadas com o fim da 4.1** — sem dono até nova atribuição da Lane 0: `apps/api/prisma/schema.prisma`, o **slot único de migration**, `apps/api/src/kernel/authz/ability.ts` e `ability.factory.ts`, `apps/api/src/pipes/`, `MODELOS_AUDITADOS` em `tenant-context.ts`.
-
-**TECH-S1 é web-only:** sem migration, Prisma, CASL, API ou arquivo do Épico 4. As duas Stories em voo não têm superfície comum — 1.9 é `kernel/context/` + seleção de Org; TECH-S1 é `next.config.ts` + testes de cabeçalho.
+**Liberadas** — sem dono até nova atribuição da Lane 0: `apps/api/prisma/schema.prisma`, o **slot único de migration**, `ability.ts` / `ability.factory.ts`, `apps/api/src/pipes/`, `MODELOS_AUDITADOS` (fim da 4.1); `apps/api/src/kernel/context/` e a superfície web de seleção de Organização (fim da 1.9).
 
 ## Fila de integração
 
 Um merge por vez, ordenado pela Lane 0. **Uma migration integrada por vez.**
 
-1. ~~4.1~~ — integrada em `2b69f0e`, closure em `3032702`. **Slot de migration liberado.**
-2. TECH-S1 (sem migration) e 1.9 (sem migration) — podem integrar fora do slot; a ordem entre elas é por chegada do `QA_APPROVED`.
+1. ~~4.1~~ — `2b69f0e`, closure `3032702`. **Slot de migration liberado.**
+2. ~~1.9~~ — `ecf94b0`, closure `ef746f3`.
+3. **TECH-S1 (#126)** — sem migration; aguardando `QA_STATUS`. Foi aberto antes do merge da 1.9: mesmo com `MERGEABLE/CLEAN`, o QA revisa contra o **`main` atual** (`ef746f3`), e o veredito vale para o SHA que revisar.
 
 ## Itens estacionados
 
