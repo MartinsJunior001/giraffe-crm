@@ -123,3 +123,74 @@ export async function fetchOrgAtual(baseUrl: string, cookie: string): Promise<Es
     ? { ok: true, orgId: body.id, orgNome: body.name, papel: body.papel }
     : { ok: false, motivo: 'sem-organizacao' };
 }
+
+/** Uma Organização elegível para troca (Story 1.9). Espelha o contrato de `GET /session/organizacoes`. */
+export interface OrganizacaoElegivel {
+  id: string;
+  nome: string;
+  papel: Papel;
+}
+
+export type EstadoOrganizacoes =
+  | { ok: true; atual: string | null; organizacoes: OrganizacaoElegivel[] }
+  | { ok: false; motivo: 'sem-sessao' | 'indisponivel' };
+
+/**
+ * Organizações que a conta pode escolher (Story 1.9) — só Memberships ACTIVE, decidido pelo SERVIDOR.
+ *
+ * A web nunca filtra nem completa esta lista: ela renderiza o que a API devolveu. Enumerar do lado do
+ * cliente seria reconstruir uma regra de acesso fora de onde ela é imposta, e é assim que aparece uma
+ * Organização inacessível numa tela.
+ *
+ * 401 = sem sessão (volta ao Login). Qualquer outra falha vira `indisponivel` — sem vazar URL interna,
+ * corpo de erro ou stack (NFR-1).
+ */
+export async function fetchOrganizacoes(
+  baseUrl: string,
+  cookie: string,
+): Promise<EstadoOrganizacoes> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/session/organizacoes`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+  } catch {
+    return { ok: false, motivo: 'indisponivel' };
+  }
+  if (res.status === 401) return { ok: false, motivo: 'sem-sessao' };
+  if (!res.ok) return { ok: false, motivo: 'indisponivel' };
+
+  const body = (await res.json().catch(() => ({}))) as {
+    atual?: string | null;
+    organizacoes?: OrganizacaoElegivel[];
+  };
+  if (!Array.isArray(body.organizacoes)) return { ok: false, motivo: 'indisponivel' };
+  return { ok: true, atual: body.atual ?? null, organizacoes: body.organizacoes };
+}
+
+/**
+ * Troca a Organização ativa na API (Story 1.9). Devolve só o desfecho — a autoridade é do servidor.
+ *
+ * O 404 da API é UNIFORME para inexistente/sem-Membership/inativa (não-enumeração), e aqui ele
+ * permanece indistinguível de propósito: traduzi-lo em mensagens diferentes na UI desfaria, na
+ * camada de apresentação, a proteção que o backend construiu.
+ */
+export async function trocarOrganizacaoNaApi(
+  baseUrl: string,
+  cookie: string,
+  origem: string,
+  orgId: string,
+): Promise<{ ok: boolean; status: number }> {
+  try {
+    const res = await fetch(`${baseUrl}/session/organizacao`, {
+      method: 'POST',
+      headers: { cookie, origin: origem, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId }),
+      cache: 'no-store',
+    });
+    return { ok: res.ok, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
