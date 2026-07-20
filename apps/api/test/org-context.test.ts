@@ -84,7 +84,7 @@ describe('o contexto vem da Membership, não do cliente', () => {
   });
 
   it('honra o pedido quando ele CASA com uma Membership ativa', async () => {
-    const contexto = await resolver.resolver(EVA, ORG_B);
+    const contexto = await resolver.resolver(EVA, { orgId: ORG_B, origem: 'header' });
 
     // Eva é MEMBER na Org B — o papel resolvido é o daquela Membership, não o de outra Organização.
     expect(contexto).toEqual({ orgId: ORG_B, accountId: EVA, papel: 'MEMBER' });
@@ -99,14 +99,18 @@ describe('negação', () => {
   it('Organização pedida em que a conta NÃO é membro é negada', async () => {
     // Ana é membro da Org A. Pedir a Org B é exatamente a tentativa de cross-tenant que a RLS,
     // sozinha, NÃO impediria: ela obedeceria ao contexto que lhe fosse entregue.
-    await expect(resolver.resolver(ANA, ORG_B)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(resolver.resolver(ANA, { orgId: ORG_B, origem: 'header' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('Organização que existe, mas sem vínculo, é negada como qualquer outra', async () => {
     // A Org C existe de verdade. A resposta é a mesma de uma Org inexistente — de propósito:
     // distinguir "não existe" de "existe e você não entra" transforma o 403 em um oráculo que
     // enumera Organizações alheias.
-    await expect(resolver.resolver(ANA, ORG_C)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(resolver.resolver(ANA, { orgId: ORG_C, origem: 'header' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('Membership SUSPENDED não concede contexto', async () => {
@@ -115,7 +119,9 @@ describe('negação', () => {
     //
     // Bruno TEM vínculo na Org B — só que suspenso. Se o resolvedor filtrasse apenas por
     // `accountId`, este pedido passaria.
-    await expect(resolver.resolver(BRUNO, ORG_B)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      resolver.resolver(BRUNO, { orgId: ORG_B, origem: 'header' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('Membership REMOVED (remoção lógica) não concede contexto — SC-414', async () => {
@@ -132,7 +138,9 @@ describe('negação', () => {
 
     try {
       // Pedindo a Org C explicitamente: negado — o vínculo existe, mas está REMOVED.
-      await expect(resolver.resolver(HEITOR, ORG_C)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        resolver.resolver(HEITOR, { orgId: ORG_C, origem: 'header' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       // E sem pedir nada: o REMOVED não entra na contagem de "Organizações ativas" — também negado.
       await expect(resolver.resolver(HEITOR)).rejects.toBeInstanceOf(ForbiddenException);
     } finally {
@@ -170,9 +178,9 @@ describe('negação', () => {
     // Por isso a asserção é sobre o motivo: ela FALHA se a regex for removida.
     limparEventos();
 
-    await expect(resolver.resolver(ANA, 'nao-e-um-uuid')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      resolver.resolver(ANA, { orgId: 'nao-e-um-uuid', origem: 'header' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
 
     const negacao = eventos.find((e) => e.dados['event'] === 'context.denied');
     expect(negacao?.dados['motivo']).toBe('orgId malformado');
@@ -183,7 +191,9 @@ describe('a negação é observável', () => {
   it('registra context.denied com o motivo — e sem o corpo dizer nada ao cliente', async () => {
     limparEventos();
 
-    await expect(resolver.resolver(ANA, ORG_B)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(resolver.resolver(ANA, { orgId: ORG_B, origem: 'header' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
 
     const negacao = eventos.find((e) => e.dados['event'] === 'context.denied');
 
@@ -197,7 +207,9 @@ describe('a negação é observável', () => {
   it('o motivo fica no log e NÃO na resposta', async () => {
     // O corpo do 403 é o padrão do Nest ("Forbidden"), sem motivo. Dizer "você não é membro
     // DESTA Organização" confirmaria, para quem chutou o id, que ela existe.
-    const erro = await resolver.resolver(ANA, ORG_B).catch((e: unknown) => e);
+    const erro = await resolver
+      .resolver(ANA, { orgId: ORG_B, origem: 'header' })
+      .catch((e: unknown) => e);
 
     expect(erro).toBeInstanceOf(ForbiddenException);
     expect(JSON.stringify((erro as ForbiddenException).getResponse())).not.toMatch(

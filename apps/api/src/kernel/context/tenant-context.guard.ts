@@ -55,8 +55,23 @@ export class TenantContextGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    // O que o cliente PEDIU. O resolvedor confere contra a Membership; divergência é rejeição.
-    const pedido = this.orgIdPedido(req);
+    // O que o cliente PEDIU nesta requisição. O resolvedor confere contra a Membership.
+    const header = this.orgIdPedido(req);
+
+    // PRECEDÊNCIA (Story 1.9): `x-org-id` › preferência da sessão › única Membership ativa › 403.
+    //
+    // O header vence porque é a afirmação DESTA requisição; a preferência é só o default guardado
+    // pela última troca explícita. Inverter a ordem faria uma escolha antiga sobrescrever um pedido
+    // atual — e um cliente que pede explicitamente uma Organização precisa ser atendido ou negado,
+    // nunca redirecionado em silêncio para outra.
+    //
+    // Nenhuma das duas é autoridade: quem decide é a Membership ATIVA, conferida a cada requisição.
+    const pedido =
+      header !== undefined
+        ? ({ orgId: header, origem: 'header' } as const)
+        : principal.orgIdPreferido !== undefined
+          ? ({ orgId: principal.orgIdPreferido, origem: 'preferencia' } as const)
+          : undefined;
 
     const contexto = await this.resolver.resolver(principal.accountId, pedido);
     this.requestContext.definir(contexto);

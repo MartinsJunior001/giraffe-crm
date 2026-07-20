@@ -27,9 +27,18 @@ export class SessaoPrincipalProvider implements PrincipalProvider {
 
     if (!sessao?.user?.id) return null;
 
+    // Story 1.9: a Organização escolhida, lida da SESSÃO validada no servidor — nunca de header ou
+    // corpo. Continua sendo PREFERÊNCIA: quem a confere contra a Membership ATIVA é o
+    // `OrgContextResolver`, a cada requisição. Lê-la aqui apenas a transporta; não a promove.
+    //
+    // `?? undefined` porque o campo é nulo até a primeira troca, e o contrato do `Principal` é
+    // "ausente", não "nulo" — ausência é o que o resolvedor entende como "não pediu nada".
+    const preferida = (sessao.session as { activeOrganizationId?: string | null } | undefined)
+      ?.activeOrganizationId;
+
     // `user.id` É o `Account.id` — porque o `user` do Better Auth É a nossa tabela `Account` (D1).
     // Não há tradução, não há tabela de-para, não há sincronização que possa divergir.
-    return { accountId: sessao.user.id };
+    return { accountId: sessao.user.id, orgIdPreferido: preferida ?? undefined };
   }
 }
 
