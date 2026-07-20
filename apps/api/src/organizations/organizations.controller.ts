@@ -21,6 +21,18 @@ interface OrganizacaoAtual {
 }
 
 /**
+ * Escopo do Painel Administrativo (Story 8.1). Deliberadamente MENOR que `OrganizacaoAtual`: sem
+ * `papel`, porque quem chega aqui já passou pela guarda de Admin — repetir o papel na resposta
+ * insinuaria que a UI deveria conferi-lo de novo, e é justamente essa checagem no cliente que esta
+ * rota existe para eliminar.
+ */
+interface EscopoAdministrativo {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
  * Consumidor CONCRETO do contexto organizacional — a razão de o kernel de contexto existir.
  *
  * Sem ele, `kernel/context/` seria abstração especulativa, proibida pela Constitution II. Com
@@ -65,5 +77,47 @@ export class OrganizationsController {
     // `papel` vem do contexto já resolvido (1.6), não de nova consulta — a mesma Membership que
     // decide a Organização decide o papel.
     return { ...org, papel: contexto.papel };
+  }
+
+  /**
+   * Escopo administrativo da Organização atual (Story 8.1) — a GUARDA do Painel Administrativo.
+   *
+   * `@Requer('administrar', 'Organizacao')` é a fronteira: a ability que a 1.6 concede **apenas ao
+   * ADMIN** (`ability.factory.ts`). MEMBER e GUEST batem no `AuthzGuard` (APP_GUARD,
+   * deny-by-default) e recebem 403 sem que este handler chegue a executar.
+   *
+   * **Por que esta rota existe, em vez de a web decidir pelo `papel` de `/current`.** Aquele campo é
+   * dado de APRESENTAÇÃO — serve para adaptar a navegação. Usá-lo como fronteira faria a segurança
+   * do Painel depender de um valor transportado até o cliente. Aqui a negação é do SERVIDOR, e a
+   * casca web apenas reflete o que ele respondeu (NFR-37).
+   *
+   * **Membership suspensa ou encerrada não chega aqui**, e isso não é código desta Story: o
+   * `OrgContextResolver` (1.3) só resolve contexto com Membership ACTIVE, e sem contexto o
+   * `TenantContextGuard` nega antes. A 8.1 acrescenta o TESTE que prova que continua valendo pela
+   * porta do Painel.
+   *
+   * **Super Admin da Plataforma não obtém acesso implícito** (INV-ADMIN-01), também por construção:
+   * `PapelEfetivo` é `MembershipRole` e não existe papel de Plataforma no substrato — não há ramo a
+   * bloquear, há um caminho que nunca foi aberto.
+   *
+   * Como em `/current`, **nenhum identificador vem do cliente**: sem parâmetro de rota, sem query,
+   * sem corpo. Não há superfície por onde ampliar escopo ou descobrir outra Organização.
+   */
+  @Requer('administrar', 'Organizacao')
+  @Get('admin-scope')
+  async adminScope(): Promise<EscopoAdministrativo> {
+    const contexto = this.requestContext.obter();
+    const db = withTenantContext(this.prisma, contexto, this.logger);
+
+    const org = await db.organization.findUnique({
+      where: { id: contexto.orgId },
+      select: { id: true, name: true, slug: true },
+    });
+
+    if (!org) throw new NotFoundException();
+
+    // Só a PRÓPRIA Organização. Sem contagem, sem agregado, sem "resumo": a 8.1 é casca e guarda, e
+    // qualquer número aqui seria dado fictício (INV-ADMIN-02) ou cálculo duplicado de E7.
+    return org;
   }
 }
