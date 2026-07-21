@@ -47,6 +47,12 @@ function isConflito(err: unknown): boolean {
  * A Org e o papel saem SÓ do Convite; a Account, SÓ da sessão — nada de elevação vinda do cliente.
  * `Invite`/`Membership` correm no client raiz (fora da extensão auto-auditada) → auditoria MANUAL
  * (FR-214), sem token/PII. A Notificação `convite aceito` é PÓS-commit, só no primeiro consumo.
+ *
+ * **`DEB-8-3-NEWUSER-ONBOARDING` — deferral do fluxo "usuário novo" (rastreável, spec §6.1):** a 8.3
+ * aceita Convite **somente para Account JÁ EXISTENTE**. Exige sessão autenticada, `emailVerified=true`
+ * e `normalizarEmail(account.email) === invite.normalizedEmail`. A criação/cadastro de Account por posse
+ * do Convite pertence ao **contrato de E1** (autenticação/onboarding) — a 8.3 **não** implementa cadastro
+ * público nem onboarding, e **não** antecipa E1. Quando E1 expuser esse contrato, o aceite é o consumidor.
  */
 @Injectable()
 export class InviteAcceptService {

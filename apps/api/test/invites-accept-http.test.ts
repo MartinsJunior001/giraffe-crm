@@ -140,7 +140,11 @@ afterAll(async () => {
   await app?.close();
 });
 
-beforeEach(() => {
+// Isolamento determinístico: zera o rate-limit de aceite (mesmo IP localhost em todos os casos —
+// senão o teto por IP de 20/15min acumularia entre testes e o caso de concorrência veria 429) e a
+// inspeção da notificação. Espelha o beforeEach do teste HTTP da 8.2.
+beforeEach(async () => {
+  await migrator.rateLimit.deleteMany({ where: { key: { startsWith: 'inv:acc:' } } });
   fakeNotif.emitidos.length = 0;
 });
 
@@ -272,5 +276,58 @@ describe('fronteira de entrada', () => {
       body: JSON.stringify({ token, orgId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('concorrência real — N aceites simultâneos do mesmo Convite (Finding MEDIUM-1)', () => {
+  it('N=5 aceites simultâneos → exatamente 1 Membership, 1 consumo, 1 notificação; nenhum 500', async () => {
+    // Banco e HTTP REAIS (sem mock sequencial). A guarda otimista `updateMany where state='PENDING'`
+    // + o lock de linha do Postgres (READ COMMITTED) fazem exatamente 1 transação consumir; as demais
+    // reavaliam o WHERE após o commit do vencedor (state=ACCEPTED, count=0) e caem no caminho
+    // idempotente (Membership do vencedor já commitada e visível). O @@unique([accountId,orgId]) é o
+    // backstop (P2002 → idempotente). Consumo + criação vivem na MESMA transação (AD-13).
+    //
+    // N=5 = o teto do rate limit POR TOKEN na janela (`aceitacaoPorConvitePor15min`): mantém a rajada
+    // dentro do orçamento (todas atendidas) para isolar a prova de CONCORRÊNCIA do throttling — N>5
+    // corretamente devolveria 429 nas excedentes, o que é anti-abuso, não corrida.
+    const N = 5;
+    const conta = await criarConta();
+    const { inviteId, token } = await criarConvite(conta.email);
+
+    const respostas = await Promise.all(Array.from({ length: N }, () => aceitar(token, conta.id)));
+    const status = respostas.map((r) => r.status);
+
+    // Contrato: nenhum 500; toda resposta é sucesso idempotente (200) — 1 vencedor + (N-1) idempotentes.
+    expect(status).toEqual(new Array(N).fill(200));
+    expect(status.some((s) => s >= 500)).toBe(false);
+
+    // Todos que responderam 200 devolvem a MESMA Membership (a do vencedor).
+    const corpos = (await Promise.all(respostas.map((r) => r.json()))) as {
+      membershipId: string;
+      orgId: string;
+      state: string;
+    }[];
+    const membershipIds = new Set(corpos.map((c) => c.membershipId));
+    expect(membershipIds.size).toBe(1);
+    expect(corpos.every((c) => c.orgId === ORG_A && c.state === 'ACTIVE')).toBe(true);
+
+    // Prova autoritativa no banco: exatamente 1 Membership, Convite consumido 1x, 1 notificação.
+    const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+    const ms = await db.membership.findMany({
+      where: { accountId: conta.id, orgId: ORG_A },
+      select: { id: true, state: true },
+    });
+    expect(ms).toHaveLength(1); // nenhuma duplicação
+    expect(ms[0]!.state).toBe('ACTIVE');
+    expect([...membershipIds][0]).toBe(ms[0]!.id);
+
+    const inv = await db.invite.findFirstOrThrow({
+      where: { id: inviteId },
+      select: { state: true },
+    });
+    expect(inv.state).toBe('ACCEPTED'); // 1 consumo efetivo
+
+    // Efeito irreversível único: a notificação canônica saiu UMA vez (só o 1º consumo emite).
+    expect(fakeNotif.emitidos.filter((e) => e.inviteId === inviteId)).toHaveLength(1);
   });
 });

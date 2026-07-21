@@ -34,6 +34,11 @@ import { RateLimitExcedidoError } from './invite-rate-limit';
  * **Não-enumeração:** token inexistente/obsoleto/estado não aceitável → **404 uniforme**; token válido
  * com identidade incompatível (o requerente possui o link, mas está logado como outra conta) → **403**.
  * Rate limit de aceite excedido → **429 + `Retry-After`**; Membership suspensa → **409**.
+ *
+ * **`DEB-8-3-NEWUSER-ONBOARDING` (spec §6.1):** esta rota aceita Convite **somente para Account já
+ * existente** — exige **sessão** (401 sem ela), `emailVerified=true` (403 senão) e o e-mail da Account
+ * casando o do Convite (403 senão). Criação/cadastro de Account por posse do Convite é **contrato de E1**
+ * (onboarding), fora do escopo da 8.3: não há cadastro público nem onboarding de usuário novo aqui.
  */
 @Controller('invites')
 export class InviteAcceptController {

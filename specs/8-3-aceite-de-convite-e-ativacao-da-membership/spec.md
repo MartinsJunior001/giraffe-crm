@@ -99,6 +99,24 @@ O núcleo puro e o token da 8.2 já foram escritos **antecipando o aceite**. A 8
   (**8.6**); roster (**8.7**); read-side da auditoria administrativa (**8.8**).
 - O **mecanismo** de Notificação (Épico 5) — a 8.3 só registra o tipo pela fonte única (contrato).
 
+### 6.1 `DEB-8-3-NEWUSER-ONBOARDING` — deferral do fluxo "usuário novo" (débito rastreável)
+
+A 8.3 aceita Convite **somente para Account já existente**. A fronteira, deliberada e rastreável:
+
+- **exige sessão autenticada** (401 sem sessão) — a rota resolve o principal explicitamente, sob
+  `@SemContextoOrganizacional` (autenticado, sem contexto de Org — o convidado ainda não é membro);
+- **exige `emailVerified=true`** na Account da sessão (senão **403 `EMAIL_NAO_VERIFICADO`**);
+- **exige `normalizarEmail(account.email) === invite.normalizedEmail`** (senão **403
+  `IDENTIDADE_INCOMPATIVEL`**);
+- a **criação/cadastro de Account por posse do Convite** (conduzir o link a criar/verificar a Account do
+  convidado) pertence ao **contrato de E1** (autenticação/onboarding), **não** à 8.3;
+- a 8.3 **não** implementa cadastro público nem onboarding de usuário novo, e **não** antecipa E1.
+
+**Débito:** quando E1 expuser o contrato de "posse do Convite participa da verificação/criação da
+Account", ligar esse fluxo ao aceite (o endpoint de aceite já é o consumidor). Até lá, o convidado sem
+Account precisa primeiro ter/verificar a Account (via E1/1.4) e então aceitar. Documentado de forma
+coerente em `invite-accept.service.ts`, `invite-accept.controller.ts` e aqui (§6.1).
+
 ## 7. Demonstração vertical
 
 Sim: um Convite `PENDING` (8.2) → aceite autenticado → **uma** Membership `ACTIVE` com o papel do
