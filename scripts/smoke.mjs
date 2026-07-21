@@ -105,12 +105,72 @@ async function expectStatusOk(res) {
   }
 }
 
+/**
+ * Cabeçalhos de segurança da borda (TECH-S1 — finding S1 do veredito de staging).
+ *
+ * Esta é a única camada que prova o que interessa: que a **aplicação servida** emite os
+ * cabeçalhos. O teste de unidade prova a política; só uma resposta HTTP real prova que o servidor
+ * a aplica. No CI isso roda no job `containers`, contra a imagem de produção (`next start`,
+ * `NODE_ENV=production`) — o runtime semelhante à produção que o gate exige.
+ *
+ * A CSP é exigida em modo **enforcing**: `Content-Security-Policy-Report-Only` não bloqueia nada e,
+ * se fosse o que estivesse no ar, o veredito honesto seria `S1_PARTIAL_REQUIRES_ENFORCING_CSP`.
+ */
+async function expectCabecalhosDeSeguranca(res) {
+  const exigidos = {
+    'content-security-policy': /object-src 'none'/,
+    'x-content-type-options': /^nosniff$/,
+    'x-frame-options': /^DENY$/,
+    'referrer-policy': /strict-origin-when-cross-origin/,
+    'permissions-policy': /camera=\(\)/,
+  };
+
+  for (const [nome, formato] of Object.entries(exigidos)) {
+    const valor = res.headers.get(nome);
+    if (valor === null) throw new BodyError(`cabeçalho ausente: ${nome}`);
+    if (!formato.test(valor)) throw new BodyError(`${nome} com valor inesperado: ${valor}`);
+  }
+
+  // Report-Only como estado final = S1 NÃO resolvido.
+  if (res.headers.get('content-security-policy-report-only') !== null) {
+    throw new BodyError('CSP em Report-Only — o finding S1 exige enforcing');
+  }
+
+  const csp = res.headers.get('content-security-policy');
+  if (!/'nonce-[A-Za-z0-9+/=]+'/.test(csp)) throw new BodyError('CSP sem nonce por requisição');
+  if (csp.includes('unsafe-eval')) throw new BodyError("CSP de produção com 'unsafe-eval'");
+
+  // O item nomeado pelo finding: o framework não se anuncia.
+  const powered = res.headers.get('x-powered-by');
+  if (powered !== null) throw new BodyError(`X-Powered-By exposto: ${powered}`);
+
+  // HSTS só é exigível — e só é honrado pelo browser — sobre HTTPS. Num alvo HTTP (CI local,
+  // container sem TLS) cobrar HSTS seria exigir prova que o próprio protocolo descarta; num alvo
+  // HTTPS (staging atrás do Traefik), a ausência é falha real.
+  if (WEB_URL.startsWith('https://')) {
+    const hsts = res.headers.get('strict-transport-security');
+    if (hsts === null) throw new BodyError('resposta HTTPS sem Strict-Transport-Security');
+    if (!/max-age=\d+/.test(hsts)) throw new BodyError(`HSTS malformado: ${hsts}`);
+  }
+}
+
 const results = [];
 results.push(await check('API /health', `${API_URL}/health`, expectStatusOk));
 results.push(await check('API /ready', `${API_URL}/ready`, expectStatusOk));
 results.push(await check('WEB /healthz', `${WEB_URL}/healthz`, expectStatusOk));
 // A casca é a experiência real do usuário: basta responder 2xx (o corpo é HTML).
 results.push(await check('WEB /', `${WEB_URL}/`, async () => {}));
+// Borda: os cabeçalhos de segurança na resposta REAL da aplicação servida (TECH-S1).
+results.push(
+  await check('WEB / cabeçalhos de segurança', `${WEB_URL}/`, expectCabecalhosDeSeguranca),
+);
+results.push(
+  await check(
+    'WEB /login cabeçalhos de segurança',
+    `${WEB_URL}/login`,
+    expectCabecalhosDeSeguranca,
+  ),
+);
 
 const allOk = results.every(Boolean);
 console.log(
