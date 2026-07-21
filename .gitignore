@@ -17,10 +17,13 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 
-# Ambiente — segredos NUNCA versionados (só o exemplo)
+# Ambiente — segredos NUNCA versionados (só os exemplos)
 .env
 .env.*
 !.env.example
+# Exemplos versionados (SEM segredos): .env.example e .env.<contexto>.example (ex.: .env.test.example).
+# A negação vem depois do `.env.*` para reincluir só os templates, nunca um .env real.
+!.env.*.example
 
 # Next
 next-env.d.ts
