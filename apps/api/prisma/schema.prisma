@@ -329,8 +329,54 @@ model Organization {
   cardRecordLinks   CardRecordLink[]
   accountAvatars    AccountAvatar[]
   automations       Automation[]
+  invites           Invite[]
 
   @@map("Organization")
+}
+
+/// Estado do Convite (Story 8.2, D5.1). Terminais (ACCEPTED/EXPIRED/CANCELLED) NUNCA voltam a
+/// PENDING. Sem "Membership pendente" — o Convite é entidade distinta da Membership.
+enum InviteState {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+/// Convite — o ato org-scoped de trazer um e-mail para a Organização com um papel inicial (Story 8.2).
+///
+/// Token: só o HASH persiste (`tokenHash`); o valor utilizável só existe em memória ao emitir/enviar.
+/// Unicidade "1 PENDING por (orgId, normalizedEmail)" é imposta pelo BANCO via índice único PARCIAL
+/// (raw SQL na migration — o Prisma 6.19.3 não expressa índice parcial), espelhando o par ativo de
+/// `DatabaseGrant`. Sem exclusão: cancelar/expirar é `state`; o runtime tem GRANT SELECT/INSERT/UPDATE
+/// e **não** DELETE. RLS ENABLE+FORCE + WITH CHECK, como toda tabela organizacional.
+model Invite {
+  id                 String         @id @default(uuid()) @db.Uuid
+  orgId              String         @db.Uuid
+  /// Chave de unicidade (com orgId). Forma normalizada (trim+minúsculas) do e-mail convidado.
+  normalizedEmail    String
+  /// E-mail original de exibição (roster 8.7). NÃO é a chave — a chave é `normalizedEmail`.
+  email              String
+  /// Papel inicial concedido no aceite. Teto AD-9 (GUEST) aplicado no serviço.
+  role               MembershipRole
+  state              InviteState    @default(PENDING)
+  /// SHA-256 (hex) do token. NUNCA o token bruto. Único: o lookup de aceite é por este hash.
+  tokenHash          String         @unique
+  /// Expiração derivada do prazo (7 dias). Reenvio recalcula e reinicia.
+  expiresAt          DateTime
+  /// Último envio (emissão/reenvio) — base do cooldown de 60s entre reenvios (G2).
+  lastSentAt         DateTime
+  /// Conta que emitiu (rastreabilidade/roster). Sem FK: `Account` é global e o vínculo é informativo.
+  invitedByAccountId String         @db.Uuid
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  // Catálogo por Organização + estado (roster 8.7) e resolução de conflito por e-mail.
+  @@index([orgId, state])
+  @@index([orgId, normalizedEmail])
+  @@map("Invite")
 }
 
 /// Pipe — processo de trabalho da Organização (Story 2.1). Dado operacional org-owned (AD-10).

@@ -268,6 +268,24 @@ const EnvSchema = z
     SCAN_MAX_CONCURRENT_PER_ORG: z.coerce.number().int().positive().max(100).default(3),
     /** TTL do slot de verificação (segundos) — auto-liberação de slot órfão. */
     SCAN_SLOT_TTL_SECONDS: z.coerce.number().int().positive().default(120),
+
+    // ── Story 8.2 — e-mail transacional da Plataforma (Convite), G1 ──────────────────────────
+    // Provedor: Resend, atrás de `TransactionalEmailPort`. Com o gate DESLIGADO (default), o
+    // adapter FAKE é usado (dev/CI/teste) e nenhuma credencial é exigida. Ligar o gate EXIGE a
+    // config real — coerência fail-closed no `.superRefine` abaixo (mesmo padrão de FILE_UPLOAD).
+    /** Liga o envio REAL de e-mail (adapter Resend). Só `'true'` liga; ausência mantém o FAKE. */
+    EMAIL_SEND_ENABLED: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    /** Chave do Resend. Segredo — mensagem de erro cita só o NOME, nunca o valor. Vazio = ausente. */
+    RESEND_API_KEY: vazioComoAusente(z.string().min(1).optional()),
+    /** Identidade remetente (ex.: "Giraffe360 <convites@mail.exemplo>"). Configurável, não hardcoded. */
+    EMAIL_FROM: vazioComoAusente(z.string().min(1).optional()),
+    /** Origem pública para montar o link do Convite (ex.: https://app.exemplo). */
+    APP_PUBLIC_URL: vazioComoAusente(
+      z.string().url('APP_PUBLIC_URL deve ser uma URL válida').optional(),
+    ),
   })
   /**
    * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em
@@ -420,6 +438,36 @@ const EnvSchema = z
         message:
           'SCAN_SLOT_TTL_SECONDS (em ms) deve ser MAIOR que CLAMAV_TIMEOUT_MS — senão um slot em uso expira ' +
           'durante o scan e a concorrência ultrapassa SCAN_MAX_CONCURRENT_PER_ORG',
+      });
+    }
+  })
+  /**
+   * Coerência do gate de e-mail (8.2, G1). Ligar `EMAIL_SEND_ENABLED` sem a config do provedor é uma
+   * capacidade "ligada" que tentaria enviar e não teria como — falha opaca no 1º Convite. Fail-closed:
+   * com o gate ON, provedor/remetente/URL são obrigatórios e a API não sobe sem eles.
+   *
+   * As mensagens citam apenas NOMES de variáveis — `RESEND_API_KEY` é segredo e nunca pode vazar.
+   */
+  .superRefine((env, ctx) => {
+    if (!env.EMAIL_SEND_ENABLED) return;
+
+    const faltando = (
+      [
+        ['RESEND_API_KEY', env.RESEND_API_KEY],
+        ['EMAIL_FROM', env.EMAIL_FROM],
+        ['APP_PUBLIC_URL', env.APP_PUBLIC_URL],
+      ] as const
+    )
+      .filter(([, v]) => v === undefined || v === '')
+      .map(([nome]) => nome);
+
+    if (faltando.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'EMAIL_SEND_ENABLED=true exige o provedor configurado — variáveis ausentes: ' +
+          faltando.join(', ') +
+          ' (o envio real não pode ligar sem provedor/remetente/URL — fail-closed G1)',
       });
     }
   });
