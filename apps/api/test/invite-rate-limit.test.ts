@@ -80,11 +80,12 @@ describe('InviteRateLimit — excesso', () => {
     expect((erro as RateLimitExcedidoError).retryAfterSeconds).toBe(60);
   });
 
-  it('para no PRIMEIRO limite excedido (não cobra os seguintes)', async () => {
-    const { rl, chamadas } = fakeLimiter(['inv:adm:']);
-    await new InviteRateLimit(rl).cobrar(PARAMS).catch(() => {});
-    // Só a 1ª chave foi checada antes de lançar.
-    expect(chamadas).toHaveLength(1);
-    expect(chamadas[0]!.chave).toBe('inv:adm:adm-1');
+  it('avalia TODOS os limites e usa o MAIOR Retry-After quando mais de um é atingido (G2)', async () => {
+    // admin (1h=3600s) E destinatário (1 dia=86400s) excedidos → deve usar 86400 (o maior).
+    const { rl, chamadas } = fakeLimiter(['inv:adm:', 'inv:dest:']);
+    const erro = await new InviteRateLimit(rl).cobrar(PARAMS).catch((e: unknown) => e);
+    // Não para no 1º: os três limites de emissão foram avaliados.
+    expect(chamadas).toHaveLength(3);
+    expect((erro as RateLimitExcedidoError).retryAfterSeconds).toBe(86400);
   });
 });

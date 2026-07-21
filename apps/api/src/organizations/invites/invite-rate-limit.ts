@@ -67,11 +67,16 @@ export class InviteRateLimit {
       checagens.push({ chave: `inv:cd:${inviteId}`, politica: this.cooldown });
     }
 
+    // G2: avalia TODOS os limites (cada `contar` é atômico) e, se um ou mais forem excedidos, usa o
+    // MAIOR `Retry-After` entre eles — nunca promete cedo demais. Avaliar todos (em vez de parar no
+    // 1º) é o que a decisão exige e o que faz o orçamento ser cobrado de forma consistente.
+    let maiorRetryAfter = 0;
     for (const { chave, politica } of checagens) {
       const { excedido } = await this.rateLimiter.contar(chave, politica);
       if (excedido) {
-        throw new RateLimitExcedidoError(Math.ceil(politica.janelaMs / 1000));
+        maiorRetryAfter = Math.max(maiorRetryAfter, Math.ceil(politica.janelaMs / 1000));
       }
     }
+    if (maiorRetryAfter > 0) throw new RateLimitExcedidoError(maiorRetryAfter);
   }
 }
