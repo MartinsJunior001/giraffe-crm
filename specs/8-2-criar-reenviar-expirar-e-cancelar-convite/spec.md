@@ -4,7 +4,8 @@
 > **Rastreabilidade oficial (`epics.md` §623):** FR-33 · D5.1 · NFR-38/39/40/42 · AD-9, AD-25, AD-30 · INV-AUDIT-01.
 > **Dependências:** 8.1 (`done`) + **porta de e-mail transacional da Plataforma**.
 > **Base:** `origin/main` = `c1e3039` (inclui 8.1 e TECH-S1).
-> **Status:** `structuring` — **estruturável agora; NÃO implementável** até os gates materiais (§3).
+> **Status:** `G2_RESOLVED` · `G1_ARCHITECTURE_RESOLVED` · `BLOCKED_EXTERNAL_EMAIL_CREDENTIALS`
+> (só o **smoke de envio real** aguarda credencial; todo o resto é implementável agora — §3).
 
 ## 1. Objetivo
 
@@ -29,35 +30,52 @@
   é a 8.8.
 - **`convidar como Admin exige step-up`** (autenticação reforçada).
 
-## 3. GATES MATERIAIS — por que a Story é estruturável mas não implementável agora
+## 3. GATES — RESOLVIDOS PELA DECISÃO MATERIAL DO DONO
 
-Esta seção é a razão de o status ser `structuring`. **Confirmado nas fontes, não presumido** (a
-instrução do dono foi explícita: não presumir dependência de e-mail antes de ler):
+Os gates que antes bloqueavam a Story foram decididos. Registrados aqui como contrato vinculante.
 
-### G1 — Porta de e-mail transacional da Plataforma (Arquitetura)
-- `epics.md` §623: **Dependências:** "8.1 + **porta de e-mail transacional da Plataforma**"; **Gates:**
-  "provedor transacional; identidade remetente da Plataforma; **cofre de credenciais**; … (todos antes
-  da implementação)".
-- **Evidência de que não existe:** nenhum provider de e-mail em `apps/api/package.json` (grep:
-  nodemailer/resend/ses/sendgrid/postmark/mailgun/smtp → zero); nenhum módulo de e-mail/convite na API;
-  Story **1.10** (recuperação de senha, mesma dependência de porta transacional) segue `backlog`, nunca
-  implementada, e sua entrada de épico declara "BLOQUEADA para implementação até … disponibilidade da
-  porta de e-mail transacional".
-- **Natureza:** decisão de Arquitetura + **credencial ausente** (condição de parada #2). Inventar
-  provider/identidade/segredo violaria "não inventar".
+### G2 — Parâmetros de Produto e Segurança → **RESOLVIDO**
 
-### G2 — Parâmetros numéricos (Produto + Segurança)
-- `epics.md` §623 Gates: "**prazo numérico**; **rate limits**; **antiabuso**; retry e idempotência
-  (todos antes da implementação)".
-- PRD §1078: "cálculo de **prazo** … = Arquitetura" (diferido); §1044 diz "expira por prazo" sem número.
-- **Nenhum valor** de expiração do Convite, de rate limit de emissão/reenvio/validação, ou de limiar
-  antiabuso está definido nas fontes.
-- **Natureza:** **decisão material de produto/segurança** (condição de parada #5). O ciclo "expira por
-  prazo" e o "rate limit de emissão" **não são codificáveis** sem esses números — inventá-los seria
-  fixar política de produto por conta própria.
+**Validade:** 7 dias corridos desde a emissão. Reenvio **rotaciona o token**, invalida o anterior no
+ato e **reinicia** os 7 dias.
 
-> **Precedente:** a Story 1.10 tem a mesma forma — *"Estruturável agora; não implementável antes desses
-> parâmetros."* A 8.2 herda esse padrão.
+**Unicidade:** no máximo **um** Convite `PENDING` por `(organizationId, normalizedEmail)`. Nova emissão
+com pendente existente → **409 conflito explícito**, sem criar registro; renovar é via **reenvio**.
+
+**Rate limits** (emissão/reenvio salvo indicação):
+| Escopo | Limite |
+|---|---|
+| por Admin | 10 / hora |
+| por Organização | 100 / dia |
+| por destinatário na Org | 5 / dia |
+| cooldown entre reenvios do mesmo Convite | 60 s |
+| aceitação — por IP | 20 / 15 min |
+| aceitação — por Convite | 5 / 15 min |
+
+**Respostas:** limite → **429 com `Retry-After`**; token inválido/expirado/revogado/usado **não revela**
+se o e-mail tem conta; conflitos de associação seguem o contrato (§5), **nunca** sobrescrevem Membership
+em silêncio.
+
+**Auditoria:** registra emissão, reenvio, aceitação, revogação, expiração observada, conflito e
+rate-limit; **nunca** token bruto; e-mail **mascarado/minimizado** em log técnico; identificação
+completa só onde o modelo de auditoria autorizado exigir.
+
+### G1 — Arquitetura do provedor → **RESOLVIDO** (credencial ainda externa)
+
+**Provedor MVP:** **Resend**, obrigatoriamente atrás de **`TransactionalEmailPort`** — nenhuma regra de
+domínio depende do SDK. Adapters: `ResendTransactionalEmailAdapter` (produção) e
+`FakeTransactionalEmailAdapter` (testes).
+
+**Config (secrets fora do repo):** `RESEND_API_KEY` (obrigatório fora de `test`), `EMAIL_FROM`
+(identidade remetente), `APP_PUBLIC_URL` (origem do link). **Fail-fast** no bootstrap quando envio real
+estiver habilitado sem config. Timeout, erro tipado e observabilidade **sem segredo/token**.
+
+**Identidade recomendada (configuração externa, não hardcoded):** nome `Giraffe360`, remetente sugerido
+`convites@mail.giraffemarketing.com.br` — domínio a verificar no provedor **antes** do smoke real.
+
+> **Único gate remanescente:** `BLOCKED_EXTERNAL_EMAIL_CREDENTIALS` — `RESEND_API_KEY` +
+> `VERIFIED_SENDER_DOMAIN`. Bloqueia **apenas** o smoke de entrega real em staging; não bloqueia código,
+> testes (adapter fake) nem CI.
 
 ## 4. O que É estruturável agora (esta spec + planejamento)
 
