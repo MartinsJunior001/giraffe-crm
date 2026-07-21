@@ -16,7 +16,8 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "test:ci": "pnpm -r test:ci",
+    "test:ci": "pnpm --filter @giraffe/api test:ci && pnpm --filter @giraffe/web test:ci",
+    "test:local": "node scripts/test-preflight.mjs && pnpm test:ci",
     "smoke": "node scripts/smoke.mjs",
     "compose:up": "docker compose up --build -d",
     "compose:down": "docker compose down"
