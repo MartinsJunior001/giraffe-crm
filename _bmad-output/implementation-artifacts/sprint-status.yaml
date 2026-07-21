@@ -41,7 +41,7 @@
 # - No story enters development before its Definition of Ready (incl. applicable gate closed).
 
 generated: 2026-07-12
-last_updated: 2026-07-18
+last_updated: 2026-07-21
 project: giraffe crm — Fase 1
 project_key: NOKEY
 tracking_system: file-system
@@ -68,8 +68,8 @@ development_status:
   epic-1-retrospective: optional
 
   # ===== Wave 2 — Épico 8: Administração, Membros e Auditoria =====
-  epic-8: backlog
-  8-1-casca-do-painel-administrativo-e-guarda-de-acesso: backlog
+  epic-8: in-progress
+  8-1-casca-do-painel-administrativo-e-guarda-de-acesso: done
   8-2-criar-reenviar-expirar-e-cancelar-convite: backlog
   8-3-aceite-de-convite-e-ativacao-da-membership: backlog
   8-4-alteracao-de-papel-da-membership: backlog
