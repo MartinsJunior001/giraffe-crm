@@ -3,9 +3,15 @@ import { PinoLogger } from 'nestjs-pino';
 import { getEnv } from '../kernel/config/env';
 import { OrganizationsController } from './organizations.controller';
 import { FakeTransactionalEmailAdapter } from './invites/fake-transactional-email.adapter';
+import { InviteAcceptController } from './invites/invite-accept.controller';
+import { InviteAcceptRateLimit } from './invites/invite-accept-rate-limit';
+import { InviteAcceptService } from './invites/invite-accept.service';
 import { InviteRateLimit } from './invites/invite-rate-limit';
+import { InviteRouteResolver } from './invites/invite-route.resolver';
 import { InvitesController } from './invites/invites.controller';
 import { InvitesService } from './invites/invites.service';
+import { LogInviteAcceptedNotificationAdapter } from './invites/log-invite-notification.adapter';
+import { INVITE_ACCEPTED_NOTIFICATION_PORT } from './invites/notification.port';
 import { ResendTransactionalEmailAdapter } from './invites/resend-transactional-email.adapter';
 import {
   TRANSACTIONAL_EMAIL_PORT,
@@ -40,8 +46,27 @@ const emailPortProvider = {
   inject: [PinoLogger],
 };
 
+/**
+ * Notificação "convite aceito" (Story 8.3): a porta canônica de E5/5.6 ainda não tem write-side, então
+ * o adapter é de LOG (observável, sem fingir entrega). Trocar por um adapter real de 5.6 é aditivo —
+ * mesma porta, nenhum consumidor tocado. Débito de planejamento: `DEB-8-3-NOTIF-WRITE-SIDE`.
+ */
+const inviteNotificationProvider = {
+  provide: INVITE_ACCEPTED_NOTIFICATION_PORT,
+  useClass: LogInviteAcceptedNotificationAdapter,
+};
+
 @Module({
-  controllers: [OrganizationsController, InvitesController],
-  providers: [InvitesService, InviteRateLimit, emailPortProvider],
+  controllers: [OrganizationsController, InvitesController, InviteAcceptController],
+  providers: [
+    InvitesService,
+    InviteRateLimit,
+    emailPortProvider,
+    // Story 8.3 — aceite de Convite.
+    InviteAcceptService,
+    InviteRouteResolver,
+    InviteAcceptRateLimit,
+    inviteNotificationProvider,
+  ],
 })
 export class OrganizationsModule {}
