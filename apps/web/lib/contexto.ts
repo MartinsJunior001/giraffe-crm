@@ -1,6 +1,13 @@
 import { cache } from 'react';
 import { cookies } from 'next/headers';
-import { fetchOrgAtual, fetchOrganizacoes, type EstadoOrg, type EstadoOrganizacoes } from './auth';
+import {
+  fetchEscopoAdmin,
+  fetchOrgAtual,
+  fetchOrganizacoes,
+  type EstadoAdmin,
+  type EstadoOrg,
+  type EstadoOrganizacoes,
+} from './auth';
 import { getApiBaseUrl } from './env';
 
 /**
@@ -38,6 +45,28 @@ export const obterOrganizacoes = cache(async (): Promise<EstadoOrganizacoes> => 
 
   try {
     return await fetchOrganizacoes(getApiBaseUrl(), cookieHeader);
+  } catch {
+    return { ok: false, motivo: 'indisponivel' };
+  }
+});
+
+/**
+ * Escopo administrativo, resolvido no SERVIDOR e deduplicado por requisição (Story 8.1).
+ *
+ * `cache: 'no-store'` na busca + `force-dynamic` no layout fazem a troca de Organização (1.9)
+ * recarregar o escopo INTEGRALMENTE: o `router.refresh()` do seletor reexecuta este Server Component
+ * com o contexto novo. Não há cache administrativo próprio a invalidar — e não se cria um, porque
+ * seria inventar o problema e a solução na mesma Story.
+ */
+export const obterEscopoAdmin = cache(async (): Promise<EstadoAdmin> => {
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore
+    .getAll()
+    .map((c) => `${c.name}=${c.value}`)
+    .join('; ');
+
+  try {
+    return await fetchEscopoAdmin(getApiBaseUrl(), cookieHeader);
   } catch {
     return { ok: false, motivo: 'indisponivel' };
   }

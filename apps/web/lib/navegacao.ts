@@ -29,6 +29,15 @@ export interface ItemNav {
  */
 export const ITENS_NAV: readonly ItemNav[] = [
   { href: '/painel', rotulo: 'Dashboard', icone: 'LayoutDashboard' },
+  // Story 8.1: o Painel Administrativo só aparece para o ADMIN. Esconder aqui é UX — a fronteira
+  // real é a rota `admin-scope` da API, que nega deny-by-default. Mas NÃO renderizar o item honra
+  // "não revelar recurso": quem não é Admin não descobre a existência da área pela navegação.
+  {
+    href: '/painel/administracao',
+    rotulo: 'Administração',
+    icone: 'Shield',
+    papeis: ['ADMIN'],
+  },
 ];
 
 /** Itens que o papel pode ver. Item com `papeis` só aparece se o papel estiver na allowlist. */

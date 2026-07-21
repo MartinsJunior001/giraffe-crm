@@ -194,3 +194,44 @@ export async function trocarOrganizacaoNaApi(
     return { ok: false, status: 0 };
   }
 }
+
+/**
+ * Escopo administrativo (Story 8.1). `negado` é estado de PRODUTO, não erro: o servidor respondeu
+ * e disse não.
+ */
+export type EstadoAdmin =
+  | { ok: true; orgId: string; orgNome: string }
+  | { ok: false; motivo: 'sem-sessao' | 'negado' | 'indisponivel' };
+
+/**
+ * Confirma no SERVIDOR o acesso ao Painel Administrativo (Story 8.1).
+ *
+ * A web NÃO decide quem entra: ela pergunta. O `papel` que a casca já tem (`fetchOrgAtual`) é dado
+ * de apresentação — usá-lo como fronteira faria a segurança do Painel depender de um valor que
+ * viajou até o cliente. Aqui quem nega é o `AuthzGuard` da API (deny-by-default), e esta função só
+ * traduz a resposta.
+ *
+ * 401 = sem sessão → Login. **403 = negado** (não-Admin, ou Membership suspensa/encerrada, que
+ * sequer resolve contexto). Os dois casos colapsam num só motivo de propósito: distinguir "você não
+ * é Admin" de "sua Membership foi suspensa" seria devolver ao cliente informação sobre o próprio
+ * estado administrativo que a negação existe para não detalhar.
+ */
+export async function fetchEscopoAdmin(baseUrl: string, cookie: string): Promise<EstadoAdmin> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/organizations/admin-scope`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+  } catch {
+    return { ok: false, motivo: 'indisponivel' };
+  }
+  if (res.status === 401) return { ok: false, motivo: 'sem-sessao' };
+  if (res.status === 403) return { ok: false, motivo: 'negado' };
+  if (!res.ok) return { ok: false, motivo: 'indisponivel' };
+
+  const body = (await res.json().catch(() => ({}))) as { id?: string; name?: string };
+  return body.id && body.name
+    ? { ok: true, orgId: body.id, orgNome: body.name }
+    : { ok: false, motivo: 'indisponivel' };
+}
