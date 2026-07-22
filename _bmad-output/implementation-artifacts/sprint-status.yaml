@@ -63,7 +63,7 @@ development_status:
   1-9-troca-explicita-de-organizacao: done
   1-10-recuperacao-de-senha: backlog
   1-11-perfil-basico-e-contexto-proprio: backlog
-  1-12-troca-autenticada-de-senha: backlog
+  1-12-troca-autenticada-de-senha: done
   1-13-alteracao-de-e-mail-em-duas-etapas: backlog
   epic-1-retrospective: optional
 
