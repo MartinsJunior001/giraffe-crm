@@ -346,6 +346,8 @@ model Organization {
   domainEvents      DomainEvent[]
   invites           Invite[]
   membershipEvents  MembershipEvent[]
+  automationExecutions   AutomationExecution[]
+  automationActionResults AutomationActionResult[]
 
   @@map("Organization")
 }
@@ -1588,6 +1590,10 @@ model Automation {
   /// Versões congeladas da configuração (Story 4.2). Snapshot imutável por edição-ativa/ativação.
   versions AutomationVersion[]
 
+  /// Execuções lógicas do motor (Story 4.6). FK composta tenant-safe RESTRICT — não há DELETE de Automação
+  /// com Execução (a trilha da 4.8 é preservada).
+  executions AutomationExecution[]
+
   /// A consulta do motor (4.6) é "Automações ATIVAS de um Pipe"; a desta Story é "Automações de um Pipe".
   @@index([orgId, pipeId, state])
   /// Alvo da FK COMPOSTA tenant-safe de `AutomationVersion` — o par `(orgId, id)` prova, no banco, que a
@@ -1696,4 +1702,134 @@ model DomainEvent {
   @@index([orgId, resourceType, resourceId, occurredAt])
   @@index([orgId, correlationId])
   @@map("DomainEvent")
+}
+
+/// Estado de uma Execução lógica de Automação (Story 4.6 — motor). Estados HONESTOS (§1411, UX-DR6):
+/// `PENDING` (enfileirada, dedup criada), `RUNNING` (reivindicada, com lease), terminais `SUCCEEDED`/`PARTIAL`/
+/// `FAILED`, `SKIPPED_CONDITIONS` (Condição AND não satisfeita — nenhuma Ação), `BLOCKED_CONFIRMATION` (uma Ação
+/// exige confirmação humana — §1383; o motor NÃO a executa e NÃO mantém job aberto). Nunca há estado que funda
+/// os dois eixos (dedup lógica × progresso físico) — o progresso por Ação vive em `AutomationActionResult`.
+enum AutomationExecutionState {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  SKIPPED_CONDITIONS
+  BLOCKED_CONFIRMATION
+}
+
+/// Estado do resultado de UMA Ação dentro da Execução (Story 4.6). `SUCCEEDED`/`FAILED` (efeito ou falha reais),
+/// `DENIED` (revalidação 4.5 recusou — não-ampliação/M-1/estado/alvo indeterminado), `BLOCKED_CONFIRMATION`
+/// (Ação sensível — §1383), `BLOCKED_PRIOR_FAILURE` (uma Ação anterior da MESMA Automação falhou/foi recusada —
+/// D4.2: as seguintes não executam). Append-only, como o próprio resultado (fato consumado).
+enum AutomationActionResultState {
+  SUCCEEDED
+  FAILED
+  DENIED
+  BLOCKED_CONFIRMATION
+  BLOCKED_PRIOR_FAILURE
+}
+
+/// AutomationExecution — a EXECUÇÃO LÓGICA do motor (Story 4.6 — FR-23, D4.2, AD-13/18). Uma por
+/// `(evento × Automação × versão)`, materializada preguiçosamente a partir do outbox `DomainEvent` (4.3). É,
+/// ao mesmo tempo, o **cursor de processamento** (a existência da linha = "este evento já foi processado por
+/// esta Automação nesta versão" — o outbox é append-only e não pode ser marcado) e a **trilha** que a 4.8 lerá.
+///
+/// **Dedup lógica (§1402):** `@@unique([orgId, eventId, automationId, automationVersionId])` — uma ocorrência
+/// reentregue (at-least-once) reencontra a mesma Execução; nunca há 2ª. **Versão congelada (§1404):**
+/// `automationVersionId`/`configSnapshotRevision` capturados na criação; o motor avalia a versão, nunca o
+/// rascunho, e desativar/arquivar depois NÃO cancela Execução iniciada.
+///
+/// **Concorrência/recuperação:** `leaseOwner`/`leaseExpiresAt` — a claim (`FOR UPDATE SKIP LOCKED`) reivindica
+/// PENDING e RUNNING-com-lease-vencida (crash retomado sem duplicar efeito, pois o progresso por Ação é
+/// idempotente). `attempt`/`nextAttemptAt` = backoff (falha transitória). **Auditoria (§1384):** `initiator*`
+/// preserva quem iniciou a mudança ORIGINAL (nunca fundido com o ator=principal Automação=`automationId`).
+///
+/// **Isolamento pelo BANCO:** RLS ENABLE+FORCE, policies por `current_org_id()` com WITH CHECK no INSERT e no
+/// UPDATE; FK COMPOSTA tenant-safe `(orgId, automationId)→Automation(orgId, id)` (F-A1). **GRANT como fronteira:**
+/// `SELECT/INSERT` + **UPDATE column-scoped** só das colunas de progresso (estado/lease/attempt/tempos/errorCode);
+/// `eventId`/`automationId`/`automationVersionId`/`orgId`/`pipeId`/`initiator*` IMUTÁVEIS por GRANT (uma Execução
+/// não migra de evento/Automação/versão — provado no `automation-engine-rls`). **Sem DELETE** de runtime.
+model AutomationExecution {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  orgId                  String                   @db.Uuid
+  /// Identidade lógica do fato gatilho (`DomainEvent.eventId`). Sem FK: o outbox pode ser expurgado pelo dono
+  /// e a Execução (trilha da 4.8) sobrevive — como uma referência por id. Isolado por RLS+orgId.
+  eventId                String                   @db.Uuid
+  automationId           String                   @db.Uuid
+  /// Número da versão congelada avaliada (`Automation.activeVersion` no ato). NÚMERO, não FK — como
+  /// `Form.publishedVersion`: evita ciclo de FK; a versão nunca é apagada (GRANT sem DELETE em AutomationVersion).
+  automationVersionId    Int
+  /// Revisão (hash) do snapshot da versão avaliada — congela a config e detecta divergência (sem mistura, §1404).
+  configSnapshotRevision String
+  pipeId                 String                   @db.Uuid
+  state                  AutomationExecutionState @default(PENDING)
+  /// Tentativa atual (1..MAX). Backoff exponencial via `nextAttemptAt`; esgotar ⇒ estado final explícito (§1405).
+  attempt                Int                      @default(0)
+  nextAttemptAt          DateTime?                @db.Timestamptz(3)
+  /// Lease de processamento (recuperação de job interrompido). `leaseOwner` = id do worker; `leaseExpiresAt` no
+  /// passado ⇒ reivindicável. Um crash deixa RUNNING com lease vencida; o próximo drain retoma.
+  leaseOwner             String?                  @db.Uuid
+  leaseExpiresAt         DateTime?                @db.Timestamptz(3)
+  startedAt              DateTime?                @db.Timestamptz(3)
+  finishedAt             DateTime?                @db.Timestamptz(3)
+  /// Iniciador PRESERVADO (§1384) — quem iniciou a mudança original que emitiu o evento. Nunca é o principal
+  /// Automação (esse é o ATOR = `automationId`). `HUMANO`/`AUTOMACAO`/`SISTEMA` (String — vocabulário estável).
+  initiatorType          String
+  initiatorAccountId     String?                  @db.Uuid
+  initiatorAutomationId  String?                  @db.Uuid
+  correlationId          String                   @db.Uuid
+  /// Cadeia de execução quando originado por Automação (propagação = 4.7; NULL na Fase 1 fora de encadeamento).
+  executionChainId       String?                  @db.Uuid
+  /// Código de erro SANITIZADO da última falha (enum estrutural em texto — NUNCA id/valor/PII/stack, AD-30).
+  lastErrorCode          String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe (F-A1). RESTRICT: o runtime não tem DELETE em `Automation`; apagar uma Automação
+  /// com Execução é erro explícito do dono, nunca cascata silenciosa que apagaria a trilha.
+  automation   Automation   @relation(fields: [orgId, automationId], references: [orgId, id], onDelete: Restrict)
+
+  actionResults AutomationActionResult[]
+
+  /// Dedup lógica (§1402): ≤1 Execução por (evento, Automação, versão).
+  @@unique([orgId, eventId, automationId, automationVersionId])
+  /// Alvo da FK composta tenant-safe de `AutomationActionResult`.
+  @@unique([orgId, id])
+  /// Fila de reivindicação do drain: PENDING/lease-vencida por prazo.
+  @@index([orgId, state, nextAttemptAt])
+  @@map("AutomationExecution")
+}
+
+/// AutomationActionResult — resultado de UMA Ação da Execução (Story 4.6). APPEND-ONLY: o resultado de uma Ação
+/// é fato consumado; um retry que reprocessa a Execução só INSERE resultados das Ações AINDA sem linha (a dedup
+/// de Ação garante "a mesma Ação não roda 2×", §1403). GRANT **só SELECT/INSERT** (imutável, como CardHistory).
+///
+/// **Dedup de Ação (§1403):** `@@unique([orgId, executionId, actionIndex])` — posição estável na config. FK
+/// COMPOSTA tenant-safe `(orgId, executionId)→AutomationExecution(orgId, id)`, CASCADE (fato derivado da Execução).
+/// **Sanitização (AD-30):** `targetResourceId` é só id de recurso; `valores`/PII NUNCA entram; `errorCode` é o
+/// enum estrutural sanitizado da recusa/falha.
+model AutomationActionResult {
+  id             String                      @id @default(uuid()) @db.Uuid
+  orgId          String                      @db.Uuid
+  executionId    String                      @db.Uuid
+  /// Posição estável da Ação na config `entao` (0-based) — a chave idempotente da Ação (§1403).
+  actionIndex    Int
+  actionType     String
+  state          AutomationActionResultState
+  /// Código sanitizado (motivo da recusa/falha) — nunca id/valor/PII/stack (AD-30). `null` no sucesso.
+  errorCode      String?
+  /// Id do recurso ALVO efetivamente tocado (Card/Registro), quando houver. Só id — nunca `valores`.
+  targetResourceId String?                   @db.Uuid
+  createdAt      DateTime                    @default(now())
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  execution    AutomationExecution @relation(fields: [orgId, executionId], references: [orgId, id], onDelete: Cascade)
+
+  /// Dedup de Ação (§1403): ≤1 resultado por (Execução, posição).
+  @@unique([orgId, executionId, actionIndex])
+  @@index([orgId, executionId])
+  @@map("AutomationActionResult")
 }

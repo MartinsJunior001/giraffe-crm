@@ -42,6 +42,7 @@ import { PhaseMilestonesService } from './phases/milestones/phase-milestones.ser
 import { AutomationsController } from './automations/automations.controller';
 import { AutomationsService } from './automations/automations.service';
 import { AutomationLifecycleService } from './automations/automation-lifecycle.service';
+import { AutomationEngineService } from './automations/engine/automation-engine.service';
 import { PipesController } from './pipes.controller';
 import { PipesService } from './pipes.service';
 
@@ -129,6 +130,7 @@ import { PipesService } from './pipes.service';
     PublicUploadSizeGuard,
     AutomationsService,
     AutomationLifecycleService,
+    AutomationEngineService,
   ],
   // Story 3.3: o Form Builder é canônico (INV-FORM-01). Estes serviços são exportados para que o módulo
   // Databases (que importa PipesModule) monte/evolua/publique o Formulário de Database SEM um segundo builder.
