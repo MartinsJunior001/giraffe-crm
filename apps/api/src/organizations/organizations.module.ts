@@ -6,6 +6,8 @@ import { MembersController } from './members/members.controller';
 import { MembershipRoleService } from './members/membership-role.service';
 import { MembershipStateService } from './members/membership-state.service';
 import { MembershipRemovalService } from './members/membership-removal.service';
+import { RosterController } from './members/roster.controller';
+import { RosterReadService } from './members/roster-read.service';
 import { FakeTransactionalEmailAdapter } from './invites/fake-transactional-email.adapter';
 import { InviteAcceptController } from './invites/invite-accept.controller';
 import { InviteAcceptRateLimit } from './invites/invite-accept-rate-limit';
@@ -67,6 +69,8 @@ const inviteNotificationProvider = {
     InviteAcceptController,
     // Story 8.4 — administração de Membros (alteração de papel).
     MembersController,
+    // Story 8.7 — roster (read-side) de membros e Convites.
+    RosterController,
   ],
   providers: [
     InvitesService,
@@ -86,6 +90,8 @@ const inviteNotificationProvider = {
     // Story 8.6 — remoção e saída voluntária. Mesmo substrato; consome o contrato 2.10
     // (`aoAlterarMembership('REMOVED', …)`) para o impacto sobre recursos. Sem novo import de módulo.
     MembershipRemovalService,
+    // Story 8.7 — roster (read-side). Leitura pura sobre Membership/Invite; sem migration nem GRANT novo.
+    RosterReadService,
   ],
 })
 export class OrganizationsModule {}
