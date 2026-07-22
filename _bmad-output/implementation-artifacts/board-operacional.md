@@ -10,10 +10,10 @@ Estados: `backlog` · `assigned` · `in-progress` · `pr-open` · `in-review` ·
 
 | Story | Estado | Writer | QA | Branch / worktree | PR | CI | Bloqueio | Próxima ação | Prio |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 8.4 — Alteração de papel da Membership | `assigned` | Subagente Writer (Lane 0) | Lane 0 (QA cruzado) | `story/8-4-alteracao-de-papel-da-membership` / `wt-8-4` | — | — | — | Spec Kit consolidado (D-1 step-up + D-2 último-Admin + D-3 sessão) → impl → PR. RISCO ALTO. | P0 |
+| 8.5 — Suspensão e reativação da Membership | `assigned` | Subagente Writer (Lane 0) | Lane 0 (QA cruzado) | `story/8-5-suspensao-e-reativacao-da-membership` / worktree isolado | — | — | — | Spec Kit consolidado (D-1 step-up + D-2 último-Admin na suspensão + D-3 invalidação de sessão/abilities) → impl → PR. RISCO ALTO. | P0 |
 | 8.2 — Convite: criar/reenviar/cancelar | `merged` | Terminal B | Terminal A | `story/8-2-...` | #132 | 5/5 | **EXTERNAL_GATE** Resend (API key + domínio verificado + APP_PUBLIC_URL HTTPS no Coolify) | smoke real quando o ambiente estiver pronto → closure → done. **NÃO DONE.** | P0 |
 
-Recentemente encerradas (Épico 8 + cadeia): **8.1** done · **8.3** done (PR #134) · **1.12** done (PR #140, main `a840c77`, step-up + política central de senha; 0 BLOCKER/HIGH; sem migration). Cadeia liberada: **8.4** → 8.5 → 8.6 → 8.7 (D-2/D-3); **8.8** paralelizável (write/read-side técnico desbloqueado por D-4; retenção = gate de produção).
+Recentemente encerradas (Épico 8 + cadeia): **8.1** done · **8.3** done (PR #134) · **1.12** done (PR #140, `a840c77`) · **8.4** done (PR #142, main `782ec65`, alteração de papel + proteção atômica do último Admin `FOR UPDATE` + evento canônico `MembershipEvent`; QA cruzado 0 BLOCKER/HIGH; migration aditiva). Cadeia: **8.5** → 8.6 → 8.7 (D-2/D-3); **8.8** paralelizável (D-4).
 
 ## Reservas ativas (anticolisão)
 
@@ -21,15 +21,15 @@ Superfícies com Writer exclusivo enquanto a Story estiver em voo. Quem não é 
 
 | Superfície | Reservada por |
 | --- | --- |
-| `apps/api/src/organizations/members/` (alteração de papel + proteção do último Admin) | Subagente Writer (8.4) |
-| endpoint/controller/service de alteração de papel da Membership | Subagente Writer (8.4) |
+| `apps/api/src/organizations/members/` (suspensão/reativação da Membership) | Subagente Writer (8.5) |
+| endpoint/controller/service de suspensão e reativação da Membership | Subagente Writer (8.5) |
 | `apps/api/src/organizations/invites/` | Terminal B (8.2, EXTERNAL_GATE — congelado até o smoke) |
 
-`apps/api/src/kernel/auth/` (step-up + política de senha) foi **liberado** com o encerramento da 1.12 — a 8.4 **consome** o `StepUpService`/`PasswordPolicy` como contrato estável, sem reabrir a superfície.
+`apps/api/src/kernel/auth/` (step-up) e o evento canônico `MembershipEvent` (8.4) são **contratos estáveis** consumidos pela 8.5 sem reabrir a superfície — a 8.5 acrescenta transições de `state` (SUSPENDED/ACTIVE) e novos tipos de evento, não altera o núcleo de papel da 8.4.
 
 ## Fila de integração
 
 Um merge por vez, ordenado pela Lane 0. **Uma migration integrada por vez.**
 
-1. 8.4 (alteração de papel; migration só se D-2 exigir coluna de versão de autorização — assume o slot único com drill de rollback)
+1. 8.5 (suspensão/reativação; provável migration aditiva de novos tipos de evento — assume o slot único com drill de rollback)
 2. 8.2 (integrada; aguardando só o smoke externo do Resend para closure/done)
