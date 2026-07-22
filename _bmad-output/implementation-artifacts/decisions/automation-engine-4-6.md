@@ -191,6 +191,30 @@ a UI/aba "Execuções" read-side (**4.8** — o motor **produz** as linhas que e
 robusto multi-réplica com leader election (deployment/4.7); o fluxo separado de continuação de confirmação
 humana (§1383, contrato futuro). Nada de abstração especulativa.
 
+## 7-bis. Débitos registrados (convergência dos dois revisores independentes — não corrigidos aqui)
+
+Os dois QAs aprovaram (0 BLOCKER/0 HIGH) e convergiram em três observações rastreáveis (nenhuma quebra
+invariante nesta Story; registradas para o consumidor/hardening futuro — AD-11):
+
+- **`DEB-4-6-SNAPSHOT-LIVE-STATE` (M-4):** o `snapshot-builder` lê o estado **vivo** do Card/Registro no
+  instante do DRAIN, não um snapshot congelado do payload do Evento. Isso tensiona §1359 ("execução tardia na
+  fila não altera retroativamente o resultado das Condições") na drenagem tardia/retomada: uma Condição pode
+  avaliar um estado posterior ao do Evento. **Não duplica efeito** (o dedup por Ação e a guarda otimista dos
+  serviços de domínio preservam o invariante de idempotência), e a revalidação pré-execução (4.5) sempre olha o
+  estado atual do alvo por desenho. O congelamento do snapshot no payload (allowlist AD-30 estendida ao "antes/
+  depois" mínimo por tipo de Evento) fica para um hardening futuro. `valoresAnteriores` já é `null` na Fase 1
+  (o envelope não os carrega), então operadores de "mudou" já são fail-closed.
+- **`DEB-4-6-CLAIM-AUDIT` (L-1):** a transição PENDING→RUNNING da reivindicação roda numa tx **raw**
+  (`$queryRaw FOR UPDATE SKIP LOCKED` + `updateMany`) que NÃO passa pela extensão de auditoria de
+  `withTenantContext`, então o claim não emite linha na trilha `audit`. As mutações de EFEITO (Card/Registro/
+  eventos) e as escritas de resultado seguem auditadas; só o passo de agendamento interno fica fora. Auditar o
+  claim (log manual FR-214 no serviço) é hardening de observabilidade, sem risco de segurança.
+- **`DEB-4-6-DENIED-NOISE` (L-2):** um Evento de **Registro** (sem `pipeId`) enfileira uma `AutomationExecution`
+  para **toda** Automação ativa da Org cujo gatilho casa; o CONTAINMENT M-1 recusa no processamento as que não
+  alcançam o Registro (Ação `DENIED`/`SKIPPED_CONDITIONS`), gerando linhas de Execução "desperdiçadas". É
+  seguro (nada executa fora do escopo) mas ruidoso na trilha da 4.8. Um pré-filtro por vínculo no
+  enfileiramento (só Automações de Pipes com `CardRecordLink` ativo ao Registro) é otimização futura.
+
 ## 8. Fontes
 
 - epics.md §1396–1417 (Story 4.6), §1284/§1381–1389 (4.1/4.5), §1355–1363 (4.4).
