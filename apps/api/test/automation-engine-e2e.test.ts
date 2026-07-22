@@ -47,6 +47,9 @@ const criados = {
   databaseIds: [] as string[],
   pipeIds: [] as string[],
   eventIds: [] as string[],
+  pipeGrantIds: [] as string[],
+  membershipIds: [] as string[],
+  accountIds: [] as string[],
 };
 
 /** Cria um cenário: Pipe + Database + Formulário de Database publicado (1 Campo texto). */
@@ -144,6 +147,59 @@ async function emitirEvento(
   return eventId;
 }
 
+/** Conta descartável (via migrator — o runtime só tem SELECT em `Account`) + Membership ACTIVE na Org C. */
+async function criarContaEMembership(role: 'MEMBER' | 'ADMIN' = 'MEMBER'): Promise<string> {
+  const accountId = randomUUID();
+  await migrator.account.create({
+    data: { id: accountId, email: `u-${accountId}@teste.local`, name: 'Alvo' },
+  });
+  criados.accountIds.push(accountId);
+  const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+  const m = await db.membership.create({
+    data: { accountId, orgId: ORG_C, role, state: 'ACTIVE' },
+    select: { id: true },
+  });
+  criados.membershipIds.push(m.id);
+  return m.id;
+}
+
+/** Dá acesso OPERACIONAL a um Pipe (PipeGrant MEMBER ACTIVE) — satisfaz o pré-requisito de SC-2101. */
+async function darAcessoOperacional(pipeId: string, membershipId: string): Promise<void> {
+  const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+  const g = await db.pipeGrant.create({
+    data: { orgId: ORG_C, pipeId, membershipId, role: 'MEMBER', state: 'ACTIVE' },
+    select: { id: true },
+  });
+  criados.pipeGrantIds.push(g.id);
+}
+
+/** Cria uma Fase e um Card ATIVO nela, no Pipe (FKs de Form/FormVersion reusam o cenário). */
+async function criarCardEmPipe(
+  pipeId: string,
+  formId: string,
+  formVersionId: string,
+): Promise<{ cardId: string; phaseId: string }> {
+  const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+  const phase = await db.phase.create({
+    data: { orgId: ORG_C, pipeId, name: 'F1', position: 1000, state: 'ACTIVE' },
+    select: { id: true },
+  });
+  criados.phaseIds.push(phase.id);
+  const card = await db.card.create({
+    data: {
+      orgId: ORG_C,
+      pipeId,
+      phaseId: phase.id,
+      formId,
+      formVersionId,
+      idempotencyKey: randomUUID(),
+    },
+    select: { id: true },
+  });
+  criados.cardIds.push(card.id);
+  return { cardId: card.id, phaseId: phase.id };
+}
+
 beforeAll(async () => {
   if (!databaseUrl)
     throw new Error('DATABASE_URL ausente: o E2E do motor exige um PostgreSQL real.');
@@ -172,9 +228,13 @@ afterAll(async () => {
       await db.record.deleteMany({ where: { id } });
     }
     for (const id of criados.cardIds) {
+      await db.cardResponsavel.deleteMany({ where: { cardId: id } });
       await db.cardHistory.deleteMany({ where: { cardId: id } });
       await db.card.deleteMany({ where: { id } });
     }
+    for (const id of criados.pipeGrantIds) await db.pipeGrant.deleteMany({ where: { id } });
+    for (const id of criados.membershipIds) await db.membership.deleteMany({ where: { id } });
+    for (const id of criados.accountIds) await migrator.account.deleteMany({ where: { id } });
     for (const id of criados.eventIds) await db.domainEvent.deleteMany({ where: { eventId: id } });
     for (const id of criados.formVersionIds) await db.formVersion.deleteMany({ where: { id } });
     for (const id of criados.formIds) await db.form.deleteMany({ where: { id } });
@@ -312,5 +372,202 @@ describe('(d) M-1 — containment do alvo derivado do Evento cross-Pipe', () => 
     const outroPipe = randomUUID();
     const deOutroPipe = await montarSnapshotEContexto(db, evento, outroPipe);
     expect(deOutroPipe.contexto.recordId).toBeNull();
+  });
+});
+
+describe('(f) SC-2101/2102 — CARD_ASSIGN_RESPONSIBLE sob o principal (segurança)', () => {
+  it('alvo SEM acesso operacional prévio ⇒ DENIED (FORA_DO_ESCOPO), nenhum Responsável ATIVO criado', async () => {
+    const base = await cenarioBase();
+    const { cardId } = await criarCardEmPipe(base.pipeId, base.formId, base.formVersionId);
+    // Membership MEMBER sem PipeGrant/CardGrant/Responsável ⇒ sem acesso operacional ao Card.
+    const alvo = await criarContaEMembership('MEMBER');
+    await criarAutomacaoAtiva(
+      base.pipeId,
+      { tipo: 'CARD_CREATED', refs: [] },
+      [],
+      [{ tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: alvo }, refs: [] }],
+    );
+    const eventId = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
+    await engine.processarEventoAgora(ORG_C, eventId);
+
+    const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+    const execs = await db.automationExecution.findMany({
+      where: { eventId },
+      select: { id: true, state: true },
+    });
+    execs.forEach((e) => criados.execIds.push(e.id));
+    const res = await db.automationActionResult.findMany({ where: { executionId: execs[0]!.id } });
+    expect(res[0]!.state).toBe('DENIED'); // SC-2101: atribuir NÃO amplia acesso
+    expect(res[0]!.errorCode).toBe('FORA_DO_ESCOPO');
+    expect(await db.cardResponsavel.count({ where: { cardId, state: 'ACTIVE' } })).toBe(0);
+  });
+
+  it('alvo COM acesso operacional prévio ⇒ SUCCEEDED e o Responsável é atribuído', async () => {
+    const base = await cenarioBase();
+    const { cardId } = await criarCardEmPipe(base.pipeId, base.formId, base.formVersionId);
+    const alvo = await criarContaEMembership('MEMBER');
+    await darAcessoOperacional(base.pipeId, alvo); // pré-requisito de SC-2101 satisfeito
+    await criarAutomacaoAtiva(
+      base.pipeId,
+      { tipo: 'CARD_CREATED', refs: [] },
+      [],
+      [{ tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: alvo }, refs: [] }],
+    );
+    const eventId = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
+    await engine.processarEventoAgora(ORG_C, eventId);
+
+    const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+    const execs = await db.automationExecution.findMany({
+      where: { eventId },
+      select: { id: true, state: true },
+    });
+    execs.forEach((e) => criados.execIds.push(e.id));
+    expect(execs[0]!.state).toBe('SUCCEEDED');
+    const resp = await db.cardResponsavel.findFirst({
+      where: { cardId, state: 'ACTIVE' },
+      select: { membershipId: true },
+    });
+    expect(resp?.membershipId).toBe(alvo);
+  });
+});
+
+describe('(c) recuperação por lease — Ação já concluída NÃO repete efeito (at-least-once)', () => {
+  it('Execução RUNNING com lease vencido + resultado da Ação já gravado ⇒ reivindica, não reexecuta, finaliza SUCCEEDED', async () => {
+    const base = await cenarioBase();
+    const autoId = await criarAutomacaoAtiva(
+      base.pipeId,
+      { tipo: 'CARD_CREATED', refs: [] },
+      [],
+      [
+        {
+          tipo: 'RECORD_CREATE',
+          parametros: {},
+          refs: [{ tipo: 'DATABASE', id: base.databaseId }],
+        },
+      ],
+    );
+    const eventId = await emitirEvento('CARD_CREATED', 'CARD', randomUUID(), base.pipeId);
+
+    const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+    // Simula o efeito da Ação 0 JÁ concluído numa passagem anterior que caiu após gravar o resultado da Ação,
+    // antes de finalizar a Execução: 1 Registro já existe.
+    const record = await db.record.create({
+      data: {
+        orgId: ORG_C,
+        databaseId: base.databaseId,
+        formId: base.formId,
+        formVersionId: base.formVersionId,
+        idempotencyKey: randomUUID(),
+      },
+      select: { id: true },
+    });
+    criados.recordIds.push(record.id);
+    // Execução RUNNING órfã (lease VENCIDO = crash), com o resultado da Ação 0 já persistido (dedup por Ação).
+    const passado = new Date(Date.now() - 120_000);
+    const exec = await db.automationExecution.create({
+      data: {
+        orgId: ORG_C,
+        eventId,
+        automationId: autoId,
+        automationVersionId: 1,
+        configSnapshotRevision: 'x',
+        pipeId: base.pipeId,
+        state: 'RUNNING',
+        attempt: 1,
+        leaseOwner: randomUUID(),
+        leaseExpiresAt: passado,
+        startedAt: passado,
+        initiatorType: 'SISTEMA',
+        correlationId: randomUUID(),
+      },
+      select: { id: true },
+    });
+    criados.execIds.push(exec.id);
+    await db.automationActionResult.create({
+      data: {
+        orgId: ORG_C,
+        executionId: exec.id,
+        actionIndex: 0,
+        actionType: 'RECORD_CREATE',
+        state: 'SUCCEEDED',
+        targetResourceId: record.id,
+      },
+    });
+
+    // Drena: o RUNNING órfão (lease vencido) é REIVINDICADO e RETOMADO — sem reexecutar a Ação 0.
+    await engine.drenarOrg(ORG_C);
+
+    // A Ação 0 já tinha resultado ⇒ NÃO reexecuta ⇒ o Registro NÃO duplica (segue 1) — sem efeito duplo.
+    expect(await db.record.count({ where: { databaseId: base.databaseId } })).toBe(1);
+    const depois = await db.automationExecution.findUnique({
+      where: { id: exec.id },
+      select: { state: true },
+    });
+    expect(depois?.state).toBe('SUCCEEDED');
+  });
+});
+
+describe('(confirmação/L-1) — Ação sensível bloqueia sem mutar; não-sensível executa', () => {
+  it('CARD_MOVE (sensível) ⇒ BLOCKED_CONFIRMATION sem mover o Card; RECORD_CREATE (não-sensível) ⇒ executa', async () => {
+    const base = await cenarioBase();
+    const { cardId, phaseId } = await criarCardEmPipe(base.pipeId, base.formId, base.formVersionId);
+    const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
+    const phase2 = await db.phase.create({
+      data: { orgId: ORG_C, pipeId: base.pipeId, name: 'F2', position: 2000, state: 'ACTIVE' },
+      select: { id: true },
+    });
+    criados.phaseIds.push(phase2.id);
+
+    // SENSÍVEL: mover o Card exige confirmação humana (§1383) — o motor da Fase 1 NÃO executa.
+    await criarAutomacaoAtiva(
+      base.pipeId,
+      { tipo: 'CARD_CREATED', refs: [] },
+      [],
+      [{ tipo: 'CARD_MOVE', parametros: {}, refs: [{ tipo: 'PHASE', id: phase2.id }] }],
+    );
+    const evMove = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
+    await engine.processarEventoAgora(ORG_C, evMove);
+
+    const execMove = await db.automationExecution.findMany({
+      where: { eventId: evMove },
+      select: { id: true, state: true },
+    });
+    execMove.forEach((e) => criados.execIds.push(e.id));
+    expect(execMove[0]!.state).toBe('BLOCKED_CONFIRMATION');
+    const resMove = await db.automationActionResult.findMany({
+      where: { executionId: execMove[0]!.id },
+    });
+    expect(resMove[0]!.state).toBe('BLOCKED_CONFIRMATION');
+    // O Card NÃO foi movido (fail-closed — L-1: nada mutado por uma Ação bloqueada por confirmação).
+    const card = await db.card.findUnique({ where: { id: cardId }, select: { phaseId: true } });
+    expect(card?.phaseId).toBe(phaseId);
+
+    // NÃO-SENSÍVEL, num Pipe SEPARADO (para não co-disparar a Automação de MOVE): cria Registro de verdade.
+    const base2 = await cenarioBase();
+    await criarAutomacaoAtiva(
+      base2.pipeId,
+      { tipo: 'CARD_CREATED', refs: [] },
+      [],
+      [
+        {
+          tipo: 'RECORD_CREATE',
+          parametros: {},
+          refs: [{ tipo: 'DATABASE', id: base2.databaseId }],
+        },
+      ],
+    );
+    const evCreate = await emitirEvento('CARD_CREATED', 'CARD', randomUUID(), base2.pipeId);
+    await engine.processarEventoAgora(ORG_C, evCreate);
+    const criadosRec = await db.record.findMany({
+      where: { databaseId: base2.databaseId },
+      select: { id: true },
+    });
+    criadosRec.forEach((r) => criados.recordIds.push(r.id));
+    expect(criadosRec).toHaveLength(1); // não-sensível EXECUTA no mesmo fluxo do motor
+    const execCreate = await db.automationExecution.findMany({
+      where: { eventId: evCreate },
+      select: { id: true },
+    });
+    execCreate.forEach((e) => criados.execIds.push(e.id));
   });
 });

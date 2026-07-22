@@ -114,26 +114,37 @@ async function indexarCamposAtivos(
  * 2.12/2.13). `linkedRecordIds` = Registros com vínculo ATIVO ao Card (3.9) — já contidos ao Pipe (o Card é do
  * `pipeId` do Evento).
  */
-async function montarParaCard(db: Db, evento: EventoParaSnapshot): Promise<SnapshotEContexto> {
+async function montarParaCard(
+  db: Db,
+  evento: EventoParaSnapshot,
+  pipeIdDaAutomacao: string,
+): Promise<SnapshotEContexto> {
   const cardId = evento.resourceId;
   const card = await db.card.findUnique({
     where: { id: cardId },
     select: { id: true, pipeId: true, phaseId: true, lifecycleState: true, valores: true },
   });
 
-  if (!card) {
-    // Card não existe sob RLS (inexistente ou outra Org) ⇒ snapshot vazio; Condições de Card ficam fail-closed.
-    return {
-      snapshot: {
-        orgId: evento.orgId,
-        avaliadoEm: evento.occurredAt,
-        camposPorId: {},
-        card: null,
-        record: null,
-      },
-      contexto: { cardId: null, recordId: null, linkedRecordIds: [] },
-    };
-  }
+  const vazio: SnapshotEContexto = {
+    snapshot: {
+      orgId: evento.orgId,
+      avaliadoEm: evento.occurredAt,
+      camposPorId: {},
+      card: null,
+      record: null,
+    },
+    contexto: { cardId: null, recordId: null, linkedRecordIds: [] },
+  };
+
+  // Card não existe sob RLS (inexistente ou outra Org) ⇒ snapshot vazio; Condições de Card ficam fail-closed.
+  if (!card) return vazio;
+
+  // M-1 (defesa em profundidade, simétrico a `montarParaRecord`): o Card DEVE ser do Pipe PROPRIETÁRIO da
+  // Automação (RN-100). Se o envelope do Evento trouxe um `pipeId` divergente do Pipe REAL do Card (produtor
+  // do outbox comprometido/bugado), NÃO confiamos no produtor — o Card não vira alvo (contexto vazio,
+  // fail-closed). No fluxo normal `card.pipeId === pipeIdDaAutomacao` (o Evento de Card carrega o Pipe do Card
+  // e o enfileiramento só inscreve Automações desse Pipe), então isto nunca rejeita um alvo legítimo.
+  if (card.pipeId !== pipeIdDaAutomacao) return vazio;
 
   const [entrada, links, camposPorId] = await Promise.all([
     db.cardPhaseEntry.findFirst({
@@ -247,7 +258,7 @@ export async function montarSnapshotEContexto(
   pipeIdDaAutomacao: string,
 ): Promise<SnapshotEContexto> {
   if (evento.resourceType === 'CARD' || evento.resourceType === 'CARD_RECORD_LINK') {
-    return montarParaCard(db, evento);
+    return montarParaCard(db, evento, pipeIdDaAutomacao);
   }
   if (evento.resourceType === 'RECORD') {
     return montarParaRecord(db, evento, pipeIdDaAutomacao);
