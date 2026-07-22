@@ -52,6 +52,11 @@ const MODELOS_AUDITADOS = new Set([
   // Story 8.2. Todo ciclo do Convite (criar/reenviar/cancelar/expirar/aceitar = INSERT/UPDATE) é
   // auditado — inclusive a tentativa negada por RLS. É o write-side de Auditoria de Membros (D5.1).
   'Invite',
+  // Story 8.4. Alteração de papel da Membership e seu evento canônico. A alteração (`Membership`) já
+  // era auditada; o evento (`MembershipEvent`, append-only) entra aqui para que INSERT/tentativa negada
+  // apareçam na trilha (FR-214/D-4). A tx interativa da alteração audita manualmente (não passa pela
+  // extensão), mas escritas fora dela — e uma inserção cruzada por engano — ficam cobertas.
+  'MembershipEvent',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
