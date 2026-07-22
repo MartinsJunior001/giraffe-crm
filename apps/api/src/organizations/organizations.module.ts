@@ -4,6 +4,7 @@ import { getEnv } from '../kernel/config/env';
 import { OrganizationsController } from './organizations.controller';
 import { MembersController } from './members/members.controller';
 import { MembershipRoleService } from './members/membership-role.service';
+import { MembershipStateService } from './members/membership-state.service';
 import { FakeTransactionalEmailAdapter } from './invites/fake-transactional-email.adapter';
 import { InviteAcceptController } from './invites/invite-accept.controller';
 import { InviteAcceptRateLimit } from './invites/invite-accept-rate-limit';
@@ -78,6 +79,9 @@ const inviteNotificationProvider = {
     // Story 8.4 — alteração de papel da Membership. `StepUpService` (1.12) e `AbilityCache` (1.6) são
     // providers GLOBAIS (AuthModule/AuthzModule) e injetados por token, sem novo import de módulo.
     MembershipRoleService,
+    // Story 8.5 — suspensão/reativação da Membership. Reusa o mesmo substrato (StepUp/AbilityCache) e
+    // as funções PURAS do contrato de Membership da 2.10 (import direto, sem acoplar módulos).
+    MembershipStateService,
   ],
 })
 export class OrganizationsModule {}
