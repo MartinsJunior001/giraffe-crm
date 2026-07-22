@@ -40,6 +40,13 @@ enum MembershipState {
   REMOVED
 }
 
+/// Tipo do evento canônico do ciclo de Membership (Story 8.4). Hoje só `ROLE_CHANGED` (alteração de
+/// papel); suspensão/reativação/remoção (8.5/8.6) acrescentam seus tipos aqui, sem tabela nova. O
+/// `version` da linha versiona o contrato do envelope (AD-13), como em `MovementEvent`.
+enum MembershipEventType {
+  ROLE_CHANGED
+}
+
 /// Estado do Pipe (Story 2.1). Arquivar é MUDANÇA DE ESTADO, não exclusão — não há transição
 /// para "deletado" (o runtime nem tem GRANT DELETE). `ARCHIVED` preserva todos os dados.
 enum PipeState {
@@ -330,6 +337,7 @@ model Organization {
   accountAvatars    AccountAvatar[]
   automations       Automation[]
   invites           Invite[]
+  membershipEvents  MembershipEvent[]
 
   @@map("Organization")
 }
@@ -640,6 +648,7 @@ model Membership {
   databaseGrants   DatabaseGrant[]
   cardGrants       CardGrant[]
   cardResponsaveis CardResponsavel[]
+  events           MembershipEvent[]
 
   // Uma conta tem no máximo UM vínculo por Organização (papel único — AD-7).
   @@unique([accountId, orgId])
@@ -648,6 +657,48 @@ model Membership {
   // Descoberta das próprias Organizações no login (Story 1.4), antes de haver contexto.
   @@index([accountId])
   @@map("Membership")
+}
+
+/// Evento canônico do ciclo de Membership (Story 8.4, D-2/D-3) — twin estrutural de `MovementEvent`.
+/// Tabela org-scoped APPEND-ONLY e IMUTÁVEL: RLS ENABLE+FORCE, policies por `orgId = current_org_id()`,
+/// GRANT só SELECT+INSERT (sem UPDATE/DELETE — "não se altera/apaga o fato histórico" é do BANCO, não da
+/// ausência de rota). Escrito na MESMA transação da alteração de papel (não há mudança sem seu evento).
+///
+/// `eventId` é DETERMINÍSTICO por operação (uuidv5(NS, orgId+membershipId+correlationId)) com
+/// `@@unique([orgId, eventId])`: um reprocessamento reproduz o id e não duplica o evento lógico (outbox
+/// idempotente). Minimização LGPD (D-4): só referências mínimas (membershipId, actorId) + papéis
+/// (from/to) + metadados — NUNCA senha/token/sessão/e-mail/corpo HTTP.
+model MembershipEvent {
+  id            String              @id @default(uuid()) @db.Uuid
+  orgId         String              @db.Uuid
+  /// Identidade lógica estável do evento (determinística por operação). Única por Organização.
+  eventId       String              @db.Uuid
+  /// Recurso do evento: a Membership alterada (referência mínima, org-scoped).
+  membershipId  String              @db.Uuid
+  type          MembershipEventType
+  /// Papel anterior e novo — o DADO central da alteração (não é PII).
+  fromRole      MembershipRole
+  toRole        MembershipRole
+  /// Ator administrativo que executou a alteração (referência de auditoria). Nulo só por defesa.
+  actorId       String?             @db.Uuid
+  /// Momento efetivo da alteração (instante absoluto).
+  occurredAt    DateTime            @default(now()) @db.Timestamptz(3)
+  /// Chave de correlação da operação (linka evento ↔ UPDATE ↔ revogações da mesma alteração).
+  correlationId String              @db.Uuid
+  version       Int                 @default(1)
+  /// Envelope mínimo versionado (ex.: concessões revogadas por incompatibilidade). Sem PII.
+  payload       Json                @default("{}")
+  createdAt     DateTime            @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  // Um reprocessamento não cria um 2º evento lógico.
+  @@unique([orgId, eventId])
+  // Leitura da trilha por Membership (cronológica) e correlação com a operação.
+  @@index([orgId, membershipId, occurredAt])
+  @@index([orgId, correlationId])
+  @@map("MembershipEvent")
 }
 
 /// Form — Formulário de UM contexto (Story 2.4). Dado operacional org-owned (AD-10). Os três Formulários

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { getEnv } from '../kernel/config/env';
 import { OrganizationsController } from './organizations.controller';
+import { MembersController } from './members/members.controller';
+import { MembershipRoleService } from './members/membership-role.service';
 import { FakeTransactionalEmailAdapter } from './invites/fake-transactional-email.adapter';
 import { InviteAcceptController } from './invites/invite-accept.controller';
 import { InviteAcceptRateLimit } from './invites/invite-accept-rate-limit';
@@ -57,7 +59,13 @@ const inviteNotificationProvider = {
 };
 
 @Module({
-  controllers: [OrganizationsController, InvitesController, InviteAcceptController],
+  controllers: [
+    OrganizationsController,
+    InvitesController,
+    InviteAcceptController,
+    // Story 8.4 — administração de Membros (alteração de papel).
+    MembersController,
+  ],
   providers: [
     InvitesService,
     InviteRateLimit,
@@ -67,6 +75,9 @@ const inviteNotificationProvider = {
     InviteRouteResolver,
     InviteAcceptRateLimit,
     inviteNotificationProvider,
+    // Story 8.4 — alteração de papel da Membership. `StepUpService` (1.12) e `AbilityCache` (1.6) são
+    // providers GLOBAIS (AuthModule/AuthzModule) e injetados por token, sem novo import de módulo.
+    MembershipRoleService,
   ],
 })
 export class OrganizationsModule {}
