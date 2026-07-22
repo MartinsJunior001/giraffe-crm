@@ -21,6 +21,10 @@ import {
   EventoForaDoCatalogoError,
   exigirEventoNoCatalogo,
 } from '../../domain-events/event-catalog';
+import {
+  CondicaoForaDoCatalogoError,
+  exigirCondicoesNoCatalogo,
+} from './conditions/condition-catalog';
 import { type AcaoCiclo, planejarTransicao } from './automation-lifecycle.transitions';
 import { calcularRevisaoAutomacao, montarSnapshotAutomacao } from './automation-snapshot';
 import {
@@ -448,9 +452,11 @@ export class AutomationLifecycleService {
 
   /**
    * Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. Impõe também o
-   * CATÁLOGO de Eventos (Story 4.3, CA1): editar/duplicar/ativar com `quando.tipo` fora do núcleo selecionável
-   * → 400. Como criar já rejeita tipo inválido, a re-validação na ativação de uma Automação existente sempre
-   * passa (o tipo dela já é do catálogo).
+   * CATÁLOGO de Eventos (Story 4.3, CA1) e o CATÁLOGO de Condições (Story 4.4): editar/duplicar/ativar com
+   * `quando.tipo` ou uma Condição fora do catálogo → 400. Como criar já rejeita config inválida, a
+   * re-validação na ativação de uma Automação existente sempre passa (o tipo dela já é do catálogo); a
+   * revalidação na ATIVAÇÃO fecha o fail-closed do §1362 quando uma referência ficou inalcançável (via
+   * `revalidarReferencias`), enquanto o catálogo garante o VOCABULÁRIO.
    */
   private validar(config: {
     quando: unknown;
@@ -460,6 +466,7 @@ export class AutomationLifecycleService {
     try {
       const validada = validarConfiguracao(config);
       exigirEventoNoCatalogo(validada.quando.tipo);
+      exigirCondicoesNoCatalogo(validada.condicoes);
       return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
@@ -467,6 +474,12 @@ export class AutomationLifecycleService {
       }
       if (erro instanceof EventoForaDoCatalogoError) {
         throw new BadRequestException({ motivo: 'EVENTO_FORA_DO_CATALOGO', detalhe: erro.motivo });
+      }
+      if (erro instanceof CondicaoForaDoCatalogoError) {
+        throw new BadRequestException({
+          motivo: 'CONDICAO_FORA_DO_CATALOGO',
+          detalhe: erro.motivo,
+        });
       }
       throw erro;
     }

@@ -87,6 +87,16 @@ const TAKE_MAX = 100;
 const TAKE_DEFAULT = 50;
 const VALOR_STRING_MAX = 1_000;
 
+/**
+ * Categoria consultável de um `FieldType`, ou `null` se o tipo não é comparável (hoje só `FILE`, gated —
+ * AD-28). FONTE ÚNICA do mapeamento tipo-de-Campo → semântica de comparação: além da consulta de Registros
+ * (3.5), a avaliação de Condições (Story 4.4) reusa ESTA função — "sem segundo catálogo de operadores por
+ * tipo" (D4.2, gate de Arquitetura). Mudar a categoria de um tipo aqui muda os dois consumidores de uma vez.
+ */
+export function categoriaDeCampo(type: string): Categoria | null {
+  return CATEGORIA[type] ?? null;
+}
+
 /** Índice `Field.id → categoria` a partir da definição; `FILE` fica de fora (gated). */
 function indexar(campos: CampoDef[]): Map<string, Categoria> {
   const idx = new Map<string, Categoria>();

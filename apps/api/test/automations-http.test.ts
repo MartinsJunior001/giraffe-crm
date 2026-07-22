@@ -240,6 +240,29 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { motivo?: string }).motivo).toBe('EVENTO_FORA_DO_CATALOGO');
   });
+
+  // Story 4.4: o catálogo de Condições é fixo. Tipo/operador/valor de Condição fora do catálogo → 400.
+  it.each([
+    [
+      'tipo de Condição desconhecido',
+      { tipo: 'CONDICAO_INVENTADA', operador: 'igual', valor: 'ATIVO' },
+    ],
+    [
+      'operador inválido para o tipo',
+      { tipo: 'CARD_LIFECYCLE_STATE', operador: 'contem', valor: 'ATIVO' },
+    ],
+    ['valor fora do domínio', { tipo: 'CARD_HEALTH', operador: 'igual', valor: 'INEXISTENTE' }],
+  ])('400 CONDICAO_FORA_DO_CATALOGO: %s', async (_nome, cond) => {
+    const pipeId = await criarPipe(ORG_A);
+    const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
+      name: 'x',
+      quando: { tipo: 'CARD_CREATED' },
+      condicoes: [cond],
+      entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { motivo?: string }).motivo).toBe('CONDICAO_FORA_DO_CATALOGO');
+  });
 });
 
 describe('AC-4/AC-5 — alcance: cross-tenant e inexistente são 404 não-enumerante', () => {
