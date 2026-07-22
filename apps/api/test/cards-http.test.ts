@@ -102,6 +102,11 @@ async function contarEventos(cardId: string, type: string): Promise<number> {
   const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
   return db.cardHistory.count({ where: { cardId, type } });
 }
+/** Conta Eventos canônicos (`DomainEvent`, Story 4.3) do Card — prova a emissão opt-in pós-persistência. */
+async function contarDomainEvents(resourceId: string, eventType: string): Promise<number> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  return db.domainEvent.count({ where: { resourceId, eventType } });
+}
 
 /** Pipe com 1 Fase ativa + 1 Campo TEXT publicado. Devolve pipeId, phaseId e o Campo. */
 async function pipePublicado(
@@ -158,6 +163,9 @@ describe('submeter cria Card (SC-271)', () => {
     expect(typeof card.formVersionId).toBe('string'); // referencia a versão congelada
     expect(card.valores).toEqual({ [campo.id]: 'Ana' });
     expect(await contarEventos(card.id, 'CREATED')).toBe(1); // AD-13: evento na MESMA transação do Card
+    // Story 4.3 (CA2/CA4): o Evento canônico CARD_CREATED é emitido na MESMA transação da criação (opt-in
+    // pós-persistência) — não há Card sem seu Evento canônico.
+    expect(await contarDomainEvents(card.id, 'CARD_CREATED')).toBe(1);
   });
 
   it('idempotência: retry com a MESMA chave devolve o MESMO Card; chave nova cria outro', async () => {
@@ -166,6 +174,8 @@ describe('submeter cria Card (SC-271)', () => {
     const c1 = (await (await req('POST', `${url(pipeId)}/submit`, ANA, corpo)).json()) as CardResp;
     const c2 = (await (await req('POST', `${url(pipeId)}/submit`, ANA, corpo)).json()) as CardResp;
     expect(c2.id).toBe(c1.id); // não duplicou
+    // Story 4.3 (CA3): o retry faz rollback integral da transação — o Evento canônico NÃO é duplicado.
+    expect(await contarDomainEvents(c1.id, 'CARD_CREATED')).toBe(1);
 
     const c3 = (await (
       await req('POST', `${url(pipeId)}/submit`, ANA, {

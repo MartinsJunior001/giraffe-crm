@@ -15,6 +15,10 @@ import {
   validarConfiguracao,
 } from './automation-config';
 import { revalidarReferencias } from './automation-references';
+import {
+  EventoForaDoCatalogoError,
+  exigirEventoNoCatalogo,
+} from '../../domain-events/event-catalog';
 
 /**
  * O que uma Automação expõe pela API interna. `orgId` NÃO sai — fronteira interna, não dado de
@@ -211,17 +215,27 @@ export class AutomationsService {
     return automacao;
   }
 
-  /** Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. */
+  /**
+   * Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. Além da estrutura
+   * (4.1), impõe o CATÁLOGO de Eventos (Story 4.3, CA1): `quando.tipo` fora do núcleo selecionável → 400. O
+   * enforcement vive AQUI, no serviço, e não no núcleo estrutural da 4.1 (que aceita qualquer texto por
+   * desenho) — assim o catálogo evolui sem tocar o contrato puro da 4.1.
+   */
   private validar(config: {
     quando: unknown;
     condicoes?: unknown;
     entao: unknown;
   }): ConfiguracaoValidada {
     try {
-      return validarConfiguracao(config);
+      const validada = validarConfiguracao(config);
+      exigirEventoNoCatalogo(validada.quando.tipo);
+      return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
         throw new BadRequestException({ motivo: 'CONFIGURACAO_INVALIDA', detalhe: erro.motivo });
+      }
+      if (erro instanceof EventoForaDoCatalogoError) {
+        throw new BadRequestException({ motivo: 'EVENTO_FORA_DO_CATALOGO', detalhe: erro.motivo });
       }
       throw erro;
     }

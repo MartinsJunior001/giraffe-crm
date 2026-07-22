@@ -13,7 +13,7 @@ import {
 
 const base: ConfiguracaoValidada = {
   schemaVersion: 1,
-  quando: { tipo: 'CARD_CRIADO', refs: [] },
+  quando: { tipo: 'CARD_CREATED', refs: [] },
   condicoes: [{ tipo: 'CAMPO', operador: 'IGUAL', valor: 'x', refs: [] }],
   entao: [{ tipo: 'MOVER_CARD', parametros: { destino: 'a' }, refs: [] }],
 };

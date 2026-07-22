@@ -38,7 +38,7 @@ const pipesCriados: { id: string; orgId: string }[] = [];
 const automacoesCriadas: string[] = [];
 
 const CONFIG = {
-  quando: { tipo: 'CARD_CRIADO', refs: [] },
+  quando: { tipo: 'CARD_CREATED', refs: [] },
   condicoes: [],
   entao: [{ tipo: 'MOVER_CARD', parametros: {}, refs: [] }],
 };

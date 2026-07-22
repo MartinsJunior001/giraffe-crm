@@ -43,7 +43,7 @@ class PrincipalDeTeste implements PrincipalProvider {
 }
 
 const CONFIG_VALIDA = {
-  quando: { tipo: 'CARD_CRIADO' },
+  quando: { tipo: 'CARD_CREATED' },
   condicoes: [],
   entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
 };
@@ -152,7 +152,7 @@ describe('AC-1 — criar: nasce ligada a exatamente um Pipe, INACTIVE, com ident
     expect(a.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(a.pipeId).toBe(pipeId); // RN-100 — exatamente aquele Pipe
     expect(a.state).toBe('INACTIVE'); // D4.3 — default seguro
-    expect(a.quando).toMatchObject({ tipo: 'CARD_CRIADO' });
+    expect(a.quando).toMatchObject({ tipo: 'CARD_CREATED' });
     expect(a.entao).toHaveLength(1);
     // `orgId` é fronteira interna: nunca sai no payload.
     expect(a as unknown as Record<string, unknown>).not.toHaveProperty('orgId');
@@ -183,18 +183,18 @@ describe('AC-1 — criar: nasce ligada a exatamente um Pipe, INACTIVE, com ident
 
 describe('AC-2/AC-3 — configuração fail-closed', () => {
   it.each([
-    ['entao vazio', { name: 'x', quando: { tipo: 'T' }, entao: [] }],
+    ['entao vazio', { name: 'x', quando: { tipo: 'CARD_CREATED' }, entao: [] }],
     ['quando ausente', { name: 'x', entao: [{ tipo: 'A' }] }],
     [
       'condicoes não-array',
-      { name: 'x', quando: { tipo: 'T' }, condicoes: {}, entao: [{ tipo: 'A' }] },
+      { name: 'x', quando: { tipo: 'CARD_CREATED' }, condicoes: {}, entao: [{ tipo: 'A' }] },
     ],
-    ['nome vazio', { name: '   ', quando: { tipo: 'T' }, entao: [{ tipo: 'A' }] }],
+    ['nome vazio', { name: '   ', quando: { tipo: 'CARD_CREATED' }, entao: [{ tipo: 'A' }] }],
     [
       'referência por rótulo',
       {
         name: 'x',
-        quando: { tipo: 'T', refs: [{ tipo: 'PHASE', id: 'Triagem' }] },
+        quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PHASE', id: 'Triagem' }] },
         entao: [{ tipo: 'A' }],
       },
     ],
@@ -222,6 +222,23 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
       ...CONFIG_VALIDA,
     });
     expect(res.status).toBe(400);
+  });
+
+  // Story 4.3 (CA1): o catálogo de Eventos é fixo. Um `quando.tipo` fora do núcleo selecionável → 400.
+  it.each([
+    ['tipo desconhecido', 'EVENTO_INVENTADO'],
+    ['ponto de extensão E5 ainda indisponível', 'TASK_CREATED'],
+    ['E-mail recebido — indisponível na Fase 1', 'EMAIL_RECEIVED'],
+  ])('400 EVENTO_FORA_DO_CATALOGO: %s', async (_nome, tipo) => {
+    const pipeId = await criarPipe(ORG_A);
+    const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
+      name: 'x',
+      quando: { tipo },
+      condicoes: [],
+      entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { motivo?: string }).motivo).toBe('EVENTO_FORA_DO_CATALOGO');
   });
 });
 
@@ -313,7 +330,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
 
     const res = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'x',
-      quando: { tipo: 'T', refs: [{ tipo: 'PHASE', id: fase.id }] },
+      quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PHASE', id: fase.id }] },
       entao: [{ tipo: 'A' }],
     });
     expect(res.status).toBe(400);
@@ -326,7 +343,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
     const pipeId = await criarPipe(ORG_A);
     const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
       name: 'x',
-      quando: { tipo: 'T', refs: [{ tipo: 'RECORD', id: randomUUID() }] },
+      quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'RECORD', id: randomUUID() }] },
       entao: [{ tipo: 'A' }],
     });
     expect(res.status).toBe(400);
@@ -338,7 +355,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
 
     const ok = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'proprio',
-      quando: { tipo: 'T', refs: [{ tipo: 'PIPE', id: pipeDono }] },
+      quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PIPE', id: pipeDono }] },
       entao: [{ tipo: 'A' }],
     });
     expect(ok.status).toBe(201);
@@ -346,7 +363,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
 
     const nao = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'alheio',
-      quando: { tipo: 'T', refs: [{ tipo: 'PIPE', id: outro }] },
+      quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PIPE', id: outro }] },
       entao: [{ tipo: 'A' }],
     });
     expect(nao.status).toBe(400);

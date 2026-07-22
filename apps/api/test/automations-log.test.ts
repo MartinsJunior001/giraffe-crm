@@ -56,7 +56,7 @@ const automacoesCriadas: string[] = [];
 const VALOR_SENSIVEL = 'CPF-123.456.789-01-do-titular';
 
 const CONFIG = () => ({
-  quando: { tipo: 'CARD_CRIADO', refs: [] },
+  quando: { tipo: 'CARD_CREATED', refs: [] },
   condicoes: [{ tipo: 'CAMPO', operador: 'IGUAL', valor: VALOR_SENSIVEL, refs: [] }],
   entao: [{ tipo: 'MOVER_CARD', parametros: { nota: VALOR_SENSIVEL }, refs: [] }],
 });

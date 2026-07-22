@@ -343,6 +343,7 @@ model Organization {
   accountAvatars    AccountAvatar[]
   automations       Automation[]
   automationVersions AutomationVersion[]
+  domainEvents      DomainEvent[]
   invites           Invite[]
   membershipEvents  MembershipEvent[]
 
@@ -443,6 +444,7 @@ model Pipe {
   cards          Card[]
   movementEvents MovementEvent[]
   automations    Automation[]
+  domainEvents   DomainEvent[]
 
   /// Chave-alvo da FK COMPOSTA tenant-safe (Story 4.1, F-A1). Redundante como IDENTIDADE (`id` já é PK),
   /// mas necessária como DESTINO: é ela que permite a um dependente referenciar o PAR `(orgId, id)` e
@@ -1629,4 +1631,69 @@ model AutomationVersion {
   @@unique([orgId, automationId, version])
   @@index([orgId, automationId])
   @@map("AutomationVersion")
+}
+
+/// DomainEvent — outbox CANÔNICO de Evento de integração (Story 4.3 — FR-21, D4.1, AD-13/AD-30).
+///
+/// GENERALIZA `MovementEvent` (2.16) para o catálogo completo de gatilhos (`event-catalog.ts`). É a trilha de
+/// INTEGRAÇÃO (AD-15), DISTINTA do Histórico do Card/Registro e da Auditoria: o registro atômico e confiável do
+/// fato de domínio (AD-13 "Outbox"), consumido pelo motor de Automação (4.6) e, futuramente, por Notificação
+/// (E5). Source-agnóstico: o recurso principal é polimórfico (`resourceType`/`resourceId`), pois o outbox
+/// atende Card, Registro e vínculo. Ver a decisão em
+/// `_bmad-output/implementation-artifacts/decisions/domain-event-envelope-4-3.md`.
+///
+/// **Imutabilidade é do banco:** RLS ENABLE **e** FORCE, policies por `orgId = current_org_id()` com `WITH
+/// CHECK` no INSERT e no UPDATE; GRANT do runtime = **só `SELECT, INSERT`** (append-only, sem UPDATE/DELETE) —
+/// como `MovementEvent`/`CardHistory`/`FormVersion`. `eventId` DETERMINÍSTICO (uuidv5) + `@@unique([orgId,
+/// eventId])` ⇒ reprocessar o mesmo fato não cria 2ª linha lógica (idempotência).
+model DomainEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  /// Identidade lógica estável do evento (determinística por fato). Única por Organização.
+  eventId       String   @db.Uuid
+  /// Tipo do catálogo (`event-catalog.ts`). String — vocabulário canônico estável (ex.: `CARD_CREATED`).
+  eventType     String
+  /// Versão do CONTRATO do envelope canônico (`SCHEMA_VERSION_ENVELOPE`). Carimbada pelo servidor.
+  schemaVersion Int      @default(1)
+  /// Pipe do recurso, quando aplicável (Card/vínculo). NULL para Registro puro (Story §1339).
+  pipeId        String?  @db.Uuid
+  /// Recurso principal do Evento (polimórfico). `resourceType` ∈ {CARD, RECORD, CARD_RECORD_LINK}.
+  resourceType  String
+  resourceId    String   @db.Uuid
+  /// Ator que originou o fato (quando disponível). Referência mínima de auditoria (pseudonimizável — D-4).
+  actorId       String?  @db.Uuid
+  /// Origem do fato (ex.: `SUBMISSION`, `PUBLIC`, `MOVE`). Vocabulário estável.
+  origin        String
+  /// Momento efetivo do fato (instante absoluto).
+  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
+  /// Correlação da operação (linka eventos relacionados de um mesmo fato). Base do `eventId` determinístico.
+  correlationId String   @db.Uuid
+  /// Evento causador (encadeamento por Automação — 4.7). NULL fora do motor.
+  causationId   String?  @db.Uuid
+  /// Cadeia de execução quando originado por Automação (4.7). NULL fora do motor.
+  executionChainId String? @db.Uuid
+  /// Envelope mínimo versionado (allowlist AD-30): só IDs/metadados da transição. NUNCA `valores`/PII/segredo.
+  payload       Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// FK **COMPOSTA** tenant-safe (F-A1): referencia o PAR `(orgId, pipeId)` de `Pipe`, não só `pipeId`. Uma FK
+  /// simples deixaria passar `pipeId` alheio (a verificação de FK roda com BYPASS de row security). Com o par,
+  /// o vazamento cross-tenant vira violação de FK — garantido pelo banco. `pipeId` nulável (Registro puro): o
+  /// MATCH SIMPLE do Postgres não checa a FK quando a coluna é NULL. `CASCADE` como `MovementEvent` (2.16): o
+  /// evento é um FATO DERIVADO da existência do Pipe — apagar o Pipe (operação SÓ do dono; o runtime não tem
+  /// GRANT de DELETE em `Pipe`) leva junto seus eventos, sem RESTRICT bloqueando a limpeza/expurgo do dono. O
+  /// recurso principal (`resourceId`) é polimórfico e não tem FK — isolado por RLS+orgId e validado in-tx pelo
+  /// produtor (mesma natureza de uma referência por ID no payload).
+  pipe Pipe? @relation(fields: [orgId, pipeId], references: [orgId, id], onDelete: Cascade)
+
+  // Um reprocessamento do mesmo fato não cria um 2º evento lógico (idempotência).
+  @@unique([orgId, eventId])
+  // Consulta do motor (4.6): eventos de um Pipe por tipo (Automações são por Pipe — RN-100).
+  @@index([orgId, pipeId, eventType])
+  // Leitura da trilha por recurso (cronológica) e correlação com a operação.
+  @@index([orgId, resourceType, resourceId, occurredAt])
+  @@index([orgId, correlationId])
+  @@map("DomainEvent")
 }
