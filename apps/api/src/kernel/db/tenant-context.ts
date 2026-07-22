@@ -46,9 +46,11 @@ const MODELOS_AUDITADOS = new Set([
   'FileScan',
   'CardRecordLink',
   'AccountAvatar',
-  // Story 4.1. `Automation` é a ÚNICA tabela da Story — não há satélite (nem versão, nem execução:
-  // versões são 4.2 e a trilha de Execuções é 4.8). Quando elas chegarem, entram aqui com suas Stories.
+  // Story 4.1. `Automation` — o modelo da regra declarativa.
   'Automation',
+  // Story 4.2. `AutomationVersion` — snapshot imutável da config congelada (editar-ativa/ativação). INSERT
+  // (e a tentativa negada por RLS) entram na trilha; sem UPDATE/DELETE (append-only, como `FormVersion`).
+  'AutomationVersion',
   // Story 8.2. Todo ciclo do Convite (criar/reenviar/cancelar/expirar/aceitar = INSERT/UPDATE) é
   // auditado — inclusive a tentativa negada por RLS. É o write-side de Auditoria de Membros (D5.1).
   'Invite',
