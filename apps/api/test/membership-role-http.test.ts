@@ -313,6 +313,72 @@ describe('AC4: rebaixar para Convidado revoga concessões incompatíveis (teto A
   });
 });
 
+describe('AC4-bis: rebaixar para Convidado RECUSA se houver PipeGrant acima do teto (DEB-PIPEGRANT-GUEST-CEILING)', () => {
+  it('PipeGrant MEMBER ativo → alterar para GUEST é 409 PIPE_GRANT_INCOMPATIVEL; NÃO rebaixa em silêncio', async () => {
+    const orgId = await criarOrg();
+    const admin = await vincular(orgId, 'ADMIN');
+    const alvo = await vincular(orgId, 'MEMBER');
+    const cookie = await login(admin.email);
+
+    // Um Pipe + uma concessão MEMBER ao alvo (incompatível com o teto do Convidado — só VIEWER).
+    const pipeId = randomUUID();
+    const grantId = randomUUID();
+    const dbC = withTenantContext(migrator, { orgId }, semLog);
+    await dbC.pipe.create({ data: { id: pipeId, orgId, name: 'Pipe teto GUEST' } });
+    await dbC.pipeGrant.create({
+      data: { id: grantId, orgId, pipeId, membershipId: alvo.membershipId, role: 'MEMBER' },
+    });
+
+    // A decisão manda RECUSAR (não rebaixar em silêncio): 409 com erro de domínio sanitizado.
+    const res = await alterarPapel(cookie, alvo.membershipId, 'GUEST');
+    expect(res.status).toBe(409);
+    const corpo = (await res.json()) as { erro: string; pipeGrants?: string[] };
+    expect(corpo.erro).toBe('PIPE_GRANT_INCOMPATIVEL');
+    expect(corpo.pipeGrants).toContain(grantId);
+    // Sanitização: o corpo do erro NÃO vaza orgId nem PII (só ids internos de grant).
+    expect(JSON.stringify(corpo)).not.toContain(orgId);
+
+    // Nada mudou: a Membership continua MEMBER e a concessão continua ATIVA (sem rebaixamento silencioso).
+    const m = await dbC.membership.findUnique({
+      where: { id: alvo.membershipId },
+      select: { role: true },
+    });
+    expect(m?.role).toBe('MEMBER');
+    const g = await dbC.pipeGrant.findUnique({ where: { id: grantId }, select: { state: true } });
+    expect(g?.state).toBe('ACTIVE');
+    // Nenhum evento de alteração foi escrito (a recusa é antes da escrita).
+    const n = await dbC.membershipEvent.count({ where: { membershipId: alvo.membershipId } });
+    expect(n).toBe(0);
+
+    // Fluxo correto: reduzir/remover o grant ANTES → aí o rebaixamento passa (200).
+    await dbC.pipeGrant.update({
+      where: { id: grantId },
+      data: { state: 'REVOKED', revokedAt: new Date() },
+    });
+    expect((await alterarPapel(cookie, alvo.membershipId, 'GUEST')).status).toBe(200);
+  });
+
+  it('PipeGrant VIEWER (dentro do teto) NÃO bloqueia o rebaixamento → 200; a concessão é preservada', async () => {
+    const orgId = await criarOrg();
+    const admin = await vincular(orgId, 'ADMIN');
+    const alvo = await vincular(orgId, 'MEMBER');
+    const cookie = await login(admin.email);
+
+    const pipeId = randomUUID();
+    const grantId = randomUUID();
+    const dbC = withTenantContext(migrator, { orgId }, semLog);
+    await dbC.pipe.create({ data: { id: pipeId, orgId, name: 'Pipe VIEWER GUEST' } });
+    await dbC.pipeGrant.create({
+      data: { id: grantId, orgId, pipeId, membershipId: alvo.membershipId, role: 'VIEWER' },
+    });
+
+    expect((await alterarPapel(cookie, alvo.membershipId, 'GUEST')).status).toBe(200);
+    // VIEWER está dentro do teto: a concessão segue ATIVA (não é tocada).
+    const g = await dbC.pipeGrant.findUnique({ where: { id: grantId }, select: { state: true } });
+    expect(g?.state).toBe('ACTIVE');
+  });
+});
+
 describe('autorização, isolamento e validação', () => {
   it('Membro (não-Admin) tentando alterar papel → 403 (guard administrar Organizacao)', async () => {
     const orgId = await criarOrg();
