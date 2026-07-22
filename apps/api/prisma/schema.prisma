@@ -41,14 +41,16 @@ enum MembershipState {
 }
 
 /// Tipo do evento canônico do ciclo de Membership. `ROLE_CHANGED` (8.4 — alteração de papel);
-/// `SUSPENDED`/`REACTIVATED` (8.5 — transição de estado da Membership); remoção/saída (8.6)
-/// acrescenta os seus aqui, sem tabela nova. O `version` da linha versiona o contrato do envelope
-/// (AD-13), como em `MovementEvent`. Suspender/reativar NÃO mudam papel: nesses eventos
+/// `SUSPENDED`/`REACTIVATED` (8.5 — transição de estado da Membership); `REMOVED` (8.6 — encerramento
+/// por remoção administrativa OU saída voluntária, distinguidas por `payload.saidaVoluntaria` +
+/// `actorId`). Tudo aqui, sem tabela nova. O `version` da linha versiona o contrato do envelope
+/// (AD-13), como em `MovementEvent`. Suspender/reativar/remover NÃO mudam papel: nesses eventos
 /// `fromRole = toRole` (papel preservado) e o `payload` carrega `{ fromState, toState, … }` (sem PII).
 enum MembershipEventType {
   ROLE_CHANGED
   SUSPENDED
   REACTIVATED
+  REMOVED
 }
 
 /// Estado do Pipe (Story 2.1). Arquivar é MUDANÇA DE ESTADO, não exclusão — não há transição

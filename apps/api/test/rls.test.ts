@@ -33,20 +33,27 @@ const FABIO = '66666666-6666-6666-6666-666666666666';
 const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
 
 const databaseUrl = process.env.DATABASE_URL;
+const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-let prisma: PrismaClient;
+let prisma: PrismaClient; // giraffe_app (runtime)
+// giraffe_migrator (dono das tabelas) — usado SÓ para faxina. Desde a Story 8.6 o runtime não tem mais
+// DELETE em "Membership" (REVOKE — DEB-MEMBERSHIP-EVENT-CASCADE), então a limpeza da linha descartável
+// criada nos testes positivos passa a ser feita pelo dono (imune ao GRANT do runtime), sob contexto.
+let migrator: PrismaClient;
 
 beforeAll(async () => {
   if (!databaseUrl) {
     // Falha honesta: cita o NOME da variável, nunca o valor (a URL carrega senha).
     throw new Error('DATABASE_URL ausente: os testes de RLS exigem um PostgreSQL real.');
   }
+  if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
-  await prisma.$connect();
+  migrator = new PrismaClient({ datasourceUrl: migratorUrl });
+  await Promise.all([prisma.$connect(), migrator.$connect()]);
 });
 
 afterAll(async () => {
-  await prisma?.$disconnect();
+  await Promise.all([prisma?.$disconnect(), migrator?.$disconnect()]);
 });
 
 describe('papel de runtime', () => {
@@ -158,7 +165,10 @@ describe('escrita com contexto organizacional', () => {
     expect(criada.orgId).toBe(ORG_C);
     expect(criada.state).toBe('ACTIVE');
 
-    await db.membership.delete({ where: { id: criada.id } });
+    // Faxina pelo DONO (o runtime não tem mais DELETE em Membership — Story 8.6), sob contexto de ORG_C.
+    await withTenantContext(migrator, { orgId: ORG_C }, semLog).membership.delete({
+      where: { id: criada.id },
+    });
   });
 
   it('permite ATUALIZAR e fazer a REMOÇÃO LÓGICA dentro da própria Organização (AC2)', async () => {
@@ -189,7 +199,10 @@ describe('escrita com contexto organizacional', () => {
     const aindaLa = await db.membership.findUnique({ where: { id: criada.id } });
     expect(aindaLa?.state).toBe('REMOVED');
 
-    await db.membership.delete({ where: { id: criada.id } });
+    // Faxina pelo DONO (o runtime não tem mais DELETE em Membership — Story 8.6), sob contexto de ORG_C.
+    await withTenantContext(migrator, { orgId: ORG_C }, semLog).membership.delete({
+      where: { id: criada.id },
+    });
   });
 
   it('bloqueia inserção com orgId de outra Organização', async () => {
@@ -253,13 +266,20 @@ describe('escrita com contexto organizacional', () => {
     ).rejects.toThrow(/row-level security/i);
   });
 
-  it('bloqueia a remoção cruzada e a linha alheia continua intacta', async () => {
+  it('o runtime NÃO tem DELETE em Membership (Story 8.6) — nem cruzado, nem próprio', async () => {
+    // Até a Story 8.6, isto era um teste de POLICY: um `deleteMany` cruzado voltava `{ count: 0 }`
+    // (o `USING` de `membership_delete` FILTRA, não lança). A 8.6 fechou o DEB-MEMBERSHIP-EVENT-CASCADE
+    // com `REVOKE DELETE ON "Membership" FROM giraffe_app` — porque a cascata da FK
+    // `MembershipEvent_membershipId_fkey ON DELETE CASCADE` roda com bypass de row security E como dono,
+    // e apagaria os eventos append-only daquela Org. Agora a defesa é o GRANT, não a policy: o DELETE
+    // pelo runtime bate em `permission denied` ANTES de a policy sequer avaliar (cruzado ou não). A
+    // remoção passou a ser 100% lógica (`state = REMOVED`, Story 8.6).
     const db = withTenantContext(prisma, { orgId: ORG_A }, semLog);
+    await expect(
+      db.membership.deleteMany({ where: { id: MEMBERSHIP_CARLA_EM_B } }),
+    ).rejects.toThrow(/permission denied/i);
 
-    const removidas = await db.membership.deleteMany({ where: { id: MEMBERSHIP_CARLA_EM_B } });
-    expect(removidas.count).toBe(0);
-
-    // Confirmação pelo lado de B: a linha sobreviveu de fato — não é só o count que mente.
+    // A linha alheia sobrevive — o DELETE nunca chega a rodar.
     const dbB = withTenantContext(prisma, { orgId: ORG_B }, semLog);
     const carla = await dbB.membership.findUnique({ where: { id: MEMBERSHIP_CARLA_EM_B } });
     expect(carla).not.toBeNull();

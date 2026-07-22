@@ -46,7 +46,10 @@ const DIA_MS = 24 * 60 * 60 * 1000;
 
 let app: INestApplication;
 let baseUrl: string;
-let prisma: PrismaClient;
+let prisma: PrismaClient; // giraffe_app (runtime)
+// giraffe_migrator (dono) — SÓ faxina do vínculo descartável da Iris: desde a Story 8.6 o runtime não
+// tem DELETE em "Membership" (REVOKE — DEB-MEMBERSHIP-EVENT-CASCADE).
+let migrator: PrismaClient;
 let falhas: LoginFailureService;
 
 const semLogPino = { warn: () => {}, info: () => {}, error: () => {} } as unknown as PinoLogger;
@@ -108,9 +111,12 @@ async function definirExpiresAt(id: string, quando: Date): Promise<void> {
 
 /** Deixa a Iris com EXATAMENTE um vínculo na Org C no estado dado — ou nenhum, se `null`. */
 async function vinculoIris(state: 'ACTIVE' | 'SUSPENDED' | 'REMOVED' | null): Promise<void> {
-  const dbC = withTenantContext(prisma, { orgId: ORG_C, accountId: IRIS }, semLogTenant);
-  await dbC.membership.deleteMany({ where: { accountId: IRIS, orgId: ORG_C } });
+  // DELETE pelo DONO (o runtime não tem mais DELETE em Membership — Story 8.6); INSERT pelo runtime.
+  await withTenantContext(migrator, { orgId: ORG_C }, semLogTenant).membership.deleteMany({
+    where: { accountId: IRIS, orgId: ORG_C },
+  });
   if (state) {
+    const dbC = withTenantContext(prisma, { orgId: ORG_C, accountId: IRIS }, semLogTenant);
     await dbC.membership.create({ data: { accountId: IRIS, orgId: ORG_C, role: 'MEMBER', state } });
   }
 }
@@ -134,7 +140,8 @@ beforeAll(async () => {
   process.env.TRUSTED_PROXY_IPS = '127.0.0.1,::1';
 
   prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
-  await prisma.$connect();
+  migrator = new PrismaClient({ datasourceUrl: process.env.MIGRATION_DATABASE_URL });
+  await Promise.all([prisma.$connect(), migrator.$connect()]);
   falhas = new LoginFailureService(prisma as unknown as PrismaService, semLogPino);
 
   app = await NestFactory.create(AppModule, { logger: false });
@@ -148,7 +155,7 @@ afterAll(async () => {
   await falhas.limpar(IRIS_EMAIL);
   await limparRateLimit();
   await app.close();
-  await prisma.$disconnect();
+  await Promise.all([prisma.$disconnect(), migrator.$disconnect()]);
 });
 
 beforeEach(async () => {

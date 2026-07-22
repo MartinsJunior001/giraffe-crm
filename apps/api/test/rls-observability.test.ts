@@ -16,6 +16,9 @@ const ORG_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc'; // Org vazia: área de esc
 const ANA = '11111111-1111-1111-1111-111111111111';
 const MEMBERSHIP_CARLA_EM_B = 'b1b1b1b1-0000-0000-0000-000000000001';
 
+/** Logger silencioso para a faxina pelo migrator (a observação real é feita pelo `loggerEspiao`). */
+const semLog: TenantLogger = { debug: () => {}, info: () => {}, warn: () => {} };
+
 type Nivel = 'debug' | 'info' | 'warn';
 type Entrada = { nivel: Nivel; obj: Record<string, unknown>; msg: string };
 
@@ -32,17 +35,23 @@ function loggerEspiao(): { logger: TenantLogger; entradas: Entrada[] } {
   };
 }
 
-let prisma: PrismaClient;
+let prisma: PrismaClient; // giraffe_app (runtime)
+// giraffe_migrator (dono) — faxina da linha descartável: desde a Story 8.6 o runtime não tem DELETE em
+// "Membership" (REVOKE — DEB-MEMBERSHIP-EVENT-CASCADE), então limpar pelo dono, sob contexto.
+let migrator: PrismaClient;
 
 beforeAll(async () => {
   const databaseUrl = process.env.DATABASE_URL;
+  const migratorUrl = process.env.MIGRATION_DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL ausente: este teste exige PostgreSQL real.');
+  if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
-  await prisma.$connect();
+  migrator = new PrismaClient({ datasourceUrl: migratorUrl });
+  await Promise.all([prisma.$connect(), migrator.$connect()]);
 });
 
 afterAll(async () => {
-  await prisma?.$disconnect();
+  await Promise.all([prisma?.$disconnect(), migrator?.$disconnect()]);
 });
 
 describe('log estruturado do contexto organizacional', () => {
@@ -142,7 +151,10 @@ describe('auditoria mínima de Organization e Membership (FR-214)', () => {
     expect(typeof trilha!.obj.at).toBe('string'); // timestamp
     expect(new Date(trilha!.obj.at as string).toString()).not.toBe('Invalid Date');
 
-    await db.membership.delete({ where: { id: criada.id } });
+    // Faxina pelo DONO (o runtime não tem mais DELETE em Membership — Story 8.6), sob contexto de ORG_C.
+    await withTenantContext(migrator, { orgId: ORG_C }, semLog).membership.delete({
+      where: { id: criada.id },
+    });
   });
 
   it('audita também a tentativa NEGADA', async () => {
@@ -193,15 +205,22 @@ describe('auditoria mínima de Organization e Membership (FR-214)', () => {
     expect(entradas.some((e) => e.obj.result === 'allowed')).toBe(false);
   });
 
-  it('REGRESSÃO: deleteMany cruzado também é auditado como negado', async () => {
+  it('Story 8.6: deleteMany de Membership pelo runtime FALHA ALTO (permission denied), sem sucesso silencioso', async () => {
+    // Antes da 8.6 este era o ponto cego mais perigoso: um `deleteMany` cruzado voltava `{ count: 0 }`
+    // com sucesso aparente, e a auditoria dependia de `foiFiltrada` para marcá-lo `denied`. A 8.6
+    // revogou o DELETE do runtime em Membership (DEB-MEMBERSHIP-EVENT-CASCADE): agora a operação LANÇA
+    // `permission denied` — uma falha ALTA e visível, não um sucesso silencioso. O objetivo de
+    // observabilidade (nenhum vandalismo cross-tenant registrado como `allowed`) é atendido pela própria
+    // exceção, mais forte que a linha de auditoria que a substituía.
     const { logger, entradas } = loggerEspiao();
     const db = withTenantContext(prisma, { orgId: ORG_A, accountId: ANA }, logger);
 
-    const removidas = await db.membership.deleteMany({ where: { orgId: ORG_B } });
-    expect(removidas.count).toBe(0);
+    await expect(db.membership.deleteMany({ where: { orgId: ORG_B } })).rejects.toThrow(
+      /permission denied/i,
+    );
 
-    const trilha = entradas.find((e) => e.obj.event === 'audit');
-    expect(trilha!.obj).toMatchObject({ action: 'deleteMany', result: 'denied' });
+    // Jamais registrada como permitida — a garantia central da trilha.
+    expect(entradas.some((e) => e.obj.event === 'audit' && e.obj.result === 'allowed')).toBe(false);
   });
 
   it('REGRESSÃO: update de um registro invisível (P2025) não some da trilha', async () => {
