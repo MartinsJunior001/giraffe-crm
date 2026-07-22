@@ -81,7 +81,7 @@ Se a seção não gerar uma entrega versionável, não crie commit e registre ap
 
 ## Protocolo Autônomo de Aceleração
 
-Obrigatório para todas as sessões e agentes. Ele define **papéis, ritmo, autonomia, comunicação e continuidade** — não redefine os gates: quais skills rodam e quando continua sendo o que diz **Processo obrigatório**, e o que nunca pode ser cortado continua sendo **Isolamento multi-tenant** e **Convenções que o código já assume**.
+Obrigatório para todas as sessões e agentes. Ele define **papéis, ritmo, autonomia, comunicação e continuidade** — não redefine os gates: quais skills rodam e quando continua sendo o que diz **Processo obrigatório**, e o que nunca pode ser cortado continua sendo **Isolamento multi-tenant** e **Convenções que o código já assume**. A camada de **Épico** — ordenação, proporcionalidade dos gates ao risco e não-duplicação de validação — está em **Protocolo Autônomo Fast Track por Épicos**, abaixo.
 
 ### Objetivo operacional
 
@@ -239,6 +239,96 @@ Cada sessão tem um **nome estável** ligado ao papel ou à Story, para que a re
 Antes de compactar ou encerrar uma sessão, registre: SHA do `main`; branch, worktree e owner; PR, CI e testes; alterações não publicadas; decisões e bloqueios; a **próxima ação exata** e a instrução de retomada.
 
 **Ao retomar:** restaure a sessão nomeada → `git fetch` → releia PR, CI e board → revalide ownership → inspecione worktree e alterações existentes → continue do último estado **real confirmado**. O checkpoint orienta a retomada, **não a substitui**: ele descreve o que era verdade quando foi escrito, e uma queda costuma acontecer exatamente entre o checkpoint e o fato.
+
+## Protocolo Autônomo Fast Track por Épicos
+
+Camada de **Épico** sobre o **Protocolo Autônomo de Aceleração** (acima), que é a camada de **Story**. O que já está definido lá — fonte de verdade, papéis, ownership, paralelismo, barramento, board, roteamento, autonomia, condições de parada e continuidade — **não se repete aqui**; esta seção acrescenta a ordenação por Épico, a **proporcionalidade dos gates ao risco** e a regra que impede validação duplicada. Havendo conflito material entre as duas camadas, **prevalece a regra mais segura**.
+
+O objetivo é acelerar sem enfraquecer autenticação, autorização, RLS e isolamento multi-tenant, integridade e migrations, atomicidade, concorrência, idempotência, proteção de dados e segredos, observabilidade, segurança, LGPD, smoke real de integrações críticas, proteção do SHA integrado e auditoria consolidada antes da produção.
+
+### Contrato entre as fontes
+
+PRD, UX, Arquitetura e Constitution definem o **contrato do produto**; a especificação da Story define o **recorte executável**; `origin/main`, GitHub, PRs e CI são o **estado técnico real**; `sprint-status` registra o **andamento**. Este arquivo governa o **processo de execução** e **não substitui contrato funcional**. A ordem de reconciliação é a de **Fonte de verdade** (acima).
+
+Em divergência material entre fontes, **não invente requisito**: reconcilie as fontes ou registre a decisão pendente e siga pelo trabalho que não depende dela.
+
+### Abertura do Épico
+
+1. reconciliar `origin/main`, GitHub, `sprint-status` e dependências;
+2. identificar Stories concluídas, ativas, bloqueadas e prontas;
+3. montar **uma única** ordem de execução derivada das dependências;
+4. classificar antecipadamente o **risco** de cada Story (abaixo);
+5. definir ownership de cada branch e worktree — atribuição é da **Lane 0** (ver **Papéis**);
+6. iniciar imediatamente a primeira Story **realmente** executável.
+
+Encerrada e integrada uma Story: atualizar a fonte de status → liberar o Writer anterior → selecionar a próxima Story pronta → iniciar **sem pedir nova autorização ao dono** → seguir até o fim do Épico ou até um bloqueio real. "Sem nova autorização" é sobre o **dono**, não sobre ownership: quem atribui a Story continua sendo a Lane 0, e nenhum agente se autoatribui.
+
+Não pare entre passos normais só para pedir confirmação, reapresentar plano já autorizado, pedir permissão para testar, ou perguntar se deve iniciar a próxima Story pronta. Commit, push, PR e merge permitidos pelo protocolo já estão autorizados (ver **Autonomia**).
+
+### Ciclo da Story dentro do Épico
+
+O percurso é o de **Fluxo obrigatório** (acima). O Fast Track acrescenta apenas:
+
+- a **classificação de risco** acontece antes da implementação e determina quais gates se aplicam;
+- correção de finding é do **mesmo Writer**, no mesmo PR, e a **re-QA é focada**: novo diff, findings reportados e regressões plausíveis;
+- o merge é protegido pelo **SHA exato aprovado**, com CI verde no `main` depois dele;
+- `DONE` exige critérios de aceite, integração, CI e closure **comprovados** — nunca a ausência de evidência contrária.
+
+### Spec Kit consolidado
+
+Quando a Story já estiver suficientemente definida, execute em **uma passagem contínua**: `specify` → `clarify` → `plan` → `checklist` → `tasks` → `analyze` → implementação → `converge`. Sem pausas artificiais entre etapas — o que não pode desaparecer é a **evidência** de cada uma.
+
+Interrompa **antes** da implementação apenas diante de: decisão material do dono; conflito entre PRD, UX e Arquitetura; requisito realmente ambíguo; operação irreversível não autorizada; dependência externa sem fallback; colisão de Writer; risco de expandir materialmente o escopo.
+
+**Correção de QA não reinicia o Spec Kit.** Ela exige reprodução, remediação mínima, teste de regressão, os gates afetados e re-QA focada.
+
+### Classificação de risco e gates proporcionais
+
+Proporcionalidade decide **quais gates se aplicam**, nunca autoriza cortar gate aplicável — os de **Gates que não podem ser cortados** e de **Processo obrigatório** continuam valendo integralmente.
+
+**Risco baixo** — documentação, testes sem alteração de produção, copy, UI isolada, refatoração comprovadamente sem mudança comportamental. Gates: revisão do diff; testes diretamente afetados; lint/typecheck incremental quando aplicável; CI mínimo do repositório.
+
+**Risco médio** — regra de negócio, endpoint, DTO, service/controller, automação, integração interna sem alteração estrutural de segurança. Gates: testes afetados; integração da área modificada; typecheck; lint; build; CI obrigatório; QA focada nos critérios de aceite e nas regressões prováveis.
+
+**Risco alto** — autenticação, autorização, RLS, multi-tenancy, permissões, migration, concorrência, idempotência, arquivos, segredos, pagamentos, exclusão ou operação destrutiva, alteração de contrato público. Gates: testes específicos da área crítica; **integração real** (banco de verdade, nunca mock); regressão de segurança relacionada; typecheck, lint e build; **migration drill e rollback** quando houver migration; QA cruzada; CI obrigatório **no SHA exato**; validação pós-merge no `main`.
+
+Uma mudança que **toque** área crítica é **automaticamente elevada** ao risco alto, independente da classificação inicial.
+
+### Sem gate duplicado
+
+- O **Writer** prova a implementação e executa os testes afetados; o **CI** executa os checks canônicos; a **QA** reproduz comportamentos críticos, critérios de aceite e findings.
+- A QA **não repete mecanicamente** a execução do Writer — o custo real do revisor é a análise que a máquina não faz.
+- **Não reexecute a mesma suíte no mesmo SHA sem evidência nova.** Um novo SHA invalida apenas as evidências das áreas **materialmente afetadas**; correção pequena recebe re-QA concentrada.
+- Auditoria completa da Story só se reabre quando contrato, arquitetura ou área crítica mudou.
+- A **suíte completa** é prioritária: em mudança de alto risco que a exija, no encerramento do Épico, periodicamente no `main`, antes de staging e antes de produção.
+
+### Dependência externa e EXTERNAL_GATE
+
+Dependência externa indisponível **não bloqueia trabalho independente**. Com o código integrado e faltando só a validação externa: registre um `EXTERNAL_GATE` com responsável, condição de desbloqueio e teste pendente; **não marque `DONE`** se o aceite exigir o smoke externo; siga nas Stories independentes; execute o smoke assim que a credencial ou o serviço existir.
+
+Nunca substitua a dependência por implementação falsa, mock silencioso ou evidência de sucesso inexistente.
+
+### Encerramento do Épico
+
+1. suíte completa e testes de integração do Épico;
+2. validação dos contratos **entre** as Stories;
+3. revisão de migrations e rollback aplicáveis;
+4. segurança, RLS, LGPD e observabilidade, proporcionalmente às áreas alteradas;
+5. reconciliação de débitos técnicos e `EXTERNAL_GATE`s;
+6. documentação e status atualizados;
+7. CI verde no `main`;
+8. relatório consolidado do Épico publicado;
+9. início automático do próximo Épico autorizado.
+
+### Anti-estagnação e monitores
+
+**No máximo um monitor por evento**, sem duplicatas e sem rearmar indefinidamente antes de confirmar o handoff. Monitor expirado sem avanço: reconcilie o estado real em vez de esperar de novo. Dependendo do Writer, entregue findings **executáveis** e registre `BLOCKED_BY_WRITER` — evento operacional que a Lane 0 trata como os demais de **Roteamento determinístico**. Havendo Story independente pronta, o Épico continua em vez de parar inteiro.
+
+Relatório antigo sobre o **mesmo SHA** não é evento novo.
+
+### Relatório operacional
+
+Concluída uma ação relevante, informe objetivamente: Épico e Story; estado real; ownership; classificação de risco; gates selecionados; evidências e CI; findings ou débitos; `EXTERNAL_GATE`s; próxima ação automática. Sem repetir relatório, replanejar o que já foi executado ou pedir confirmação desnecessária.
 
 ## Invariantes conceituais (nunca erodir)
 
