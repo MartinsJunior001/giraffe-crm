@@ -6,6 +6,11 @@ import { criarAuth } from './auth.factory';
 import { AUTH } from './auth.tokens';
 import { LoginFailureService } from './login-failure.service';
 import { SessaoPrincipalProvider } from './sessao-principal.provider';
+import { PasswordController } from './password.controller';
+import { StepUpService } from './step-up.service';
+import { PasswordChangeService } from './password-change.service';
+import { SECURITY_NOTIFICATION_PORT } from './security-notification.port';
+import { LogSecurityNotificationAdapter } from './log-security-notification.adapter';
 
 /**
  * Autenticação (Story 1.4).
@@ -16,7 +21,7 @@ import { SessaoPrincipalProvider } from './sessao-principal.provider';
  */
 @Global()
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, PasswordController],
   providers: [
     LoginFailureService,
     {
@@ -25,7 +30,12 @@ import { SessaoPrincipalProvider } from './sessao-principal.provider';
       inject: [PrismaService, LoginFailureService],
     },
     { provide: PRINCIPAL_PROVIDER, useClass: SessaoPrincipalProvider },
+    // Story 1.12: step-up (reautenticação recente) e troca autenticada de senha. A notificação de
+    // segurança usa o adapter de LOG (observável) enquanto E5/1.13 não existe.
+    StepUpService,
+    PasswordChangeService,
+    { provide: SECURITY_NOTIFICATION_PORT, useClass: LogSecurityNotificationAdapter },
   ],
-  exports: [AUTH, LoginFailureService, PRINCIPAL_PROVIDER],
+  exports: [AUTH, LoginFailureService, PRINCIPAL_PROVIDER, StepUpService],
 })
 export class AuthModule {}
