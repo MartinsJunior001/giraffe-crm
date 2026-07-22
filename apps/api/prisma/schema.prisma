@@ -379,6 +379,26 @@ model Invite {
   @@map("Invite")
 }
 
+/// InviteRoute — resolvedor GLOBAL de tenant do aceite (Story 8.3), gêmeo funcional de `PublicFormRoute`.
+///
+/// O aceite chega SEM contexto de Organização (o convidado ainda não é membro) e `Invite` é RLS FORCE:
+/// não dá para achar o Convite pelo hash do token sem antes saber o `orgId`. Esta tabela é **GLOBAL e
+/// SEM RLS** (como `Account`/`PublicFormRoute`): mapeia `tokenHash` → `orgId` para a resolução
+/// pré-contexto. Ela é só uma DICA — o serviço entra em `withTenantContext(orgId)` e **RELÊ o `Invite`
+/// sob RLS**, que é a AUTORIDADE (uma rota apontando para a org errada não concede nada: o relê não acha
+/// o Convite → 404). Como o `tokenHash` é irreversível e `orgId` não é segredo, expô-la é inócuo.
+///
+/// **Mantida por TRIGGER em `Invite`** (a 8.2 não é tocada): `AFTER INSERT` insere; `AFTER UPDATE OF
+/// tokenHash` troca OLD→NEW (cobre a rotação de token no reenvio). A migration backfilla os PENDING
+/// existentes. Runtime: GRANT SELECT (+ INSERT/DELETE para o trigger, que roda como invoker).
+model InviteRoute {
+  /// SHA-256 (hex) do token — a mesma chave do `Invite.tokenHash`. PK: lookup O(1) pré-contexto.
+  tokenHash String @id
+  orgId     String @db.Uuid
+
+  @@map("InviteRoute")
+}
+
 /// Pipe — processo de trabalho da Organização (Story 2.1). Dado operacional org-owned (AD-10).
 ///
 /// Isolamento pelo BANCO (RLS na migration `..._pipes`), como `Organization`/`Membership`: ENABLE

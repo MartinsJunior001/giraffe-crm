@@ -35,3 +35,6 @@ Thumbs.db
 
 # Prisma Client gerado (artefato de build — regenerado por `pnpm install`)
 apps/api/generated/
+
+# Overrides de banco por worktree (multi-lane) — nunca versionar
+docker-compose.local-*.yml
