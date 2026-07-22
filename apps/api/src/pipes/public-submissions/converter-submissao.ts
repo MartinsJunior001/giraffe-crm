@@ -8,6 +8,7 @@ import {
   withTenantContext,
 } from '../../kernel/db/tenant-context';
 import { registrarEntradaNaFase } from '../cards/phase-entry/card-phase-entry';
+import { emitirEventoDeDominio } from '../../domain-events/domain-event-emission';
 
 /**
  * Conflito de concorrência na conversão (→ caminho idempotente / 409), idêntico ao `isConflitoDeSubmissao` da 2.7:
@@ -107,6 +108,23 @@ export async function converterSubmissaoEmCard(
         throw new ConflictException('submissão já decidida');
       }
 
+      // EVENTO CANÔNICO `CARD_CREATED` (Story 4.3) — outbox opt-in pós-persistência, MESMA transação (AD-13),
+      // após a conversão estar confirmada. Só a conversão APROVADA (este caminho) cria Card e emite: a triagem
+      // PENDING não chega aqui, então não dispara (CA2). `origin='PUBLIC'`; `correlationId = card.id` ⇒
+      // `eventId` determinístico. A corrida de dupla conversão faz rollback integral (P2002 na `idempotencyKey`
+      // `public:<submissaoId>`), sem duplicar o Evento (CA3). `payload` minimizado (AD-30).
+      await emitirEventoDeDominio(tx, contexto, {
+        eventType: 'CARD_CREATED',
+        pipeId: dados.pipeId,
+        resourceType: 'CARD',
+        resourceId: card.id,
+        actorId: contexto.accountId ?? null,
+        origin: 'PUBLIC',
+        occurredAt: new Date(),
+        correlationId: card.id,
+        payload: { pipeId: dados.pipeId, cardId: card.id, phaseId: dados.phaseId },
+      });
+
       return card.id;
     });
   } catch (err) {
@@ -123,6 +141,7 @@ export async function converterSubmissaoEmCard(
   auditar(logger, contexto, 'create', 'Card');
   auditar(logger, contexto, 'create', 'CardHistory');
   auditar(logger, contexto, 'create', 'CardPhaseEntry');
+  auditar(logger, contexto, 'create', 'DomainEvent');
   auditar(logger, contexto, 'update', 'SubmissaoPublica');
   return { cardId };
 }

@@ -13,6 +13,7 @@ import { getEnv } from '../../kernel/config/env';
 import { exigirOperarPipe } from '../pipe-authz';
 import { snapshotExigeCapacidadeArquivo } from '../forms/file-gate';
 import { registrarEntradaNaFase } from './phase-entry/card-phase-entry';
+import { emitirEventoDeDominio } from '../../domain-events/domain-event-emission';
 import { SubmissaoInvalidaError, validarSubmissao } from './submission';
 
 type Db = ReturnType<typeof withTenantContext>;
@@ -201,6 +202,22 @@ export class CardSubmissionService {
           origin: 'SUBMISSION',
         });
 
+        // EVENTO CANÔNICO `CARD_CREATED` (Story 4.3) — outbox opt-in pós-persistência, MESMA transação (AD-13):
+        // não há Card sem seu Evento. `correlationId = novo.id` torna o `eventId` DETERMINÍSTICO (um Card é
+        // criado uma vez) — um retry faz rollback INTEGRAL da tx (P2002 na `idempotencyKey` do Card), então o
+        // Evento nunca duplica; o `@@unique([orgId, eventId])` é a defesa final. `payload` minimizado (AD-30).
+        await emitirEventoDeDominio(tx, contexto, {
+          eventType: 'CARD_CREATED',
+          pipeId: dados.pipeId,
+          resourceType: 'CARD',
+          resourceId: novo.id,
+          actorId: contexto.accountId ?? null,
+          origin: 'SUBMISSION',
+          occurredAt: new Date(),
+          correlationId: novo.id,
+          payload: { pipeId: dados.pipeId, cardId: novo.id, phaseId: dados.phaseId },
+        });
+
         return novo;
       });
     } catch (err) {
@@ -218,6 +235,7 @@ export class CardSubmissionService {
     this.auditar(contexto, 'create', 'Card');
     this.auditar(contexto, 'create', 'CardHistory');
     this.auditar(contexto, 'create', 'CardPhaseEntry');
+    this.auditar(contexto, 'create', 'DomainEvent');
     return card;
   }
 

@@ -48,7 +48,7 @@ class PrincipalDeTeste implements PrincipalProvider {
 }
 
 const CONFIG = {
-  quando: { tipo: 'CARD_CRIADO' },
+  quando: { tipo: 'CARD_CREATED' },
   condicoes: [],
   entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
 };

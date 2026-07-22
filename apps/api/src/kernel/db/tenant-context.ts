@@ -51,6 +51,9 @@ const MODELOS_AUDITADOS = new Set([
   // Story 4.2. `AutomationVersion` — snapshot imutável da config congelada (editar-ativa/ativação). INSERT
   // (e a tentativa negada por RLS) entram na trilha; sem UPDATE/DELETE (append-only, como `FormVersion`).
   'AutomationVersion',
+  // Story 4.3. `DomainEvent` — outbox canônico de Evento de integração (gatilhos). A emissão é INSERT (append-
+  // only imutável); a tentativa negada por RLS entra na trilha. Sem UPDATE/DELETE (GRANT só SELECT/INSERT).
+  'DomainEvent',
   // Story 8.2. Todo ciclo do Convite (criar/reenviar/cancelar/expirar/aceitar = INSERT/UPDATE) é
   // auditado — inclusive a tentativa negada por RLS. É o write-side de Auditoria de Membros (D5.1).
   'Invite',

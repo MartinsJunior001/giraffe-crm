@@ -52,7 +52,7 @@ const automacoesCriadas: string[] = [];
 const VALOR_SENSIVEL = 'CPF-987.654.321-00-do-titular';
 const SNAPSHOT = {
   schemaVersion: 1,
-  quando: { tipo: 'CARD_CRIADO', refs: [] },
+  quando: { tipo: 'CARD_CREATED', refs: [] },
   condicoes: [{ tipo: 'CAMPO', operador: 'IGUAL', valor: VALOR_SENSIVEL, refs: [] }],
   entao: [{ tipo: 'MOVER_CARD', parametros: { nota: VALOR_SENSIVEL }, refs: [] }],
 };

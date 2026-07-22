@@ -112,6 +112,11 @@ async function contarCards(pipeId: string): Promise<number> {
   const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
   return db.card.count({ where: { pipeId } });
 }
+/** Conta Eventos canônicos CARD_CREATED (Story 4.3) do Pipe — prova CA2 (só a conversão emite). */
+async function contarCardCreated(pipeId: string): Promise<number> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  return db.domainEvent.count({ where: { pipeId, eventType: 'CARD_CREATED' } });
+}
 async function contarSubmissoes(pipeId: string, state?: string): Promise<number> {
   const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
   const form = await db.form.findFirst({
@@ -163,6 +168,8 @@ describe('acesso público e submissão (SC-281/282)', () => {
 
     expect(await contarCards(pipeId)).toBe(0); // triagem não cria Card
     expect(await contarSubmissoes(pipeId, 'PENDING')).toBe(1); // criou a submissão pendente
+    // Story 4.3 (CA2): triagem PENDENTE não cria Card ⇒ NÃO emite CARD_CREATED. Só a aprovação emite.
+    expect(await contarCardCreated(pipeId)).toBe(0);
   });
 
   it('DIRECT: submeter cria exatamente 1 Card (origem PUBLIC)', async () => {
@@ -246,11 +253,15 @@ describe('triagem (SC-285/286)', () => {
     );
     expect(aprov.status).toBe(201);
     expect(await contarCards(pipeId)).toBe(1);
+    // Story 4.3 (CA2): a conversão APROVADA emite CARD_CREATED na MESMA transação do Card.
+    expect(await contarCardCreated(pipeId)).toBe(1);
 
     const rej = await req('POST', `/pipes/${pipeId}/public-submissions/${pend[1]!.id}/reject`, ANA);
     expect(rej.status).toBe(200);
     expect(await contarCards(pipeId)).toBe(1); // rejeitar não cria Card
     expect(await contarSubmissoes(pipeId, 'REJECTED')).toBe(1); // preservada
+    // Rejeitar NÃO cria Card ⇒ NÃO emite novo CARD_CREATED (segue 1, do aprovado).
+    expect(await contarCardCreated(pipeId)).toBe(1);
   });
 
   it('aprovar de novo uma submissão já convertida NÃO cria 2º Card (409, idempotente)', async () => {

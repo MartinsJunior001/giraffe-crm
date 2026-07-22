@@ -17,6 +17,10 @@ import {
   validarConfiguracao,
 } from './automation-config';
 import { revalidarReferencias } from './automation-references';
+import {
+  EventoForaDoCatalogoError,
+  exigirEventoNoCatalogo,
+} from '../../domain-events/event-catalog';
 import { type AcaoCiclo, planejarTransicao } from './automation-lifecycle.transitions';
 import { calcularRevisaoAutomacao, montarSnapshotAutomacao } from './automation-snapshot';
 import {
@@ -442,17 +446,27 @@ export class AutomationLifecycleService {
     if (!a) throw new NotFoundException();
   }
 
-  /** Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. */
+  /**
+   * Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. Impõe também o
+   * CATÁLOGO de Eventos (Story 4.3, CA1): editar/duplicar/ativar com `quando.tipo` fora do núcleo selecionável
+   * → 400. Como criar já rejeita tipo inválido, a re-validação na ativação de uma Automação existente sempre
+   * passa (o tipo dela já é do catálogo).
+   */
   private validar(config: {
     quando: unknown;
     condicoes?: unknown;
     entao: unknown;
   }): ConfiguracaoValidada {
     try {
-      return validarConfiguracao(config);
+      const validada = validarConfiguracao(config);
+      exigirEventoNoCatalogo(validada.quando.tipo);
+      return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
         throw new BadRequestException({ motivo: 'CONFIGURACAO_INVALIDA', detalhe: erro.motivo });
+      }
+      if (erro instanceof EventoForaDoCatalogoError) {
+        throw new BadRequestException({ motivo: 'EVENTO_FORA_DO_CATALOGO', detalhe: erro.motivo });
       }
       throw erro;
     }
