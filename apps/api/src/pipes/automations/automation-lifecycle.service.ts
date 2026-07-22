@@ -25,6 +25,7 @@ import {
   CondicaoForaDoCatalogoError,
   exigirCondicoesNoCatalogo,
 } from './conditions/condition-catalog';
+import { AcaoForaDoCatalogoError, exigirAcoesNoCatalogo } from './actions/action-catalog';
 import { type AcaoCiclo, planejarTransicao } from './automation-lifecycle.transitions';
 import { calcularRevisaoAutomacao, montarSnapshotAutomacao } from './automation-snapshot';
 import {
@@ -467,6 +468,7 @@ export class AutomationLifecycleService {
       const validada = validarConfiguracao(config);
       exigirEventoNoCatalogo(validada.quando.tipo);
       exigirCondicoesNoCatalogo(validada.condicoes);
+      exigirAcoesNoCatalogo(validada.entao);
       return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
@@ -480,6 +482,9 @@ export class AutomationLifecycleService {
           motivo: 'CONDICAO_FORA_DO_CATALOGO',
           detalhe: erro.motivo,
         });
+      }
+      if (erro instanceof AcaoForaDoCatalogoError) {
+        throw new BadRequestException({ motivo: 'ACAO_FORA_DO_CATALOGO', detalhe: erro.motivo });
       }
       throw erro;
     }
