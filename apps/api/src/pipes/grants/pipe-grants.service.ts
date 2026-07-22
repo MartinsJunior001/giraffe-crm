@@ -9,6 +9,7 @@ import { Prisma, type PipeRole } from '../../../generated/prisma';
 import { RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { withTenantContext } from '../../kernel/db/tenant-context';
+import { type CapacidadesGrant, type PapelOrg, violacaoTetoConvidado } from './pipe-grant-ceiling';
 
 /**
  * O que uma concessão expõe pela API interna. `orgId` NÃO sai (fronteira interna). O `membershipId`
@@ -88,14 +89,29 @@ export class PipeGrantsService {
   private async exigirMembershipAtivaDaOrg(
     db: ReturnType<typeof withTenantContext>,
     membershipId: string,
-  ) {
+  ): Promise<{ role: string }> {
     const m = await db.membership.findUnique({
       where: { id: membershipId },
-      select: { state: true },
+      select: { role: true, state: true },
     });
     if (!m || m.state !== 'ACTIVE') {
       throw new BadRequestException('membershipId não é uma Membership ativa desta Organização');
     }
+    return { role: m.role };
+  }
+
+  /**
+   * Teto do CONVIDADO (DEB-PIPEGRANT-GUEST-CEILING): um Convidado (Membership `role = GUEST`) só recebe
+   * `VIEWER` (SOMENTE_LEITURA) + modificadores restritivos (`restritoAoProprio`). Papel administrativo/
+   * operacional pleno (`ADMIN`/`MEMBER`) ou capacidade expansiva (`reviewPublicSubmissions`) → **400**
+   * sanitizado (deny-by-default). Espelha `aplicarTetoDaOrg` de `DatabaseGrantsService` (AD-9 / 3.2). A
+   * regra fina é pura (`violacaoTetoConvidado`), aqui só traduzida em HTTP. O papel do alvo é LIDO sob o
+   * mesmo `db` com contexto (RLS) imediatamente antes de persistir; o read-side de `pipe-authz` é o
+   * fail-closed complementar diante de dado legado/concorrente (defesa em profundidade).
+   */
+  private aplicarTetoDaOrg(orgRoleAlvo: string, cap: CapacidadesGrant): void {
+    const motivo = violacaoTetoConvidado(orgRoleAlvo as PapelOrg, cap);
+    if (motivo) throw new BadRequestException(motivo);
   }
 
   /**
@@ -111,7 +127,8 @@ export class PipeGrantsService {
   ): Promise<ConcessaoVisao> {
     const { contexto, db } = this.db();
     await this.exigirPipeDaOrg(db, pipeId);
-    await this.exigirMembershipAtivaDaOrg(db, membershipId);
+    const alvo = await this.exigirMembershipAtivaDaOrg(db, membershipId);
+    this.aplicarTetoDaOrg(alvo.role, { role, reviewPublicSubmissions });
     try {
       return await db.pipeGrant.create({
         data: {
@@ -159,14 +176,15 @@ export class PipeGrantsService {
     db: ReturnType<typeof withTenantContext>,
     pipeId: string,
     grantId: string,
-  ): Promise<void> {
+  ): Promise<{ membershipId: string }> {
     const grant = await db.pipeGrant.findUnique({
       where: { id: grantId },
-      select: { pipeId: true, state: true },
+      select: { pipeId: true, state: true, membershipId: true },
     });
     if (!grant || grant.pipeId !== pipeId || grant.state !== 'ACTIVE') {
       throw new NotFoundException();
     }
+    return { membershipId: grant.membershipId };
   }
 
   /**
@@ -181,7 +199,11 @@ export class PipeGrantsService {
     restritoAoProprio?: boolean,
   ): Promise<ConcessaoVisao> {
     const { db } = this.db();
-    await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
+    const atual = await this.exigirConcessaoAtivaDoPipe(db, pipeId, grantId);
+    // Teto do CONVIDADO também na ALTERAÇÃO (impede elevação VIEWER→ADMIN/MEMBER num grant de GUEST, e
+    // ligar `reviewPublicSubmissions` a um GUEST). O papel do alvo é lido sob RLS antes de persistir.
+    const alvo = await this.exigirMembershipAtivaDaOrg(db, atual.membershipId);
+    this.aplicarTetoDaOrg(alvo.role, { role, reviewPublicSubmissions });
     const { count } = await db.pipeGrant.updateMany({
       where: { id: grantId, pipeId, state: 'ACTIVE' },
       data: {

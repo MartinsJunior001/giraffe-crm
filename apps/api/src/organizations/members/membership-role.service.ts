@@ -12,12 +12,16 @@ import { StepUpService } from '../../kernel/auth/step-up.service';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
 import { PrismaService } from '../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../kernel/db/tenant-context';
+import { pipeGrantsIncompativeisConvidado } from '../../pipes/grants/pipe-grant-ceiling';
 import {
   derivarEventId,
   type MembershipRole,
   planejarAlteracaoPapel,
   planejarRevogacaoIncompativel,
 } from './membership-role.core';
+
+/** Papéis de Pipe lidos para o teto do Convidado (espelha `PipeRole`). */
+type PapelPipe = 'ADMIN' | 'MEMBER' | 'VIEWER';
 
 /** O que a alteração devolve pela API interna. `orgId` fica FORA da fronteira; nunca vaza. */
 export interface AlteracaoPapelVisao {
@@ -129,6 +133,25 @@ export class MembershipRoleService {
       grantsIncompat.map((g) => ({ id: g.id, role: g.role as 'ADMIN' | 'MEMBER' | 'VIEWER' })),
     );
 
+    // Rebaixar para CONVIDADO: a decisão DEB-PIPEGRANT-GUEST-CEILING (item 7) manda **RECUSAR** — nunca
+    // rebaixar em silêncio — enquanto houver `PipeGrant` ativo acima do teto (`ADMIN`/`MEMBER`). Difere
+    // do auto-revogar de `DatabaseGrant` (8.4), por decisão de Produto distinta e explícita. Pré-cheque
+    // para rejeitar cedo; a decisão AUTORITATIVA é reavaliada DENTRO da tx (anti-TOCTOU). O read-side de
+    // `pipe-authz` é o fail-closed complementar caso um grant escape pela janela entre operações.
+    if (novoPapel === 'GUEST') {
+      const pipeGrantsAtivos = await db.pipeGrant.findMany({
+        where: { membershipId: alvo.id, state: 'ACTIVE', role: { in: ['ADMIN', 'MEMBER'] } },
+        select: { id: true, role: true },
+      });
+      const incompat = pipeGrantsIncompativeisConvidado(
+        'GUEST',
+        pipeGrantsAtivos.map((g) => ({ id: g.id, role: g.role as PapelPipe })),
+      );
+      if (incompat.length > 0) {
+        throw new ConflictException({ erro: 'PIPE_GRANT_INCOMPATIVEL', pipeGrants: [...incompat] });
+      }
+    }
+
     const correlationId = randomUUID();
     let resultado: TxResultado;
     try {
@@ -157,6 +180,25 @@ export class MembershipRoleService {
           stepUpValido,
         });
         if (dentro.tipo !== 'APLICAR') return { tipo: 'RECUSA', decisao: dentro };
+
+        // Anti-TOCTOU: relê os `PipeGrant` incompatíveis DENTRO da tx. Se um foi concedido entre o
+        // pré-cheque e aqui, a alteração é recusada — não rebaixa em silêncio (DEB-PIPEGRANT-GUEST-CEILING).
+        if (novoPapel === 'GUEST') {
+          const pipeGrantsAgora = await tx.pipeGrant.findMany({
+            where: {
+              orgId: contexto.orgId,
+              membershipId: alvo.id,
+              state: 'ACTIVE',
+              role: { in: ['ADMIN', 'MEMBER'] },
+            },
+            select: { id: true, role: true },
+          });
+          const incompatAgora = pipeGrantsIncompativeisConvidado(
+            'GUEST',
+            pipeGrantsAgora.map((g) => ({ id: g.id, role: g.role as PapelPipe })),
+          );
+          if (incompatAgora.length > 0) return { tipo: 'PIPE_INCOMPATIVEL', ids: incompatAgora };
+        }
 
         // Guarda otimista: só altera se o papel/estado ainda são os que a decisão assumiu.
         const { count } = await tx.membership.updateMany({
@@ -231,6 +273,14 @@ export class MembershipRoleService {
       // `recusar` já lançou para INATIVA/STEP_UP/ULTIMO_ADMIN; NOOP não chega aqui (decidido antes da tx).
       throw new ConflictException();
     }
+    if (resultado.tipo === 'PIPE_INCOMPATIVEL') {
+      // Rebaixar para GUEST com `PipeGrant` acima do teto → RECUSA (DEB-PIPEGRANT-GUEST-CEILING, item 7):
+      // erro de domínio sanitizado, exigindo reduzir/remover os grants antes. Sem rebaixamento silencioso.
+      throw new ConflictException({
+        erro: 'PIPE_GRANT_INCOMPATIVEL',
+        pipeGrants: [...resultado.ids],
+      });
+    }
     if (resultado.tipo === 'CONFLITO' || resultado.tipo === 'SUMIU') {
       const db = withTenantContext(this.prisma, contexto, this.logger);
       const agora = await db.membership.findUnique({
@@ -302,5 +352,6 @@ export class MembershipRoleService {
 type TxResultado =
   | { tipo: 'OK'; deRole: MembershipRole; alvoAccountId: string; revogados: readonly string[] }
   | { tipo: 'RECUSA'; decisao: { tipo: string } }
+  | { tipo: 'PIPE_INCOMPATIVEL'; ids: readonly string[] }
   | { tipo: 'CONFLITO' }
   | { tipo: 'SUMIU' };

@@ -1,5 +1,10 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { withTenantContext } from '../kernel/db/tenant-context';
+import {
+  convidadoPodeRevisarSubmissoes,
+  type PapelOrg,
+  tetoPoderPorPapelOrg,
+} from './grants/pipe-grant-ceiling';
 
 /**
  * Resolução do **poder efetivo por recurso** sobre um Pipe (DBT-AUTHZ-01), compartilhada entre as superfícies
@@ -46,7 +51,7 @@ export async function resolverPoderNoPipe(
   if (principal.papel === 'ADMIN') return 'gerenciar';
   const membership = await db.membership.findFirst({
     where: { accountId: principal.accountId },
-    select: { id: true, state: true },
+    select: { id: true, state: true, role: true },
   });
   if (!membership || membership.state !== 'ACTIVE') throw new NotFoundException();
   const grant = await db.pipeGrant.findFirst({
@@ -54,9 +59,12 @@ export async function resolverPoderNoPipe(
     select: { role: true },
   });
   if (!grant) throw new NotFoundException();
-  if (grant.role === 'ADMIN') return 'gerenciar';
-  if (grant.role === 'MEMBER') return 'operar';
-  return 'ler';
+  const poder: Poder =
+    grant.role === 'ADMIN' ? 'gerenciar' : grant.role === 'MEMBER' ? 'operar' : 'ler';
+  // Teto do CONVIDADO (DEB-PIPEGRANT-GUEST-CEILING), FAIL-CLOSED: um GUEST nunca supera leitura, mesmo
+  // diante de um `PipeGrant` legado/inconsistente (ex.: GUEST com `ADMIN`/`MEMBER` preexistente). O
+  // write-side já recusa criar tal grant; aqui é a defesa em profundidade sobre dado legado/concorrente.
+  return tetoPoderPorPapelOrg(membership.role as PapelOrg, poder);
 }
 
 /** Exige poder de gerenciar; 403 se o principal só pode operar/ler (tem acesso, mas não é Admin do Pipe/Org). */
@@ -102,7 +110,7 @@ export async function exigirRevisarSubmissoesPublicas(
   if (principal.papel === 'ADMIN') return; // Admin da Org: capacidade implícita
   const membership = await db.membership.findFirst({
     where: { accountId: principal.accountId },
-    select: { id: true, state: true },
+    select: { id: true, state: true, role: true },
   });
   if (!membership || membership.state !== 'ACTIVE') throw new NotFoundException();
   const grant = await db.pipeGrant.findFirst({
@@ -110,6 +118,10 @@ export async function exigirRevisarSubmissoesPublicas(
     select: { reviewPublicSubmissions: true },
   });
   if (!grant) throw new NotFoundException(); // sem acesso ao Pipe → 404 (não enumera)
+  // Teto do CONVIDADO, FAIL-CLOSED (DEB-PIPEGRANT-GUEST-CEILING): revisar submissões é operacional; um
+  // GUEST não a retém nem com um grant legado `reviewPublicSubmissions = true`. Tem acesso de leitura,
+  // mas não a capacidade → 403 (mesma resposta de quem tem grant sem a capacidade).
+  if (!convidadoPodeRevisarSubmissoes(membership.role as PapelOrg)) throw new ForbiddenException();
   if (!grant.reviewPublicSubmissions) throw new ForbiddenException(); // acesso, mas sem a capacidade
 }
 
@@ -156,6 +168,7 @@ async function computeAcessoNaoAdmin(
   db: DbComContexto,
   membershipId: string,
   card: CardRef,
+  papelOrg: PapelOrg,
 ): Promise<Flags | null> {
   const [grant, pipeGrant] = await Promise.all([
     db.cardGrant.findFirst({
@@ -192,6 +205,15 @@ async function computeAcessoNaoAdmin(
       // VIEWER concedido: só leitura.
       podeLer = true;
     }
+  }
+
+  // Teto do CONVIDADO (DEB-PIPEGRANT-GUEST-CEILING), FAIL-CLOSED: o PAPEL de Pipe nunca dá operar/mover
+  // a um GUEST, mesmo com `PipeGrant` legado incompatível — o teto do papel de Org é SOMENTE_LEITURA.
+  // A concessão DIRETA (`CardGrant`, abaixo) segue seu próprio contrato (2.10, por-Card e explícito) e
+  // **não** é rebaixada aqui: a decisão desta unidade escopa o teto ao `PipeGrant`, não ao `CardGrant`.
+  if (papelOrg === 'GUEST') {
+    podeOperar = false;
+    podeMover = false;
   }
 
   // A concessão direta compõe (nunca reduz): soma o que o papel não deu.
@@ -233,11 +255,11 @@ export async function resolverAcessoNoCard(
 
   const membership = await db.membership.findFirst({
     where: { accountId: principal.accountId },
-    select: { id: true, state: true },
+    select: { id: true, state: true, role: true },
   });
   if (!membership || membership.state !== 'ACTIVE') throw new NotFoundException();
 
-  const flags = await computeAcessoNaoAdmin(db, membership.id, card);
+  const flags = await computeAcessoNaoAdmin(db, membership.id, card, membership.role as PapelOrg);
   if (!flags) throw new NotFoundException(); // sem acesso → 404 (não enumera)
   return { cardId: card.id, pipeId: card.pipeId, ...flags };
 }
@@ -266,7 +288,7 @@ export async function resolverAcessoDaMembership(
   if (membership.role === 'ADMIN') {
     return { podeLer: true, podeOperar: true, podeMover: true };
   }
-  return computeAcessoNaoAdmin(db, membership.id, card);
+  return computeAcessoNaoAdmin(db, membership.id, card, membership.role as PapelOrg);
 }
 
 /** Exige poder de LER o Card; 404 não-enumerante se não há acesso. Devolve o acesso resolvido (capacidades). */
