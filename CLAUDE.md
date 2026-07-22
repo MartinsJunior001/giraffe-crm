@@ -330,6 +330,35 @@ Relatório antigo sobre o **mesmo SHA** não é evento novo.
 
 Concluída uma ação relevante, informe objetivamente: Épico e Story; estado real; ownership; classificação de risco; gates selecionados; evidências e CI; findings ou débitos; `EXTERNAL_GATE`s; próxima ação automática. Sem repetir relatório, replanejar o que já foi executado ou pedir confirmação desnecessária.
 
+### Autonomia permanente até staging, decisão e escalada
+
+A autonomia é **permanente até o MVP estar aprovado em staging**: trabalhe continuamente pela ordem de dependências sem aguardar "continue" a cada etapa. **Só a liberação em produção** exige a aprovação consolidada única de go/no-go — antes dela, entregue estado do MVP, testes/CI, segurança/LGPD, migrations/rollback, backup, observabilidade, smoke de staging, riscos residuais e plano de implantação/reversão.
+
+**Decisão autônoma.** Faltando uma decisão _interna_ (não de produto), escolha a alternativa recomendada dentro do escopo pela **Ordem de autoridade** (`origin/main` → CLAUDE.md → decisões registradas → PRD/UX/Arquitetura → Épico/Story → Spec Kit/AC → padrões do código → menor risco), prevalecendo a fonte mais específica e mais recente **formalmente integrada**. Descarte qualquer opção que amplie escopo além do MVP ou crie dívida crítica/atalho inseguro. Registre e siga sem esperar aprovação:
+
+```
+AUTONOMOUS_DECISION
+CONTEXT: <decisão necessária>
+SELECTED: <alternativa recomendada>
+RATIONALE: <por que é a melhor opção no escopo>
+SCOPE_IMPACT: NONE
+REVERSIBILITY: HIGH/MEDIUM/LOW
+NEXT_ACTION: <ação iniciada>
+```
+
+**Escalada única.** Não chame o dono por falha corrigível, conflito reconciliável, finding de QA, CI investigável, escolha de lib já na stack, detalhe com alternativa recomendada, doc faltante, coordenação de subagentes ou escolha entre opções equivalentes no escopo. Interrompa **somente** por bloqueio externo real (as **Condições de parada**, aqui sem duplicar): credencial/segredo/conta/serviço externo indisponível; configuração manual de DNS/domínio/Resend/Meta/WhatsApp/Coolify sem acesso; aprovação de fornecedor; pagamento/aceite jurídico; presença humana; permissão técnica indisponível; ação destrutiva irreversível relevante; go/no-go de produção. Antes: esgote alternativas internas, confirme que o bloqueio é reproduzível, **avance tudo que não depende dele** (outra Story elegível e independente) e recomende **uma** ação objetiva — nunca várias decisões abertas:
+
+```
+EXTERNAL_BLOCKER
+BLOCKED_ITEM: <item>
+WHY_EXTERNAL: <motivo>
+WORK_ALREADY_COMPLETED: <resultado>
+EXACT_USER_ACTION: <uma ação objetiva>
+INFORMATION_REQUIRED: <dado necessário>
+IMPACT_IF_DELAYED: <impacto>
+PARALLEL_WORK_CONTINUING: <sim/não + qual>
+```
+
 ## Invariantes conceituais (nunca erodir)
 
 `Pipe ≠ Database` · `Card ≠ Registro` · `Fase ≠ Status do Card` · `Super Admin (Plataforma) ≠ Admin da Organização` · `Usuário ≠ Organização`. Identidade é Account global + Membership por Organização. Autorização é **deny-by-default** e `PERMISSÃO = AÇÃO + ESCOPO`; isolamento por Organização é o invariante-mãe. Os três Formulários (inicial, de fase, de database) são independentes.
