@@ -342,6 +342,7 @@ model Organization {
   cardRecordLinks   CardRecordLink[]
   accountAvatars    AccountAvatar[]
   automations       Automation[]
+  automationVersions AutomationVersion[]
   invites           Invite[]
   membershipEvents  MembershipEvent[]
 
@@ -1542,6 +1543,18 @@ model Automation {
   pipeId              String          @db.Uuid
   name                String
   state               AutomationState @default(INACTIVE)
+  /// Ponteiro para a `AutomationVersion` em vigor (Story 4.2 — D-4.2-B). Twin de `Form.publishedVersion`.
+  /// INVARIANTE: `state = ACTIVE ⟹ activeVersion != null` — ativar e editar-enquanto-ativa congelam a
+  /// config vigente numa versão e avançam este número; o motor (4.6) captura-o e nunca mistura versões
+  /// numa Execução. Desativar/arquivar NÃO o zeram (histórico inerte; o motor gateia por `state`). É
+  /// NÚMERO, não FK, pelo mesmo motivo de `Form.publishedVersion`: evita o ciclo de FK e não há ponteiro
+  /// pendente (versões nunca são apagadas — GRANT sem DELETE em `AutomationVersion`).
+  activeVersion       Int?
+  /// Idempotência OPCIONAL de criação/duplicação (Story 4.2 — D-4.2-F). Com `@@unique([orgId, pipeId,
+  /// idempotencyKey])`: NULLs são distintos no Postgres, então criações sem chave nunca colidem (a `criar`
+  /// da 4.1 segue idêntica); com chave, um retry devolve a Automação existente (P2002 → idempotente).
+  /// Imutável após criação — fora do GRANT de UPDATE column-scoped.
+  idempotencyKey      String?
   /// Versão do SCHEMA do documento de configuração (não da Automação — versões dela são a 4.2).
   /// Carimbada pelo servidor, nunca aceita do cliente. É o que torna migrável um JSON persistido: sem
   /// ela, 4.3/4.4/4.5 não distinguiriam "config antiga válida" de "config corrompida". É COLUNA, e não
@@ -1570,7 +1583,50 @@ model Automation {
   /// explícito, nunca cascata silenciosa.
   pipe Pipe @relation(fields: [orgId, pipeId], references: [orgId, id], onDelete: Restrict)
 
+  /// Versões congeladas da configuração (Story 4.2). Snapshot imutável por edição-ativa/ativação.
+  versions AutomationVersion[]
+
   /// A consulta do motor (4.6) é "Automações ATIVAS de um Pipe"; a desta Story é "Automações de um Pipe".
   @@index([orgId, pipeId, state])
+  /// Alvo da FK COMPOSTA tenant-safe de `AutomationVersion` — o par `(orgId, id)` prova, no banco, que a
+  /// versão e a Automação pertencem à MESMA Organização (mesmo racional de F-A1).
+  @@unique([orgId, id])
+  /// Idempotência de criação/duplicação (D-4.2-F). NULLs distintos ⇒ sem chave não há colisão.
+  @@unique([orgId, pipeId, idempotencyKey])
   @@map("Automation")
+}
+
+/// AutomationVersion — SNAPSHOT IMUTÁVEL da configuração de uma Automação (Story 4.2 — D-4.2-A, twin de
+/// `FormVersion`). É o que a 4.2/4.6 exigem: editar uma Automação ATIVA (ou ativá-la) CONGELA a config
+/// vigente aqui; o motor (4.6) captura `Automation.activeVersion` e avalia a versão, nunca o rascunho — sem
+/// mistura de versões dentro de uma Execução.
+///
+/// **Imutabilidade é do banco:** RLS ENABLE **e** FORCE, policies por `orgId = current_org_id()` com `WITH
+/// CHECK` no INSERT e no UPDATE; GRANT do runtime = **só `SELECT, INSERT`** (sem UPDATE/DELETE). Uma rota que
+/// tentasse alterar/apagar uma versão bateria em `permission denied` — como `FormVersion`/`CardHistory`.
+model AutomationVersion {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orgId               String   @db.Uuid
+  automationId        String   @db.Uuid
+  /// Número monotônico por Automação (1, 2, 3...). Unicidade imposta pelo banco.
+  version             Int
+  /// Snapshot integral da config congelada (`quando`/`condicoes`/`entao`/`schemaVersion`). Validado no núcleo.
+  snapshot            Json
+  /// Hash determinístico do snapshot — identifica a versão e detecta divergência.
+  revision            String
+  /// Versão do SCHEMA da config no momento do congelamento (espelha `Automation.configSchemaVersion`).
+  configSchemaVersion Int
+  /// Conta que congelou a versão (quando disponível). Referência de ator para auditoria, não PII sensível.
+  actorId             String?  @db.Uuid
+  createdAt           DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// FK **COMPOSTA** tenant-safe (mesmo racional de F-A1): referencia o PAR `(orgId, id)` de `Automation`, não
+  /// só o `id` — uma versão nunca pertence a uma Automação de outra Organização, garantido pelo banco.
+  automation Automation @relation(fields: [orgId, automationId], references: [orgId, id], onDelete: Cascade)
+
+  @@unique([orgId, automationId, version])
+  @@index([orgId, automationId])
+  @@map("AutomationVersion")
 }

@@ -134,7 +134,10 @@ describe('papel, RLS e propriedade da tabela Automation', () => {
 });
 
 describe('GRANT — a fronteira que prova o escopo da 4.1', () => {
-  it('runtime tem SELECT e INSERT, e NÃO tem UPDATE nem DELETE', async () => {
+  it('no nível da TABELA o runtime tem só SELECT/INSERT (UPDATE é column-scoped na 4.2; DELETE nunca)', async () => {
+    // `role_table_grants` mostra privilégios de TABELA. A 4.2 concede `UPDATE (colunas)` — privilégio de
+    // COLUNA, que NÃO aparece aqui: no nível-tabela o runtime segue com SELECT/INSERT. O escopo do UPDATE
+    // column-scoped da 4.2 é provado em `automation-lifecycle-rls`. DELETE nunca (abaixo).
     const privs = await prisma.$queryRaw<{ privilege_type: string }[]>`
       SELECT privilege_type FROM information_schema.role_table_grants
        WHERE table_name = 'Automation' AND grantee = 'giraffe_app'`;
@@ -142,21 +145,17 @@ describe('GRANT — a fronteira que prova o escopo da 4.1', () => {
     expect(concedidos).toEqual(['INSERT', 'SELECT']);
   });
 
-  it('UPDATE é NEGADO pelo banco — ativar/editar é a Story 4.2, não esta', async () => {
+  it('nasce INACTIVE (D4.3) — o default seguro; transicionar é a 4.2 (via UPDATE column-scoped)', async () => {
     const pipeId = await criarPipe(ORG_C);
     const db = withTenantContext(prisma, { orgId: ORG_C }, semLog);
     const criada = await db.automation.create({
-      data: { orgId: ORG_C, pipeId, name: 'sem-update', ...CONFIG },
+      data: { orgId: ORG_C, pipeId, name: 'nasce-inativa', ...CONFIG },
       select: { id: true, state: true },
     });
     automacoesCriadas.push(criada.id);
-
-    // O default seguro: nasce INACTIVE (D4.3) — e o runtime não consegue mudá-lo.
+    // "Só a ativa dispara" (D4.3): nada criado por INSERT pode disparar. A ativação é a 4.2, com sua
+    // guarda de autorização; o escopo do GRANT que ela abre é provado em `automation-lifecycle-rls`.
     expect(criada.state).toBe('INACTIVE');
-
-    await expect(
-      db.automation.updateMany({ where: { id: criada.id }, data: { state: 'ACTIVE' } }),
-    ).rejects.toThrow(/permission denied/i);
   });
 
   it('DELETE é NEGADO pelo banco — não há exclusão definitiva (D4.3)', async () => {

@@ -12,10 +12,9 @@ import { exigirGerenciarPipe, resolverPoderNoPipe } from '../pipe-authz';
 import {
   ConfiguracaoInvalidaError,
   type ConfiguracaoValidada,
-  extrairReferencias,
-  type TipoDeReferencia,
   validarConfiguracao,
 } from './automation-config';
+import { revalidarReferencias } from './automation-references';
 
 /**
  * O que uma Automação expõe pela API interna. `orgId` NÃO sai — fronteira interna, não dado de
@@ -26,6 +25,8 @@ export interface AutomationVisao {
   pipeId: string;
   name: string;
   state: 'INACTIVE' | 'ACTIVE' | 'ARCHIVED';
+  /** Número da `AutomationVersion` em vigor (null = nunca ativada). Story 4.2 — D-4.2-B. */
+  activeVersion: number | null;
   quando: unknown;
   condicoes: unknown;
   entao: unknown;
@@ -33,12 +34,23 @@ export interface AutomationVisao {
   updatedAt: Date;
 }
 
+/**
+ * O erro é um CONFLITO de escrita concorrente (→ idempotente ou 409)? P2002 = violação de UNIQUE (mesma
+ * `idempotencyKey`/número de versão); P2028 = a transação interativa expirou/fechou sob contenção. Nunca 500.
+ */
+export function isConflitoDeEscrita(err: unknown): boolean {
+  const code =
+    typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return code === 'P2002' || code === 'P2028';
+}
+
 /** Projeção de toda leitura/escrita — mantém `orgId` fora do payload por construção. */
-const SELECT_AUTOMATION = {
+export const SELECT_AUTOMATION = {
   id: true,
   pipeId: true,
   name: true,
   state: true,
+  activeVersion: true,
   quando: true,
   condicoes: true,
   entao: true,
@@ -52,6 +64,7 @@ const SELECT_AUTOMATION_RESUMO = {
   pipeId: true,
   name: true,
   state: true,
+  activeVersion: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -111,6 +124,7 @@ export class AutomationsService {
     pipeId: string,
     name: string,
     config: { quando: unknown; condicoes?: unknown; entao: unknown },
+    idempotencyKey?: string,
   ): Promise<AutomationVisao> {
     const { contexto, principal, db } = this.db();
 
@@ -123,22 +137,39 @@ export class AutomationsService {
     }
 
     const validada = this.validar(config);
-    await this.revalidarReferencias(db, pipeId, validada);
+    await revalidarReferencias(db, pipeId, validada);
 
-    const criada = await db.automation.create({
-      data: {
-        orgId: contexto.orgId,
-        pipeId,
-        name,
-        // `state` não é aceito do cliente: nasce INACTIVE pelo default da coluna (D4.3).
-        // `configSchemaVersion` idem: carimbado pelo servidor via o núcleo puro.
-        configSchemaVersion: validada.schemaVersion,
-        quando: validada.quando as object,
-        condicoes: validada.condicoes as object[],
-        entao: validada.entao as object[],
-      },
-      select: SELECT_AUTOMATION,
-    });
+    let criada: AutomationVisao;
+    try {
+      criada = await db.automation.create({
+        data: {
+          orgId: contexto.orgId,
+          pipeId,
+          name,
+          // `state` não é aceito do cliente: nasce INACTIVE pelo default da coluna (D4.3).
+          // `configSchemaVersion` idem: carimbado pelo servidor via o núcleo puro.
+          configSchemaVersion: validada.schemaVersion,
+          quando: validada.quando as object,
+          condicoes: validada.condicoes as object[],
+          entao: validada.entao as object[],
+          // Idempotência opcional (D-4.2-F): sem chave, NULLs são distintos no Postgres e nunca colidem —
+          // a `criar` da 4.1 (sem chave) segue idêntica. Com chave, um retry devolve o existente.
+          idempotencyKey: idempotencyKey ?? null,
+        },
+        select: SELECT_AUTOMATION,
+      });
+    } catch (err) {
+      // Retry idempotente: mesma `idempotencyKey` já usada neste Pipe → devolve o existente, nunca 500.
+      if (idempotencyKey !== undefined && isConflitoDeEscrita(err)) {
+        const existente = await db.automation.findFirst({
+          where: { pipeId, idempotencyKey },
+          select: SELECT_AUTOMATION,
+        });
+        if (existente) return existente;
+        throw new ConflictException('criação concorrente; recarregue e tente de novo');
+      }
+      throw err;
+    }
 
     // Log sem a configuração: `quando`/`condicoes`/`entao` podem carregar valores de Campo (possível
     // PII), pelo mesmo critério que mantém `valores` fora da lista do Kanban (NFR-1/8/16).
@@ -178,94 +209,6 @@ export class AutomationsService {
     });
     if (!automacao) throw new NotFoundException();
     return automacao;
-  }
-
-  /**
-   * Relê TODA referência da configuração **sob RLS**, antes de persistir. Fail-closed: o que não for
-   * encontrado invalida a configuração (400).
-   *
-   * Por que isto é necessário mesmo com a FK composta: a FK cobre o **Pipe proprietário** (F-A1), mas as
-   * referências vivem dentro do JSON, onde **não há FK alguma**. Sem esta releitura, um `Field.id` ou um
-   * `Record.id` de OUTRA Organização seria persistido tal e qual — e só falharia (ou pior, resolveria)
-   * quando o motor da 4.6 fosse executá-lo. "Referência inválida/inacessível ⇒ configuração inválida em
-   * modo fail-closed" é critério de aceite da própria Story.
-   *
-   * A releitura acontece sob `withTenantContext`: a policy é quem responde "não existe" para um ID de
-   * outra Organização — não há `where orgId` manual aqui, e não há como o serviço esquecer o filtro.
-   *
-   * **Alvo determinístico, nunca busca em massa:** cada referência é resolvida por `id` exato
-   * (`findUnique`/`findFirst` com o `id`), jamais por varredura ou filtro amplo — "não é permitido
-   * pesquisar e atualizar indiscriminadamente vários Registros" (escopo da Story).
-   *
-   * Referências ao PIPE só podem apontar para o Pipe proprietário: uma Automação alcança "apenas Cards do
-   * Pipe proprietário", então referenciar outro Pipe é incoerente por definição, ainda que da mesma Org.
-   */
-  private async revalidarReferencias(
-    db: ReturnType<typeof withTenantContext>,
-    pipeId: string,
-    config: ConfiguracaoValidada,
-  ): Promise<void> {
-    // Agrupa por TIPO e resolve cada tipo em UMA query (`id: { in: [...] }`).
-    //
-    // A alternativa ingênua — uma query por referência — é um amplificador de carga: o núcleo permite
-    // até `LIMITE_REFS_TOTAL` referências, e um payload barato de escrever viraria centenas de idas ao
-    // banco por requisição (NFR-4). Aqui o custo é limitado ao número de TIPOS, que é fixo.
-    const porTipo = new Map<TipoDeReferencia, Set<string>>();
-    for (const ref of extrairReferencias(config)) {
-      const ids = porTipo.get(ref.tipo) ?? new Set<string>();
-      ids.add(ref.id); // `Set`: a mesma referência repetida não vira trabalho repetido.
-      porTipo.set(ref.tipo, ids);
-    }
-
-    for (const [tipo, ids] of porTipo) {
-      const encontrados = await this.idsAlcancaveis(db, pipeId, tipo, [...ids]);
-      if (encontrados.size !== ids.size) {
-        // Sanitizado: diz o TIPO e que é inalcançável, sem revelar QUAL id faltou nem confirmar se o
-        // recurso existe noutra Organização — a resposta não pode virar oráculo de existência.
-        throw new BadRequestException({ motivo: 'REFERENCIA_INALCANCAVEL', tipo });
-      }
-    }
-  }
-
-  /** Quais dos `ids` daquele tipo são alcançáveis nesta Organização (e, quando cabe, neste Pipe). */
-  private async idsAlcancaveis(
-    db: ReturnType<typeof withTenantContext>,
-    pipeId: string,
-    tipo: TipoDeReferencia,
-    ids: string[],
-  ): Promise<Set<string>> {
-    const colher = (linhas: { id: string }[]): Set<string> => new Set(linhas.map((l) => l.id));
-
-    switch (tipo) {
-      case 'PIPE':
-        // Só o Pipe proprietário — ver docstring de `revalidarReferencias`.
-        return new Set(ids.filter((id) => id === pipeId));
-      case 'PHASE':
-        // A Fase precisa ser do Pipe proprietário: uma Automação não alcança Fases de outro Pipe.
-        return colher(
-          await db.phase.findMany({ where: { id: { in: ids }, pipeId }, select: { id: true } }),
-        );
-      case 'FORM':
-        return colher(await db.form.findMany({ where: { id: { in: ids } }, select: { id: true } }));
-      case 'FIELD':
-        return colher(
-          await db.field.findMany({ where: { id: { in: ids } }, select: { id: true } }),
-        );
-      case 'DATABASE':
-        return colher(
-          await db.database.findMany({ where: { id: { in: ids } }, select: { id: true } }),
-        );
-      case 'RECORD':
-        return colher(
-          await db.record.findMany({ where: { id: { in: ids } }, select: { id: true } }),
-        );
-      default: {
-        // Exaustividade verificada em COMPILAÇÃO: um tipo novo na allowlist sem tratamento aqui quebra
-        // o build, em vez de silenciosamente passar a aceitar referência não validada.
-        const _exaustivo: never = tipo;
-        return _exaustivo;
-      }
-    }
   }
 
   /** Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. */
