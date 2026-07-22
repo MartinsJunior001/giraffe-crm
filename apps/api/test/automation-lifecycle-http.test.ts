@@ -50,7 +50,7 @@ class PrincipalDeTeste implements PrincipalProvider {
 const CONFIG = {
   quando: { tipo: 'CARD_CREATED' },
   condicoes: [],
-  entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+  entao: [{ tipo: 'CARD_FINALIZE', parametros: {} }],
 };
 
 interface AutoResp {
@@ -235,7 +235,7 @@ describe('AC-4 — edição de Automação ATIVA cria nova versão; snapshot nã
     await req('POST', `/pipes/${pipeId}/automations/${a.id}/activate`, adminConta); // v1
 
     const edit = await req('PATCH', `/pipes/${pipeId}/automations/${a.id}`, adminConta, {
-      entao: [{ tipo: 'FINALIZAR_CARD', parametros: {} }],
+      entao: [{ tipo: 'CARD_ARCHIVE', parametros: {} }],
     });
     expect(edit.status).toBe(200);
     const editada = (await edit.json()) as AutoResp;
@@ -246,15 +246,15 @@ describe('AC-4 — edição de Automação ATIVA cria nova versão; snapshot nã
     ).json()) as { version: number }[];
     expect(versoes.map((v) => v.version)).toEqual([1, 2]);
 
-    // A v1 congelada preserva a config ORIGINAL (MOVER_CARD), não a editada.
+    // A v1 congelada preserva a config ORIGINAL (CARD_FINALIZE), não a editada.
     const v1 = (await (
       await req('GET', `/pipes/${pipeId}/automations/${a.id}/versions/1`, adminConta)
     ).json()) as { snapshot: { entao: { tipo: string }[] } };
-    expect(v1.snapshot.entao[0]?.tipo).toBe('MOVER_CARD');
+    expect(v1.snapshot.entao[0]?.tipo).toBe('CARD_FINALIZE');
     const v2 = (await (
       await req('GET', `/pipes/${pipeId}/automations/${a.id}/versions/2`, adminConta)
     ).json()) as { snapshot: { entao: { tipo: string }[] } };
-    expect(v2.snapshot.entao[0]?.tipo).toBe('FINALIZAR_CARD');
+    expect(v2.snapshot.entao[0]?.tipo).toBe('CARD_ARCHIVE');
   });
 
   it('editar uma INATIVA reescreve o rascunho SEM criar versão', async () => {

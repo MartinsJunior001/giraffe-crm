@@ -23,6 +23,7 @@ import {
   CondicaoForaDoCatalogoError,
   exigirCondicoesNoCatalogo,
 } from './conditions/condition-catalog';
+import { AcaoForaDoCatalogoError, exigirAcoesNoCatalogo } from './actions/action-catalog';
 
 /**
  * O que uma Automação expõe pela API interna. `orgId` NÃO sai — fronteira interna, não dado de
@@ -221,10 +222,11 @@ export class AutomationsService {
 
   /**
    * Traduz a falha do núcleo puro em 400 sanitizado — motivo estrutural, sem eco do payload. Além da estrutura
-   * (4.1), impõe o CATÁLOGO de Eventos (Story 4.3, CA1): `quando.tipo` fora do núcleo selecionável → 400; e o
-   * CATÁLOGO de Condições (Story 4.4): Condição de tipo/operador/valor fora do catálogo → 400. O enforcement
-   * vive AQUI, no serviço, e não no núcleo estrutural da 4.1 (que aceita qualquer texto por desenho) — assim os
-   * catálogos evoluem sem tocar o contrato puro da 4.1.
+   * (4.1), impõe o CATÁLOGO de Eventos (Story 4.3, CA1): `quando.tipo` fora do núcleo selecionável → 400; o
+   * CATÁLOGO de Condições (Story 4.4): Condição de tipo/operador/valor fora do catálogo → 400; e o CATÁLOGO de
+   * Ações (Story 4.5): Ação de tipo/refs/parâmetros/alvo fora do catálogo → 400 `ACAO_FORA_DO_CATALOGO`. O
+   * enforcement vive AQUI, no serviço, e não no núcleo estrutural da 4.1 (que aceita qualquer texto por desenho)
+   * — assim os catálogos evoluem sem tocar o contrato puro da 4.1.
    */
   private validar(config: {
     quando: unknown;
@@ -235,6 +237,7 @@ export class AutomationsService {
       const validada = validarConfiguracao(config);
       exigirEventoNoCatalogo(validada.quando.tipo);
       exigirCondicoesNoCatalogo(validada.condicoes);
+      exigirAcoesNoCatalogo(validada.entao);
       return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
@@ -248,6 +251,9 @@ export class AutomationsService {
           motivo: 'CONDICAO_FORA_DO_CATALOGO',
           detalhe: erro.motivo,
         });
+      }
+      if (erro instanceof AcaoForaDoCatalogoError) {
+        throw new BadRequestException({ motivo: 'ACAO_FORA_DO_CATALOGO', detalhe: erro.motivo });
       }
       throw erro;
     }

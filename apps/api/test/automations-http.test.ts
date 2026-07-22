@@ -45,7 +45,7 @@ class PrincipalDeTeste implements PrincipalProvider {
 const CONFIG_VALIDA = {
   quando: { tipo: 'CARD_CREATED' },
   condicoes: [],
-  entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+  entao: [{ tipo: 'CARD_FINALIZE', parametros: {} }],
 };
 
 interface AutomacaoResp {
@@ -195,7 +195,7 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
       {
         name: 'x',
         quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PHASE', id: 'Triagem' }] },
-        entao: [{ tipo: 'A' }],
+        entao: [{ tipo: 'CARD_FINALIZE' }],
       },
     ],
   ])('400 em: %s', async (_nome, corpo) => {
@@ -235,7 +235,7 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
       name: 'x',
       quando: { tipo },
       condicoes: [],
-      entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+      entao: [{ tipo: 'CARD_FINALIZE', parametros: {} }],
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { motivo?: string }).motivo).toBe('EVENTO_FORA_DO_CATALOGO');
@@ -258,10 +258,34 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
       name: 'x',
       quando: { tipo: 'CARD_CREATED' },
       condicoes: [cond],
-      entao: [{ tipo: 'MOVER_CARD', parametros: {} }],
+      entao: [{ tipo: 'CARD_FINALIZE', parametros: {} }],
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { motivo?: string }).motivo).toBe('CONDICAO_FORA_DO_CATALOGO');
+  });
+
+  // Story 4.5 (a): o catálogo de Ações é fixo. Ação de tipo/refs/parâmetros/alvo fora do catálogo → 400.
+  it.each([
+    ['tipo de Ação desconhecido', { tipo: 'ACAO_INVENTADA', parametros: {} }],
+    ['mover sem a Fase de destino (referência exigida)', { tipo: 'CARD_MOVE', parametros: {} }],
+    [
+      'finalizar com parâmetro forjado (anti-mass-assignment)',
+      { tipo: 'CARD_FINALIZE', parametros: { forjado: 1 } },
+    ],
+    [
+      'editar Registro com alvo não-determinístico (modo desconhecido)',
+      { tipo: 'RECORD_EDIT', parametros: { alvo: { modo: 'TODOS' } } },
+    ],
+  ])('400 ACAO_FORA_DO_CATALOGO: %s', async (_nome, acao) => {
+    const pipeId = await criarPipe(ORG_A);
+    const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
+      name: 'x',
+      quando: { tipo: 'CARD_CREATED' },
+      condicoes: [],
+      entao: [acao],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { motivo?: string }).motivo).toBe('ACAO_FORA_DO_CATALOGO');
   });
 });
 
@@ -354,7 +378,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
     const res = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'x',
       quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PHASE', id: fase.id }] },
-      entao: [{ tipo: 'A' }],
+      entao: [{ tipo: 'CARD_FINALIZE' }],
     });
     expect(res.status).toBe(400);
     expect((await res.json()) as { motivo?: string }).toMatchObject({
@@ -367,7 +391,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
     const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
       name: 'x',
       quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'RECORD', id: randomUUID() }] },
-      entao: [{ tipo: 'A' }],
+      entao: [{ tipo: 'CARD_FINALIZE' }],
     });
     expect(res.status).toBe(400);
   });
@@ -379,7 +403,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
     const ok = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'proprio',
       quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PIPE', id: pipeDono }] },
-      entao: [{ tipo: 'A' }],
+      entao: [{ tipo: 'CARD_FINALIZE' }],
     });
     expect(ok.status).toBe(201);
     automacoesCriadas.push(((await ok.json()) as AutomacaoResp).id);
@@ -387,7 +411,7 @@ describe('F-A4 — referências relidas sob RLS: nenhum ID cross-tenant é persi
     const nao = await req('POST', `/pipes/${pipeDono}/automations`, ANA, {
       name: 'alheio',
       quando: { tipo: 'CARD_CREATED', refs: [{ tipo: 'PIPE', id: outro }] },
-      entao: [{ tipo: 'A' }],
+      entao: [{ tipo: 'CARD_FINALIZE' }],
     });
     expect(nao.status).toBe(400);
   });
