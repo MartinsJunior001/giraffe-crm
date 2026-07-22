@@ -334,7 +334,7 @@ Concluída uma ação relevante, informe objetivamente: Épico e Story; estado r
 
 A autonomia é **permanente até o MVP estar aprovado em staging**: trabalhe continuamente pela ordem de dependências sem aguardar "continue" a cada etapa. **Só a liberação em produção** exige a aprovação consolidada única de go/no-go — antes dela, entregue estado do MVP, testes/CI, segurança/LGPD, migrations/rollback, backup, observabilidade, smoke de staging, riscos residuais e plano de implantação/reversão.
 
-**Decisão autônoma.** Faltando uma decisão *interna* (não de produto), escolha a alternativa recomendada dentro do escopo pela **Ordem de autoridade** (`origin/main` → CLAUDE.md → decisões registradas → PRD/UX/Arquitetura → Épico/Story → Spec Kit/AC → padrões do código → menor risco), prevalecendo a fonte mais específica e mais recente **formalmente integrada**. Descarte qualquer opção que amplie escopo além do MVP ou crie dívida crítica/atalho inseguro. Registre e siga sem esperar aprovação:
+**Decisão autônoma.** Faltando uma decisão _interna_ (não de produto), escolha a alternativa recomendada dentro do escopo pela **Ordem de autoridade** (`origin/main` → CLAUDE.md → decisões registradas → PRD/UX/Arquitetura → Épico/Story → Spec Kit/AC → padrões do código → menor risco), prevalecendo a fonte mais específica e mais recente **formalmente integrada**. Descarte qualquer opção que amplie escopo além do MVP ou crie dívida crítica/atalho inseguro. Registre e siga sem esperar aprovação:
 
 ```
 AUTONOMOUS_DECISION
