@@ -5,6 +5,7 @@ import { OrganizationsController } from './organizations.controller';
 import { MembersController } from './members/members.controller';
 import { MembershipRoleService } from './members/membership-role.service';
 import { MembershipStateService } from './members/membership-state.service';
+import { MembershipRemovalService } from './members/membership-removal.service';
 import { FakeTransactionalEmailAdapter } from './invites/fake-transactional-email.adapter';
 import { InviteAcceptController } from './invites/invite-accept.controller';
 import { InviteAcceptRateLimit } from './invites/invite-accept-rate-limit';
@@ -82,6 +83,9 @@ const inviteNotificationProvider = {
     // Story 8.5 — suspensão/reativação da Membership. Reusa o mesmo substrato (StepUp/AbilityCache) e
     // as funções PURAS do contrato de Membership da 2.10 (import direto, sem acoplar módulos).
     MembershipStateService,
+    // Story 8.6 — remoção e saída voluntária. Mesmo substrato; consome o contrato 2.10
+    // (`aoAlterarMembership('REMOVED', …)`) para o impacto sobre recursos. Sem novo import de módulo.
+    MembershipRemovalService,
   ],
 })
 export class OrganizationsModule {}

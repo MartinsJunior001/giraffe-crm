@@ -4,6 +4,7 @@ import { Requer } from '../../kernel/authz/requer.decorator';
 import { exigirUuid, parseAlterarPapel } from './membership-role.dto';
 import { type AlteracaoPapelVisao, MembershipRoleService } from './membership-role.service';
 import { type TransicaoEstadoVisao, MembershipStateService } from './membership-state.service';
+import { type RemocaoVisao, MembershipRemovalService } from './membership-removal.service';
 
 /**
  * Administração de Membros da Organização (Épico 8). Story 8.4: alteração de papel.
@@ -24,7 +25,24 @@ export class MembersController {
   constructor(
     private readonly membershipRole: MembershipRoleService,
     private readonly membershipState: MembershipStateService,
+    private readonly membershipRemoval: MembershipRemovalService,
   ) {}
+
+  /**
+   * Saída voluntária (Story 8.6). O PRÓPRIO usuário encerra a SUA Membership na Organização do
+   * contexto — `ACTIVE`/`SUSPENDED → REMOVED`. Guard `ler Organizacao` (piso de toda Membership
+   * ativa): não é operação de Admin, é o usuário saindo de si mesmo. Nenhum `membershipId` no cliente —
+   * o alvo é derivado do contexto. Sem corpo. `200` (transição terminal), não `201`. Step-up e proteção
+   * do último Admin resolvidos no serviço a partir da sessão validada.
+   *
+   * Declarada ANTES das rotas parametrizadas para não haver ambiguidade de match com `:membershipId`.
+   */
+  @Requer('ler', 'Organizacao')
+  @Post('me/leave')
+  @HttpCode(200)
+  async sair(@Req() req: ExpressRequest): Promise<RemocaoVisao> {
+    return this.membershipRemoval.sair(req.headers);
+  }
 
   @Requer('administrar', 'Organizacao')
   @Patch(':membershipId/role')
@@ -65,5 +83,23 @@ export class MembersController {
   ): Promise<TransicaoEstadoVisao> {
     const id = exigirUuid(membershipId);
     return this.membershipState.reativar(id, req.headers);
+  }
+
+  /**
+   * Remoção administrativa (Story 8.6). O Admin da Org encerra a Membership do alvo —
+   * `ACTIVE`/`SUSPENDED → REMOVED`, terminal. Guard `administrar Organizacao` (só Admin na CASL 1.6).
+   * Sem corpo; o alvo é o `membershipId` na Org corrente por RLS (nenhum `orgId` do cliente). `200`
+   * (transição terminal). Step-up, proteção do último Admin e impacto sobre recursos (revogação de
+   * `CardGrant`/`CardResponsavel`) resolvidos no serviço.
+   */
+  @Requer('administrar', 'Organizacao')
+  @Post(':membershipId/remove')
+  @HttpCode(200)
+  async remover(
+    @Param('membershipId') membershipId: string,
+    @Req() req: ExpressRequest,
+  ): Promise<RemocaoVisao> {
+    const id = exigirUuid(membershipId);
+    return this.membershipRemoval.remover(id, req.headers);
   }
 }

@@ -42,16 +42,22 @@ const logger = {
 } as unknown as PinoLogger;
 
 const databaseUrl = process.env.DATABASE_URL;
+const migratorUrl = process.env.MIGRATION_DATABASE_URL;
 
-let prisma: PrismaClient;
+let prisma: PrismaClient; // giraffe_app (runtime)
+// giraffe_migrator (dono) — SÓ para faxina: desde a Story 8.6 o runtime não tem DELETE em "Membership"
+// (REVOKE — DEB-MEMBERSHIP-EVENT-CASCADE), então a limpeza do vínculo descartável é feita pelo dono.
+let migrator: PrismaClient;
 let resolver: OrgContextResolver;
 
 beforeAll(async () => {
   if (!databaseUrl) {
     throw new Error('DATABASE_URL ausente: os testes de contexto exigem um PostgreSQL real.');
   }
+  if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
-  await prisma.$connect();
+  migrator = new PrismaClient({ datasourceUrl: migratorUrl });
+  await Promise.all([prisma.$connect(), migrator.$connect()]);
 
   // O resolvedor só usa o client como client. Construí-lo direto — em vez de subir o container
   // de DI inteiro — mantém este arquivo focado na REGRA, não na fiação.
@@ -59,7 +65,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma?.$disconnect();
+  await Promise.all([prisma?.$disconnect(), migrator?.$disconnect()]);
 });
 
 /** Isola os eventos de cada teste. */
@@ -145,7 +151,10 @@ describe('negação', () => {
       await expect(resolver.resolver(HEITOR)).rejects.toBeInstanceOf(ForbiddenException);
     } finally {
       // A Org C tem de voltar VAZIA: o vínculo é só o insumo deste teste, não fixture de ninguém.
-      await dbC.membership.deleteMany({ where: { accountId: HEITOR, orgId: ORG_C } });
+      // Faxina pelo DONO (o runtime não tem mais DELETE em Membership — Story 8.6), sob contexto.
+      await withTenantContext(migrator, { orgId: ORG_C }, semLog).membership.deleteMany({
+        where: { accountId: HEITOR, orgId: ORG_C },
+      });
     }
   });
 
