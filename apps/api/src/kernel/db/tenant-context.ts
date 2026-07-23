@@ -77,6 +77,12 @@ const MODELOS_AUDITADOS = new Set([
   'Task',
   'TaskHistory',
   'TaskOverdueOccurrence',
+  // Story 5.2. Solicitação e sua trilha. `Solicitacao` (ledger com UPDATE column-scoped) e
+  // `SolicitacaoHistory` (append-only) entram na trilha (FR-214), inclusive a tentativa negada por RLS. A tx
+  // interativa das mutações audita manualmente (não passa pela extensão); escritas fora dela e uma inserção
+  // cruzada por engano ficam cobertas. Twin da 5.1, sem eixo temporal (não há ocorrência de vencimento).
+  'Solicitacao',
+  'SolicitacaoHistory',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

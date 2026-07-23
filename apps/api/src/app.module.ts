@@ -18,6 +18,7 @@ import { FileEventDispatcher } from './file-authz/file-event.dispatcher';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PipesModule } from './pipes/pipes.module';
 import { TasksModule } from './tasks/tasks.module';
+import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -98,6 +99,8 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     DatabasesModule,
     // Épico 5 — Tarefas (Story 5.1). Entidade distinta; reusa a autz por Pipe (funções puras de `pipe-authz`).
     TasksModule,
+    // Épico 5 — Solicitações (Story 5.2). Twin da 5.1 sem eixo temporal; mesma autz por Pipe.
+    SolicitacoesModule,
     // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
     // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
     FilesModule.register(

@@ -352,6 +352,8 @@ model Organization {
   tasks                  Task[]
   taskHistories          TaskHistory[]
   taskOverdueOccurrences TaskOverdueOccurrence[]
+  solicitacoes           Solicitacao[]
+  solicitacaoHistories   SolicitacaoHistory[]
 
   @@map("Organization")
 }
@@ -452,6 +454,7 @@ model Pipe {
   automations    Automation[]
   domainEvents   DomainEvent[]
   tasks          Task[]
+  solicitacoes   Solicitacao[]
 
   /// Chave-alvo da FK COMPOSTA tenant-safe (Story 4.1, F-A1). Redundante como IDENTIDADE (`id` já é PK),
   /// mas necessária como DESTINO: é ela que permite a um dependente referenciar o PAR `(orgId, id)` e
@@ -865,6 +868,7 @@ model Card {
   movementEvents   MovementEvent[]
   recordLinks      CardRecordLink[]
   tasks            Task[]
+  solicitacoes     Solicitacao[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -2033,4 +2037,97 @@ model TaskOverdueOccurrence {
   @@unique([orgId, taskId, dueVersion])
   @@index([orgId, taskId])
   @@map("TaskOverdueOccurrence")
+}
+
+/// Estado OPERACIONAL da Solicitação (Story 5.2, RN-091). Twin da Tarefa (5.1), mas com a semântica de
+/// Solicitação: `ABERTA`/`RESOLVIDA` (resolver→RESOLVIDA; reabrir→ABERTA). SEM mecanismo temporal — não há
+/// prazo, `atrasada`, scheduler nem ocorrência de vencimento (diferença central frente à 5.1).
+enum SolicitacaoLifecycleState {
+  ABERTA
+  RESOLVIDA
+}
+
+/// Estado de ARQUIVAMENTO da Solicitação (Story 5.2, §1546). Eixo SEPARADO do operacional: uma Solicitação
+/// RESOLVIDA pode ser arquivada e restaurada preservando o estado operacional. Arquivar bloqueia toda
+/// escrita (mantém leitura autorizada); restaurar preserva identidade/Pipe/Card/Responsável/anexos.
+enum SolicitacaoArchiveState {
+  ATIVA
+  ARQUIVADA
+}
+
+/// Solicitacao — a Solicitação (Story 5.2, FR-28). Dado operacional org-owned (AD-10). **Twin da Tarefa
+/// (5.1) SEM eixo temporal.** Pertence a EXATAMENTE 1 Organização e 1 Pipe; associada a 0..1 Card do MESMO
+/// Pipe/Org (a associação NÃO funde recursos nem amplia permissões — acesso à Solicitação ≠ acesso ao Card).
+/// Entidade DISTINTA (`Solicitacao ≠ Task ≠ Card`); reusa PADRÕES/autz, nunca as entidades.
+///
+/// **Dois eixos independentes:** `lifecycleState` (ABERTA/RESOLVIDA) e `archiveState` (ATIVA/ARQUIVADA).
+///
+/// **Responsável (0..1, opcional):** `responsavelMembershipId` é referência-por-id a uma Membership ATIVA da
+/// mesma Org, SEM FK (isolada por RLS+orgId, como `CardResponsavel`/`actorId`; FK composta a Membership é
+/// inviável — `orgId` NOT NULL compartilhado impede SetNull, Cascade quebraria a exclusão de Conta/LGPD).
+/// `creatorMembershipId` idem (autoria preservada, como `actorId`). A validade é recomputada na leitura e
+/// reconciliada pelo contrato E8 (suspensão/remoção esvazia).
+///
+/// **Isolamento pelo BANCO:** RLS ENABLE+FORCE, WITH CHECK no INSERT e UPDATE. **GRANT como fronteira:**
+/// SELECT/INSERT + **UPDATE column-scoped** (título/descrição/Responsável/estados/cardId/updatedAt) — **sem**
+/// `orgId`/`pipeId`/`creatorMembershipId`, **sem DELETE** (arquivar/resolver = state). FK COMPOSTA tenant-safe
+/// `(orgId,pipeId)→Pipe` e `(orgId,cardId)→Card` (evita id alheio por bypass de FK). Reusa o índice
+/// `Card_orgId_id_key` já criado pela 5.1 e o par `(orgId,id)` de `Pipe` (4.1).
+model Solicitacao {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  orgId                   String                    @db.Uuid
+  pipeId                  String                    @db.Uuid
+  /// Card associado (0..1), do MESMO Pipe/Org. Vincular/desvincular é operação (UPDATE column-scoped).
+  cardId                  String?                   @db.Uuid
+  title                   String
+  description             String?
+  /// Responsável: referência-por-id a uma Membership ATIVA da mesma Org (sem FK — ver doc do modelo). 0..1.
+  responsavelMembershipId String?                   @db.Uuid
+  /// Autoria preservada (referência-por-id, como `actorId`). Nunca reescrita (fora do GRANT de UPDATE).
+  creatorMembershipId     String?                   @db.Uuid
+  lifecycleState          SolicitacaoLifecycleState @default(ABERTA)
+  archiveState            SolicitacaoArchiveState   @default(ATIVA)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  organization Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,pipeId)→Pipe(orgId,id)`. Cascade: a Solicitação é dado do Pipe.
+  pipe         Pipe                 @relation(fields: [orgId, pipeId], references: [orgId, id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,cardId)→Card(orgId,id)` — nulável (MATCH SIMPLE não checa com NULL).
+  card         Card?                @relation(fields: [orgId, cardId], references: [orgId, id], onDelete: Cascade)
+  history      SolicitacaoHistory[]
+
+  /// Alvo da FK COMPOSTA tenant-safe de `SolicitacaoHistory`.
+  @@unique([orgId, id])
+  /// Listagem operacional: Solicitações de um Pipe, por estado.
+  @@index([orgId, pipeId, lifecycleState])
+  /// Consulta por Responsável (reatribuição E8; painéis futuros).
+  @@index([orgId, responsavelMembershipId])
+  /// Consulta por Card associado.
+  @@index([orgId, cardId])
+  @@map("Solicitacao")
+}
+
+/// SolicitacaoHistory — trilha de eventos da Solicitação (Story 5.2). Espelho estrutural de `TaskHistory`,
+/// domínio DISTINTO. **Append-only e IMUTÁVEL**: GRANT só SELECT+INSERT (sem UPDATE/DELETE). Cada mutação da
+/// Solicitação escreve seu evento na MESMA transação (não há mudança sem evento — AD-13).
+model SolicitacaoHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  solicitacaoId String   @db.Uuid
+  /// Vocabulário do evento: CREATED, EDITED, RESPONSAVEL_ASSIGNED/CHANGED/REMOVED, RESOLVED, REOPENED,
+  /// ARCHIVED, RESTORED, CARD_LINKED, CARD_UNLINKED, FILE_ATTACHED, FILE_REMOVED. String — estável.
+  type          String
+  /// Resumo legível do evento (sem PII desnecessária).
+  summary       String
+  /// Ator que originou o evento (quando disponível).
+  actorId       String?  @db.Uuid
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,solicitacaoId)→Solicitacao(orgId,id)`. Cascade: fato derivado.
+  solicitacao  Solicitacao  @relation(fields: [orgId, solicitacaoId], references: [orgId, id], onDelete: Cascade)
+
+  @@index([orgId, solicitacaoId, createdAt])
+  @@map("SolicitacaoHistory")
 }

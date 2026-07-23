@@ -32,6 +32,8 @@ export interface RemocaoVisao {
   removedResponsavelDe: readonly string[];
   /** Tarefas (5.1) cujo Responsável foi esvaziado pela reconciliação (por taskId). */
   removedTaskResponsavelDe: readonly string[];
+  /** Solicitações (5.2) cujo Responsável foi esvaziado pela reconciliação (por solicitacaoId). */
+  removedRequestResponsavelDe: readonly string[];
 }
 
 /** Conflito de concorrência (→ 409): P2002/P2028 da tx interativa sob contenção. */
@@ -174,6 +176,7 @@ export class MembershipRemovalService {
         revokedCardGrants: [],
         removedResponsavelDe: [],
         removedTaskResponsavelDe: [],
+        removedRequestResponsavelDe: [],
       };
     }
 
@@ -224,6 +227,13 @@ export class MembershipRemovalService {
           select: { id: true },
         });
         const taskResponsavelDe = tarefasResponsavel.map((t) => t.id);
+        // Solicitações (5.2) em que o alvo é Responsável — esvaziadas ao encerrar (referência-por-id inválida
+        // não pode restar em silêncio, §1546).
+        const solicitacoesResponsavel = await tx.solicitacao.findMany({
+          where: { responsavelMembershipId: alvo.id, orgId: contexto.orgId },
+          select: { id: true },
+        });
+        const requestResponsavelDe = solicitacoesResponsavel.map((s) => s.id);
 
         // Preflight (SC-2106): hoje vacuamente verdadeiro. Bloqueio → aborta sem alteração parcial.
         const pf = preflightEncerramentoMembership({ responsavelDe });
@@ -234,6 +244,7 @@ export class MembershipRemovalService {
           grantsAtivos: grants.map((g) => g.id),
           responsavelDe,
           taskResponsavelDe,
+          requestResponsavelDe,
         });
 
         // Guarda otimista: só encerra se o estado ainda é o que a decisão assumiu.
@@ -273,6 +284,17 @@ export class MembershipRemovalService {
             data: { responsavelMembershipId: null },
           });
         }
+        // Esvazia o Responsável das Solicitações (5.2) do alvo na MESMA transação (contrato de reatribuição).
+        if (plano.removerRequestResponsavelDe.length > 0) {
+          await tx.solicitacao.updateMany({
+            where: {
+              responsavelMembershipId: alvo.id,
+              id: { in: [...plano.removerRequestResponsavelDe] },
+              orgId: contexto.orgId,
+            },
+            data: { responsavelMembershipId: null },
+          });
+        }
 
         // D-3: LIMPA o ponteiro de Organização ativa das sessões do alvo que apontam para a Org
         // afetada — vale para a remoção administrativa E para a saída voluntária (nesta, o alvo é o
@@ -305,6 +327,7 @@ export class MembershipRemovalService {
               revokedCardGrants: [...plano.revogarGrants],
               removedResponsavelDe: [...plano.removerResponsavelDe],
               removedTaskResponsavelDe: [...plano.removerTaskResponsavelDe],
+              removedRequestResponsavelDe: [...plano.removerRequestResponsavelDe],
               reatribuir: [...plano.reatribuir],
             },
           },
@@ -317,6 +340,7 @@ export class MembershipRemovalService {
           revogados: plano.revogarGrants,
           responsavelRemovido: plano.removerResponsavelDe,
           taskResponsavelRemovido: plano.removerTaskResponsavelDe,
+          requestResponsavelRemovido: plano.removerRequestResponsavelDe,
         };
       });
     } catch (err) {
@@ -369,6 +393,7 @@ export class MembershipRemovalService {
           revokedCardGrants: [],
           removedResponsavelDe: [],
           removedTaskResponsavelDe: [],
+          removedRequestResponsavelDe: [],
         };
       }
       throw new ConflictException('o estado do membro mudou concorrentemente; reconsulte e repita');
@@ -386,6 +411,8 @@ export class MembershipRemovalService {
     if (resultado.responsavelRemovido.length > 0)
       this.auditar(contexto, 'update', 'CardResponsavel');
     if (resultado.taskResponsavelRemovido.length > 0) this.auditar(contexto, 'update', 'Task');
+    if (resultado.requestResponsavelRemovido.length > 0)
+      this.auditar(contexto, 'update', 'Solicitacao');
 
     return {
       id: membershipId,
@@ -395,6 +422,7 @@ export class MembershipRemovalService {
       revokedCardGrants: resultado.revogados,
       removedResponsavelDe: resultado.responsavelRemovido,
       removedTaskResponsavelDe: resultado.taskResponsavelRemovido,
+      removedRequestResponsavelDe: resultado.requestResponsavelRemovido,
     };
   }
 
@@ -436,6 +464,7 @@ type TxResultado =
       revogados: readonly string[];
       responsavelRemovido: readonly string[];
       taskResponsavelRemovido: readonly string[];
+      requestResponsavelRemovido: readonly string[];
     }
   | { tipo: 'RECUSA'; decisao: DecisaoRemocao }
   | { tipo: 'PREFLIGHT'; bloqueios: readonly string[] }
