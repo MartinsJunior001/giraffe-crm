@@ -132,13 +132,17 @@ export class NotificationsService {
 
     const novoId = randomUUID();
     let resultado: NotificacaoRegistrada;
+    // Só é `true` quando ESTA chamada inseriu a Notificação; no reprocesso idempotente (a Notificação já
+    // existia, `skipDuplicates` inseriu 0) fica `false` — e então NÃO se audita a criação (padrão no-op).
+    let notificacaoCriada = false;
     try {
-      resultado = await this.prisma.$transaction(async (tx) => {
+      const r = await this.prisma.$transaction(async (tx) => {
         for (const p of definirContextoOrg(tx, contexto)) await p;
 
         // Conteúdo idempotente: reprocesso/concorrência -> no-op (ON CONFLICT DO NOTHING); NUNCA sobrescreve
-        // o congelado. Não usa RETURNING (createMany), então relemos o id canônico logo abaixo.
-        await tx.notification.createMany({
+        // o congelado. Não usa RETURNING (createMany), então relemos o id canônico logo abaixo. O `count`
+        // distingue INSERÇÃO real (1) de reprocesso (0) — usado para condicionar a auditoria.
+        const criacao = await tx.notification.createMany({
           data: [
             {
               id: novoId,
@@ -174,20 +178,31 @@ export class NotificationsService {
           skipDuplicates: true,
         });
 
-        return { notificacao: this.mapNotification(canonica), destinatariosCriados: count };
+        return {
+          notificacao: this.mapNotification(canonica),
+          destinatariosCriados: count,
+          notificacaoCriada: criacao.count > 0,
+        };
       });
+      notificacaoCriada = r.notificacaoCriada;
+      resultado = { notificacao: r.notificacao, destinatariosCriados: r.destinatariosCriados };
     } catch (err) {
       if (isConflito(err)) {
-        // Idempotente sob corrida remanescente: releia e devolva (nunca 500).
+        // Idempotente sob corrida remanescente: releia e devolva (nunca 500). Nada foi inserido por ESTA
+        // chamada (a tx deu rollback) — por isso não há auditoria de criação aqui.
         return this.relerRegistrada(evento.sourceEventId, evento.type);
       }
       throw err;
     }
 
+    // Audita SÓ o que foi de fato inserido AGORA (padrão idempotente-no-op do CLAUDE.md — o reprocesso não
+    // emite um falso `allowed` na trilha). O destinatário já condicionava por `count`; a Notificação idem.
     if (resultado.destinatariosCriados > 0) {
       this.auditar(contexto, 'create', 'NotificationRecipient');
     }
-    this.auditar(contexto, 'create', 'Notification');
+    if (notificacaoCriada) {
+      this.auditar(contexto, 'create', 'Notification');
+    }
     return resultado;
   }
 

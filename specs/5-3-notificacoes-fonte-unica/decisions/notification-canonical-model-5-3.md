@@ -52,6 +52,18 @@ Não há catálogo de tipos em 5.3 (é 5.6), então a allowlist é **estrutural*
 não semântica por-tipo. Prototype-pollution barrada (chaves com `_`/`__proto__` rejeitadas). `<script>` →
 `&lt;script&gt;` (provado por teste de injeção).
 
+## Débitos técnicos menores
+
+### DEB-5-3-SANITIZE-TETO-ORDEM (LOW — sem ação nesta Story)
+Em `notification-content.core.ts`, `sanitizarValorRenderizavel` aplica o teto de 500 chars **após** o
+`escaparHtml`. Num valor no limite, isso pode truncar uma entidade HTML no meio (ex.: `&amp;` → `&am`). O QA
+confirmou **sem risco de XSS** — truncar uma entidade não reintroduz marcação ativa (o resultado continua
+texto inerte; um `&am` renderiza como literal, não como tag). O Security aprovou a superfície fail-closed.
+**Não se mexe** no núcleo nesta Story (mudar a ordem reabriria a revisão de segurança de uma superfície já
+aprovada, sem ganho de risco). Se um dia importar a fidelidade visual do texto truncado, a correção é
+truncar **antes** do escape (ou por code point com reserva para a entidade) — decisão de UX, não de
+segurança. Registrado para 5.4/5.6 (superfícies de renderização).
+
 ## Consequências
 - 5.4 lê `NotificationRecipient` por `recipientMembershipId` (índice pronto), revalida a autz por
   `resourceType`/`resourceId`, aplica `availabilityState`, conta no servidor, e expõe as 3 superfícies.
