@@ -43,6 +43,8 @@ import { AutomationsController } from './automations/automations.controller';
 import { AutomationsService } from './automations/automations.service';
 import { AutomationLifecycleService } from './automations/automation-lifecycle.service';
 import { AutomationEngineService } from './automations/engine/automation-engine.service';
+import { ExecutionsController } from './automations/executions/executions.controller';
+import { ExecutionsReadService } from './automations/executions/executions-read.service';
 import { PipesController } from './pipes.controller';
 import { PipesService } from './pipes.service';
 
@@ -73,7 +75,10 @@ import { PipesService } from './pipes.service';
  * `CardPhaseEntryController`/`CardPhaseEntryReadService` — leitura da base temporal do Card). A referência de
  * entrada (`CardPhaseEntry`, append-only imutável) é gravada na criação do Card pelo helper compartilhado
  * `registrarEntradaNaFase`, na MESMA transação (submissão interna 2.7 e conversão pública 2.8); o snapshot da
- * config congela os marcos na entrada (D-OA1=A — sem recálculo retroativo silencioso). Story 2.14: movimentação
+ * config congela os marcos na entrada (D-OA1=A — sem recálculo retroativo silencioso). Story 4.8: Trilha de
+ * Execuções (`ExecutionsController`/`ExecutionsReadService`) — read-side PURO sobre `AutomationExecution` (4.6) +
+ * `AutomationActionResult` + metadados de cadeia (4.7), sanitizado (allowlist AD-30) e autorizado por operar o
+ * Pipe (Viewer/Convidado 403; Membro restrito vê só os recursos que acessa); SEM migration/GRANT novo. Story 2.14: movimentação
  * do Card entre Fases (`CardMovementController`/`CardMovementService`) — o 2º UPDATE de `Card` em runtime,
  * column-scoped a `phaseId`; mover exige `exigirMoverCard` (operar + `podeMover`), roda o preflight puro
  * (`transition-preflight`) e, sem bloqueio, faz UPDATE `phaseId` + reentrada (`CardPhaseEntry`, origin=MOVE, via
@@ -104,6 +109,7 @@ import { PipesService } from './pipes.service';
     PublicConfigController,
     CardFilesController,
     AutomationsController,
+    ExecutionsController,
   ],
   providers: [
     PipesService,
@@ -131,6 +137,7 @@ import { PipesService } from './pipes.service';
     AutomationsService,
     AutomationLifecycleService,
     AutomationEngineService,
+    ExecutionsReadService,
   ],
   // Story 3.3: o Form Builder é canônico (INV-FORM-01). Estes serviços são exportados para que o módulo
   // Databases (que importa PipesModule) monte/evolua/publique o Formulário de Database SEM um segundo builder.
