@@ -116,7 +116,7 @@ development_status:
   epic-3-retrospective: optional
 
   # ===== Wave 5 — Épico 4: Automações internas =====
-  epic-4: in-progress
+  epic-4: done
   4-1-modelo-escopo-e-referencias-da-automacao: done
   4-2-ciclo-de-vida-e-gestao-da-automacao: done
   4-3-catalogo-de-eventos-gatilhos: done
@@ -125,7 +125,7 @@ development_status:
   4-6-motor-de-disparo-e-avaliacao: done
   4-7-encadeamento-e-prevencao-de-ciclos: done
   4-8-trilha-de-execucoes: done
-  4-9-contrato-de-extensao-de-acoes-e-referencias: backlog
+  4-9-contrato-de-extensao-de-acoes-e-referencias: done
   epic-4-retrospective: optional
 
   # ===== Wave 6 — Épico 5: Tarefas, Solicitações e Notificações =====
