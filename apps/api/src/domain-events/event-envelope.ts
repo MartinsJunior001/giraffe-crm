@@ -191,7 +191,9 @@ export function montarEnvelope(dados: DadosEvento): EnvelopeEvento {
     executionChainId: dados.executionChainId ?? null,
     // Fail-closed: profundidade não-numérica/negativa vira 0 (a barreira do motor reavalia com o limite real).
     chainDepth:
-      typeof dados.chainDepth === 'number' && Number.isFinite(dados.chainDepth) && dados.chainDepth > 0
+      typeof dados.chainDepth === 'number' &&
+      Number.isFinite(dados.chainDepth) &&
+      dados.chainDepth > 0
         ? Math.floor(dados.chainDepth)
         : 0,
     payload: minimizarPayload(dados.payload),

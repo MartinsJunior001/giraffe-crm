@@ -297,7 +297,13 @@ export class AutomationEngineService {
     }
     try {
       await db.automationChainVisit.create({
-        data: { orgId, executionChainId: chainId, signature: assinatura, eventId, executionId: execId },
+        data: {
+          orgId,
+          executionChainId: chainId,
+          signature: assinatura,
+          eventId,
+          executionId: execId,
+        },
       });
       return null;
     } catch (err) {

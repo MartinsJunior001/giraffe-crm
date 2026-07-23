@@ -35,7 +35,13 @@ const execucoes: { id: string; orgId: string }[] = [];
 async function criarVisita(orgId: string, chainId: string, signature: string): Promise<void> {
   const db = withTenantContext(prisma, { orgId }, semLog);
   await db.automationChainVisit.create({
-    data: { orgId, executionChainId: chainId, signature, eventId: randomUUID(), executionId: randomUUID() },
+    data: {
+      orgId,
+      executionChainId: chainId,
+      signature,
+      eventId: randomUUID(),
+      executionId: randomUUID(),
+    },
   });
   visitas.push({ chainId, orgId });
 }
@@ -78,7 +84,8 @@ async function criarExecucao(orgId: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  if (!databaseUrl) throw new Error('DATABASE_URL ausente: os testes de RLS de 4.7 exigem um PostgreSQL real.');
+  if (!databaseUrl)
+    throw new Error('DATABASE_URL ausente: os testes de RLS de 4.7 exigem um PostgreSQL real.');
   if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
@@ -184,7 +191,9 @@ describe('(g) a cadeia é POR ORGANIZAÇÃO — nunca cruza tenant', () => {
     const chainId = randomUUID();
     await criarVisita(ORG_C, chainId, `sig-${randomUUID()}`);
     const dbA = withTenantContext(prisma, { orgId: ORG_A }, semLog);
-    expect(await dbA.automationChainVisit.findMany({ where: { executionChainId: chainId } })).toEqual([]);
+    expect(
+      await dbA.automationChainVisit.findMany({ where: { executionChainId: chainId } }),
+    ).toEqual([]);
   });
 
   it('sem contexto de Organização, nada é visível (deny-by-default)', async () => {

@@ -24,11 +24,7 @@ import { MAX_ATTEMPTS } from './retry-policy.core';
 
 /** Motivo SANITIZADO da barreira de cadeia (AD-30) — vira `lastErrorCode` da Execução barrada e o que a 4.8 lê. */
 export type MotivoBarreiraCadeia =
-  | 'DEPTH_EXCEEDED'
-  | 'CYCLE_DETECTED'
-  | 'CHAIN_TIMEOUT'
-  | 'ACTION_TIMEOUT'
-  | 'EXECUTION_TIMEOUT';
+  'DEPTH_EXCEEDED' | 'CYCLE_DETECTED' | 'CHAIN_TIMEOUT' | 'ACTION_TIMEOUT' | 'EXECUTION_TIMEOUT';
 
 /**
  * Profundidade MÁXIMA da cadeia (número de níveis de encadeamento). A raiz (Evento externo, fora do motor) é

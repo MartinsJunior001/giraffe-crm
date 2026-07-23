@@ -32,7 +32,9 @@ describe('assinatura determinística de visita', () => {
 
   it('DIFERE por Automação, por tipo de Evento e por recurso alvo (sem falso positivo)', () => {
     const base = derivarAssinaturaVisita(AUTO, 1, 'RECORD_CREATED', RES);
-    expect(derivarAssinaturaVisita('dddddddd-4444-4444-8444-dddddddddddd', 1, 'RECORD_CREATED', RES)).not.toBe(base);
+    expect(
+      derivarAssinaturaVisita('dddddddd-4444-4444-8444-dddddddddddd', 1, 'RECORD_CREATED', RES),
+    ).not.toBe(base);
     expect(derivarAssinaturaVisita(AUTO, 2, 'RECORD_CREATED', RES)).not.toBe(base); // versão distinta
     expect(derivarAssinaturaVisita(AUTO, 1, 'CARD_CREATED', RES)).not.toBe(base);
     expect(derivarAssinaturaVisita(AUTO, 1, 'RECORD_CREATED', OUTRO_RES)).not.toBe(base); // alvo distinto
@@ -59,10 +61,14 @@ describe('limites de profundidade e duração', () => {
 
   it('excedeuDuracaoExecucao/Acao respeitam seus tetos', () => {
     const agora = new Date(1_000_000_000_000);
-    expect(excedeuDuracaoExecucao(new Date(agora.getTime() - MAX_EXECUTION_DURATION_MS - 1), agora)).toBe(true);
+    expect(
+      excedeuDuracaoExecucao(new Date(agora.getTime() - MAX_EXECUTION_DURATION_MS - 1), agora),
+    ).toBe(true);
     expect(excedeuDuracaoExecucao(new Date(agora.getTime() - 1), agora)).toBe(false);
     expect(excedeuDuracaoExecucao(null, agora)).toBe(false);
-    expect(excedeuDuracaoAcao(new Date(agora.getTime() - MAX_ACTION_DURATION_MS - 1), agora)).toBe(true);
+    expect(excedeuDuracaoAcao(new Date(agora.getTime() - MAX_ACTION_DURATION_MS - 1), agora)).toBe(
+      true,
+    );
     expect(excedeuDuracaoAcao(new Date(agora.getTime() - 1), agora)).toBe(false);
   });
 });

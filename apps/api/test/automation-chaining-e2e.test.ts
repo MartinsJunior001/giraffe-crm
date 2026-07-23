@@ -180,7 +180,14 @@ async function criarCard(pipeId: string, formId: string, formVersionId: string):
   });
   criados.phaseIds.push(phase.id);
   const card = await db.card.create({
-    data: { orgId: ORG_C, pipeId, phaseId: phase.id, formId, formVersionId, idempotencyKey: randomUUID() },
+    data: {
+      orgId: ORG_C,
+      pipeId,
+      phaseId: phase.id,
+      formId,
+      formVersionId,
+      idempotencyKey: randomUUID(),
+    },
     select: { id: true },
   });
   criados.cardIds.push(card.id);
@@ -188,7 +195,8 @@ async function criarCard(pipeId: string, formId: string, formVersionId: string):
 }
 
 beforeAll(async () => {
-  if (!databaseUrl) throw new Error('DATABASE_URL ausente: o E2E de encadeamento exige um PostgreSQL real.');
+  if (!databaseUrl)
+    throw new Error('DATABASE_URL ausente: o E2E de encadeamento exige um PostgreSQL real.');
   if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL ausente: a faxina exige o migrator.');
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
@@ -216,7 +224,8 @@ afterAll(async () => {
         where: { executionChainId: chainId },
         select: { id: true },
       });
-      for (const e of execs) await db.automationActionResult.deleteMany({ where: { executionId: e.id } });
+      for (const e of execs)
+        await db.automationActionResult.deleteMany({ where: { executionId: e.id } });
       await db.automationExecution.deleteMany({ where: { executionChainId: chainId } });
       await db.domainEvent.deleteMany({ where: { executionChainId: chainId } });
     }
@@ -255,15 +264,19 @@ describe('(a) encadeamento legítimo', () => {
     const alvo = await criarContaEMembership();
     await darAcessoOperacional(base.pipeId, alvo); // SC-2101: o alvo já tem acesso operacional
 
-    await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'CARD_CREATED', refs: [] },
-      [{ tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: alvo }, refs: [] }],
-    );
+    await criarAutomacaoAtiva(base.pipeId, { tipo: 'CARD_CREATED', refs: [] }, [
+      { tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: alvo }, refs: [] },
+    ]);
     const a2 = await criarAutomacaoAtiva(
       base.pipeId,
       { tipo: 'CARD_RESPONSIBLE_CHANGED', refs: [] },
-      [{ tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] }],
+      [
+        {
+          tipo: 'RECORD_CREATE',
+          parametros: {},
+          refs: [{ tipo: 'DATABASE', id: base.databaseId }],
+        },
+      ],
     );
 
     const raiz = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
@@ -324,16 +337,12 @@ describe('(c) ciclo indireto (re-entrada por outra Automação no mesmo alvo/cad
     await darAcessoOperacional(base.pipeId, mA);
     await darAcessoOperacional(base.pipeId, mB);
 
-    await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'CARD_RESPONSIBLE_CHANGED', refs: [] },
-      [{ tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: mA }, refs: [] }],
-    );
-    await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'CARD_RESPONSIBLE_CHANGED', refs: [] },
-      [{ tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: mB }, refs: [] }],
-    );
+    await criarAutomacaoAtiva(base.pipeId, { tipo: 'CARD_RESPONSIBLE_CHANGED', refs: [] }, [
+      { tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: mA }, refs: [] },
+    ]);
+    await criarAutomacaoAtiva(base.pipeId, { tipo: 'CARD_RESPONSIBLE_CHANGED', refs: [] }, [
+      { tipo: 'CARD_ASSIGN_RESPONSIBLE', parametros: { membershipId: mB }, refs: [] },
+    ]);
     const raiz = await emitirEvento('CARD_RESPONSIBLE_CHANGED', 'CARD', cardId, base.pipeId);
     await engine.processarEventoAgora(ORG_C, raiz);
 
@@ -354,11 +363,9 @@ describe('(c) ciclo indireto (re-entrada por outra Automação no mesmo alvo/cad
 describe('(d) profundidade máxima — cadeia que expande alvos novos é barrada (DEPTH_EXCEEDED) + (e) sem falso positivo', () => {
   it('A(RECORD_CREATED→RECORD_CREATE) encadeia até MAX_CHAIN_DEPTH e a próxima é HALTED (DEPTH_EXCEEDED)', async () => {
     const base = await cenarioBase();
-    const a = await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'RECORD_CREATED', refs: [] },
-      [{ tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] }],
-    );
+    const a = await criarAutomacaoAtiva(base.pipeId, { tipo: 'RECORD_CREATED', refs: [] }, [
+      { tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] },
+    ]);
     // Raiz: um RECORD_CREATED "externo" (o resourceId é um Registro qualquer — a Ação cria em `base.databaseId`).
     const raiz = await emitirEvento('RECORD_CREATED', 'RECORD', randomUUID(), null);
     await engine.processarEventoAgora(ORG_C, raiz);
@@ -384,11 +391,9 @@ describe('(d) profundidade máxima — cadeia que expande alvos novos é barrada
   it('(e) a MESMA Automação em cadeias DISTINTAS NÃO é barrada (assinatura por cadeia)', async () => {
     const base = await cenarioBase();
     const cardId = await criarCard(base.pipeId, base.formId, base.formVersionId);
-    const a = await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'CARD_CREATED', refs: [] },
-      [{ tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] }],
-    );
+    const a = await criarAutomacaoAtiva(base.pipeId, { tipo: 'CARD_CREATED', refs: [] }, [
+      { tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] },
+    ]);
     // Dois Eventos-RAIZ independentes sobre o MESMO Card e MESMO tipo ⇒ DUAS cadeias distintas.
     const raiz1 = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
     const raiz2 = await emitirEvento('CARD_CREATED', 'CARD', cardId, base.pipeId);
@@ -411,11 +416,9 @@ describe('(f) timeout de cadeia — filho de cadeia velha é barrado (CHAIN_TIME
   it('cadeia com 1ª visita antiga ⇒ um novo filho é HALTED_BY_LIMIT/CHAIN_TIMEOUT (não executa)', async () => {
     const base = await cenarioBase();
     const cardId = await criarCard(base.pipeId, base.formId, base.formVersionId);
-    const a = await criarAutomacaoAtiva(
-      base.pipeId,
-      { tipo: 'CARD_CREATED', refs: [] },
-      [{ tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] }],
-    );
+    const a = await criarAutomacaoAtiva(base.pipeId, { tipo: 'CARD_CREATED', refs: [] }, [
+      { tipo: 'RECORD_CREATE', parametros: {}, refs: [{ tipo: 'DATABASE', id: base.databaseId }] },
+    ]);
     // Fabrica uma cadeia VELHA: uma visita com createdAt muito no passado (> duração máxima).
     const chainId = randomUUID();
     criados.chainIds.push(chainId);
