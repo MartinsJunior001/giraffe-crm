@@ -23,6 +23,11 @@
       concluir/arquivar impede; futuro/ausente não emite).
 - [x] T16 — Regressão E8: cenário de reatribuição de Tarefa em `membership-removal-http.test.ts`.
 - [x] T17 — Gates: prettier, eslint, typecheck (src+test), build, migration+rollback drill — verdes.
+- [x] T18 — (pós-QA HIGH) Anexos de Tarefa via 3.7/3.8: branch `TASK` no `FileAuthzDispatcher` +
+      `FileEventDispatcher`; controller `tasks/:taskId/files`; teste `tasks-files-http`; regressão de
+      Card/Registro/avatar verde. Fecha `DEB-5-1-TASK-ANEXOS-37`.
+- [x] T19 — (pós-QA Arch LOW#1) Remove `@@index([orgId, dueAt])` do schema; índice parcial só na migration
+      (convenção da base), evitando falso-drift.
 
 ## Mapa AC (§1528–1532) → teste
 

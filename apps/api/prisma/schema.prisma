@@ -1972,8 +1972,10 @@ model Task {
   @@unique([orgId, id])
   /// Listagem operacional: Tarefas de um Pipe, por estado.
   @@index([orgId, pipeId, lifecycleState])
-  /// Varredura do mecanismo de atraso: Tarefas com prazo (parcial na migration WHERE dueAt IS NOT NULL).
-  @@index([orgId, dueAt])
+  // Nota: a varredura do mecanismo de atraso usa um índice PARCIAL `Task_orgId_dueAt_idx`
+  // (WHERE "dueAt" IS NOT NULL) criado por raw SQL na migration — o Prisma 6.19.3 não expressa índice
+  // parcial, então ele NÃO é declarado aqui (convenção da base: CardResponsavel/DatabaseGrant), evitando
+  // falso-drift num `prisma migrate dev`.
   /// Consulta por Responsável (reatribuição E8; painéis futuros).
   @@index([orgId, responsavelMembershipId])
   /// Consulta por Card associado.

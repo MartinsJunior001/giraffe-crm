@@ -4,16 +4,23 @@ import { type ContextoOrganizacional, RequestContext } from '../kernel/context/r
 import { PrismaService } from '../kernel/db/prisma.service';
 import { withTenantContext } from '../kernel/db/tenant-context';
 import type { FileAuthzContract } from '../files/file-authz.contract';
-import { exigirLerCard, exigirOperarCard } from '../pipes/pipe-authz';
+import {
+  exigirLerCard,
+  exigirOperarCard,
+  exigirOperarPipe,
+  resolverPoderNoPipe,
+} from '../pipes/pipe-authz';
 import { exigirLerDatabase, exigirOperarDatabase } from '../databases/database-authz';
 
 type Db = ReturnType<typeof withTenantContext>;
 
-/** `resourceType`s concretos que a 3.8/3.10 ligam (allowlist fail-closed; tipo desconhecido → nega). */
+/** `resourceType`s concretos que a 3.8/3.10/5.1 ligam (allowlist fail-closed; tipo desconhecido → nega). */
 const RESOURCE_CARD = 'CARD';
 const RESOURCE_RECORD = 'RECORD';
 /** Story 3.10 — avatar da própria Conta. O `resourceId` é o `accountId` dono do arquivo. */
 const RESOURCE_ACCOUNT = 'ACCOUNT';
+/** Story 5.1 — anexo geral de Tarefa. O `resourceId` é o `taskId`; a autz herda do Pipe dono da Tarefa. */
+const RESOURCE_TASK = 'TASK';
 
 /**
  * Implementação REAL da porta `FileAuthzContract` da 3.7 (Story 3.8, frente F1). A 3.7 é agnóstica de domínio;
@@ -84,6 +91,22 @@ export class FileAuthzDispatcher implements FileAuthzContract {
         }
         return true;
       }
+      if (resourceType === RESOURCE_TASK) {
+        // O anexo de Tarefa (Story 5.1) herda a autz do Pipe dono: ver/baixar/listar = ler o Pipe; anexar/remover
+        // = operar o Pipe. Resolve o dono sob RLS; Tarefa inexistente/de outra Org ⇒ nega (404 não-enumerante).
+        const task = await db.task.findUnique({
+          where: { id: resourceId },
+          select: { pipeId: true, archiveState: true, pipe: { select: { state: true } } },
+        });
+        if (!task) return false;
+        if (poder === 'ler')
+          await resolverPoderNoPipe(db, contexto, task.pipeId); // qualquer poder; 404 sem acesso
+        else {
+          await exigirOperarPipe(db, contexto, task.pipeId); // 403 se só lê (Viewer); 404 sem acesso
+          this.exigirTaskMutavel(task); // read-only sob arquivamento (§1526)
+        }
+        return true;
+      }
       if (resourceType === RESOURCE_ACCOUNT) {
         // SELF-ONLY (Story 3.10): o "recurso dono" do avatar é a própria Conta, e ninguém — nem o Admin da
         // Org — envia, troca ou baixa o avatar de outra pessoa. Ler e editar são a MESMA condição: não há
@@ -115,6 +138,16 @@ export class FileAuthzDispatcher implements FileAuthzContract {
     });
     if (card?.lifecycleState === 'ARQUIVADO' || card?.pipe?.state === 'ARCHIVED') {
       throw new ConflictException({ motivo: 'CARD_ARQUIVADO' });
+    }
+  }
+
+  /**
+   * Tarefa ARQUIVADA (ou sob Pipe arquivado) é somente-leitura para anexo/remoção (§1526, espelha Card/Registro):
+   * 409, não silêncio. Ler/baixar/listar (poder=ler) NÃO passa por aqui. Puro sobre o dado já lido — sem I/O.
+   */
+  private exigirTaskMutavel(task: { archiveState: string; pipe: { state: string } | null }): void {
+    if (task.archiveState === 'ARQUIVADA' || task.pipe?.state === 'ARCHIVED') {
+      throw new ConflictException({ motivo: 'TAREFA_ARQUIVADA' });
     }
   }
 

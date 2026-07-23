@@ -97,13 +97,20 @@ Mecanismo Postgres-based idempotente (padrão do motor 4.6, zero-dependência). 
 `@@unique([orgId,taskId,dueVersion])`. Driver contínuo deferido (`DEB-5-1-OVERDUE-DRIVER`, como
 `DEB-4-6-DRIVER-CONTINUO`). **Não** registra no motor E4 (5.7) nem cria Notificação (5.3+).
 
-## 8. Anexos (3.7 — gate AD-28)
+## 8. Anexos (3.7/3.8 — gate AD-28) — ENTREGUE
 
-Anexos de Tarefa integram DIRETAMENTE a capacidade compartilhada 3.7 (`FileObject`,
-`resourceType='TASK'`), herdando a autz da Tarefa via o dispatcher de `file-authz/`. Read-only sob
-arquivamento. **Escopo 5.1:** registrar `TASK` como `resourceType` roteável no dispatcher de autz (herda
-`exigirOperar/LerPipe` da Tarefa) e no event sink (eventos `FILE_ATTACHED/REMOVED` no `TaskHistory`). O gate
-`FILE_UPLOAD_ENABLED` (AD-28) já barra a capacidade quando desligada.
+Anexos de Tarefa integram DIRETAMENTE a capacidade compartilhada 3.7, pelo MESMO padrão do anexo de Card
+(3.8), **sem migration nem GRANT novo** (`resourceType` é coluna String; 'TASK' aceito como-is):
+- **Autz** (`file-authz/file-authz.dispatcher.ts`): branch `TASK` → herda a autz do Pipe dono (ver/baixar/
+  listar = `resolverPoderNoPipe`; anexar/remover = `exigirOperarPipe`). Read-only sob arquivamento
+  (`exigirTaskMutavel` → 409 `TAREFA_ARQUIVADA`, espelha Card/Registro). O `FilesService` traduz qualquer
+  `podeEditar=false` em **404 não-enumerante** (nunca 403 no upload — padrão 3.8, não vaza existência).
+- **Trilha** (`file-authz/file-event.dispatcher.ts`): branch `TASK` → escreve `FILE_ATTACHED`/`FILE_REMOVED`
+  no `TaskHistory` (mesma tx, sem PII — só o `fileId`).
+- **Rotas** (`tasks/files/task-files.controller.ts`): `tasks/:taskId/files` (anexar 201 / listar / baixar por
+  stream / remover lógico), análogo a `cards/:cardId/files`; consome o `FilesService` GLOBAL.
+- **Gate AD-28**: `FILE_UPLOAD_ENABLED=false` → 503 (capacidade indisponível), pela mesma
+  `exigirCapacidade` compartilhada (resourceType-agnóstica). Débito `DEB-5-1-TASK-ANEXOS-37` **FECHADO**.
 
 ## 9. Isolamento multi-tenant (invariante-mãe)
 
