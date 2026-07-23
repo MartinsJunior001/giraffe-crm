@@ -70,6 +70,13 @@ const MODELOS_AUDITADOS = new Set([
   // apareçam na trilha (FR-214/D-4). A tx interativa da alteração audita manualmente (não passa pela
   // extensão), mas escritas fora dela — e uma inserção cruzada por engano — ficam cobertas.
   'MembershipEvent',
+  // Story 5.1. Tarefa e sua trilha. `Task` (ledger com UPDATE column-scoped) e `TaskHistory` (append-only)
+  // entram na trilha (FR-214), inclusive a tentativa negada por RLS. A tx interativa das mutações audita
+  // manualmente (não passa pela extensão); escritas fora dela e uma inserção cruzada por engano ficam
+  // cobertas. `TaskOverdueOccurrence` (ocorrência canônica do Evento "Tarefa atrasada", append-only) idem.
+  'Task',
+  'TaskHistory',
+  'TaskOverdueOccurrence',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

@@ -23,15 +23,28 @@ describe('preflightEncerramentoMembership (SC-2106) — vacuamente verdadeiro ho
 });
 
 describe('aoAlterarMembership (SC-2107/2108) — reconciliação de acesso', () => {
-  it('encerrar (REMOVED): revoga concessões, remove Responsável e sinaliza reatribuição', () => {
+  it('encerrar (REMOVED): revoga concessões, remove Responsável de Card E Tarefa e sinaliza reatribuição', () => {
     const plano = aoAlterarMembership({
       novoEstado: 'REMOVED',
       grantsAtivos: ['g1', 'g2'],
       responsavelDe: ['card-1'],
+      taskResponsavelDe: ['task-1', 'task-2'],
     });
     expect(plano.revogarGrants).toEqual(['g1', 'g2']);
     expect(plano.removerResponsavelDe).toEqual(['card-1']);
-    expect(plano.reatribuir).toEqual(['card-1']); // Cards órfãos sinalizados (não reatribuídos automaticamente)
+    expect(plano.removerTaskResponsavelDe).toEqual(['task-1', 'task-2']); // Tarefas do alvo esvaziadas (5.1)
+    // Cards E Tarefas órfãos sinalizados (não reatribuídos automaticamente — §1525).
+    expect(plano.reatribuir).toEqual(['card-1', 'task-1', 'task-2']);
+  });
+
+  it('compatibilidade: sem `taskResponsavelDe` (chamador anterior à 5.1), nada de Tarefa a esvaziar', () => {
+    const plano = aoAlterarMembership({
+      novoEstado: 'REMOVED',
+      grantsAtivos: [],
+      responsavelDe: ['card-1'],
+    });
+    expect(plano.removerTaskResponsavelDe).toEqual([]);
+    expect(plano.reatribuir).toEqual(['card-1']);
   });
 
   it('suspender (SUSPENDED) desfaz acesso como encerrar', () => {
@@ -62,7 +75,13 @@ describe('aoAlterarMembership (SC-2107/2108) — reconciliação de acesso', () 
       novoEstado: 'REMOVED',
       grantsAtivos: [],
       responsavelDe: [],
+      taskResponsavelDe: [],
     });
-    expect(plano).toEqual({ revogarGrants: [], removerResponsavelDe: [], reatribuir: [] });
+    expect(plano).toEqual({
+      revogarGrants: [],
+      removerResponsavelDe: [],
+      removerTaskResponsavelDe: [],
+      reatribuir: [],
+    });
   });
 });

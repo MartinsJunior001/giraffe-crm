@@ -349,6 +349,9 @@ model Organization {
   automationExecutions   AutomationExecution[]
   automationActionResults AutomationActionResult[]
   automationChainVisits  AutomationChainVisit[]
+  tasks                  Task[]
+  taskHistories          TaskHistory[]
+  taskOverdueOccurrences TaskOverdueOccurrence[]
 
   @@map("Organization")
 }
@@ -448,6 +451,7 @@ model Pipe {
   movementEvents MovementEvent[]
   automations    Automation[]
   domainEvents   DomainEvent[]
+  tasks          Task[]
 
   /// Chave-alvo da FK COMPOSTA tenant-safe (Story 4.1, F-A1). Redundante como IDENTIDADE (`id` já é PK),
   /// mas necessária como DESTINO: é ela que permite a um dependente referenciar o PAR `(orgId, id)` e
@@ -860,9 +864,15 @@ model Card {
   phaseValues      CardPhaseValues[]
   movementEvents   MovementEvent[]
   recordLinks      CardRecordLink[]
+  tasks            Task[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
+  /// Chave-alvo da FK COMPOSTA tenant-safe (Story 5.1): permite a `Task` referenciar o PAR `(orgId, id)`
+  /// e provar NO BANCO que Tarefa e Card pertencem à MESMA Organização (evita `cardId` alheio — a checagem
+  /// de FK roda com BYPASS de row security). Redundante como identidade (`id` já é PK), necessária como
+  /// destino. Aplica parcialmente o `DEB-TENANT-COMPOSITE-FK-RETROFIT` a `Card`.
+  @@unique([orgId, id])
   // Superfície do Kanban (2.9): Cards de um Pipe, por Fase.
   @@index([orgId, pipeId, phaseId])
   @@map("Card")
@@ -1884,4 +1894,141 @@ model AutomationChainVisit {
   /// Início da cadeia (min createdAt) para o timeout de duração e inspeção do encadeamento.
   @@index([orgId, executionChainId])
   @@map("AutomationChainVisit")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// ÉPICO 5 — Tarefas, Solicitações e Notificações. Story 5.1: Tarefas — ciclo de vida e acompanhamento.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+/// Estado OPERACIONAL da Tarefa (Story 5.1, §1526). Eixo INDEPENDENTE do arquivamento. Nasce ABERTA;
+/// concluir → CONCLUIDA; reabrir → ABERTA. `atrasada` NÃO é estado persistido — é DERIVADO na leitura
+/// (aberta + prazo vencido), como a saúde do Card (2.13).
+enum TaskLifecycleState {
+  ABERTA
+  CONCLUIDA
+}
+
+/// Estado de ARQUIVAMENTO da Tarefa (Story 5.1, §1526). Eixo SEPARADO do operacional: uma Tarefa
+/// CONCLUIDA pode ser arquivada e restaurada preservando o estado operacional. Arquivar bloqueia toda
+/// escrita (mantém leitura autorizada); restaurar preserva identidade/Pipe/Card/Responsável/prazo/anexos.
+enum TaskArchiveState {
+  ATIVA
+  ARQUIVADA
+}
+
+/// Task — a Tarefa (Story 5.1, FR-27). Dado operacional org-owned (AD-10). Pertence a EXATAMENTE 1
+/// Organização e 1 Pipe; associada a 0..1 Card do MESMO Pipe/Org (a associação NÃO funde recursos nem
+/// amplia permissões — acesso à Tarefa ≠ acesso ao Card). Entidade DISTINTA (não reusa Card/Registro).
+///
+/// **Dois eixos independentes:** `lifecycleState` (ABERTA/CONCLUIDA) e `archiveState` (ATIVA/ARQUIVADA).
+/// `atrasada` é DERIVADO na leitura (núcleo puro `task-overdue.core.ts`), nunca persistido.
+///
+/// **Responsável = 0..1 Membership ATIVA** da mesma Org via `responsavelMembershipId` — REFERÊNCIA-POR-ID
+/// sem FK (isolada por RLS+orgId; a atribuição revalida a Membership ACTIVE sob RLS; a suspensão/remoção a
+/// esvazia pelo contrato E8/8.5–8.6). FK composta a Membership é inviável (SetNull impossível com `orgId`
+/// NOT NULL compartilhado; Cascade quebraria a exclusão de Conta — LGPD). `creatorMembershipId` idem
+/// (metadado de autoria preservado, como `actorId`).
+///
+/// **Prazo:** `dueAt @db.Timestamptz` (instante absoluto — determinístico no fuso oficial, DIV-1) e
+/// `dueVersion` (Int monotônico, bumpado a cada mudança de `dueAt`) — a "versão do prazo" da idempotência
+/// do Evento "Tarefa atrasada" (ver `TaskOverdueOccurrence` e a decision doc).
+///
+/// **Isolamento pelo BANCO:** RLS ENABLE+FORCE, WITH CHECK no INSERT e UPDATE. **GRANT como fronteira:**
+/// SELECT/INSERT + **UPDATE column-scoped** (título/descrição/prazo/dueVersion/Responsável/estados/cardId/
+/// updatedAt) — **sem** `orgId`/`pipeId`/`creatorMembershipId`, **sem DELETE** (arquivar/concluir = state).
+/// FK COMPOSTA tenant-safe `(orgId,pipeId)→Pipe` e `(orgId,cardId)→Card` (evita id alheio por bypass de FK).
+model Task {
+  id                      String             @id @default(uuid()) @db.Uuid
+  orgId                   String             @db.Uuid
+  pipeId                  String             @db.Uuid
+  /// Card associado (0..1), do MESMO Pipe/Org. Vincular/desvincular é operação (UPDATE column-scoped).
+  cardId                  String?            @db.Uuid
+  title                   String
+  description             String?
+  /// Prazo como INSTANTE absoluto (determinístico no fuso oficial). Nulo = sem prazo (nunca atrasada).
+  dueAt                   DateTime?          @db.Timestamptz(3)
+  /// Versão monotônica do prazo — bumpada a cada mudança de `dueAt`. Chave de idempotência do Evento.
+  dueVersion              Int                @default(0)
+  /// Responsável: referência-por-id a uma Membership ATIVA da mesma Org (sem FK — ver doc do modelo).
+  responsavelMembershipId String?            @db.Uuid
+  /// Autoria preservada (referência-por-id, como `actorId`). Nunca reescrita (fora do GRANT de UPDATE).
+  creatorMembershipId     String?            @db.Uuid
+  lifecycleState          TaskLifecycleState @default(ABERTA)
+  archiveState            TaskArchiveState   @default(ATIVA)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  organization       Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,pipeId)→Pipe(orgId,id)` (F-A1). Cascade: a Tarefa é dado do Pipe.
+  pipe               Pipe                    @relation(fields: [orgId, pipeId], references: [orgId, id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,cardId)→Card(orgId,id)` — nulável (MATCH SIMPLE não checa com NULL).
+  /// Cascade como `DomainEvent.pipe`: só dispara no expurgo do dono (runtime não tem DELETE em Card).
+  card               Card?                   @relation(fields: [orgId, cardId], references: [orgId, id], onDelete: Cascade)
+  history            TaskHistory[]
+  overdueOccurrences TaskOverdueOccurrence[]
+
+  /// Alvo da FK COMPOSTA tenant-safe de `TaskHistory`/`TaskOverdueOccurrence`.
+  @@unique([orgId, id])
+  /// Listagem operacional: Tarefas de um Pipe, por estado.
+  @@index([orgId, pipeId, lifecycleState])
+  /// Varredura do mecanismo de atraso: Tarefas com prazo (parcial na migration WHERE dueAt IS NOT NULL).
+  @@index([orgId, dueAt])
+  /// Consulta por Responsável (reatribuição E8; painéis futuros).
+  @@index([orgId, responsavelMembershipId])
+  /// Consulta por Card associado.
+  @@index([orgId, cardId])
+  @@map("Task")
+}
+
+/// TaskHistory — trilha de eventos da Tarefa (Story 5.1). Espelho estrutural de `CardHistory`, domínio
+/// DISTINTO (`Task ≠ Card`). **Append-only e IMUTÁVEL**: GRANT só SELECT+INSERT (sem UPDATE/DELETE). Cada
+/// mutação da Tarefa escreve seu evento na MESMA transação (não há mudança sem evento — AD-13).
+model TaskHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @db.Uuid
+  taskId    String   @db.Uuid
+  /// Vocabulário do evento: CREATED, EDITED, DUE_CHANGED, RESPONSAVEL_ASSIGNED/CHANGED/REMOVED, COMPLETED,
+  /// REOPENED, ARCHIVED, RESTORED, CARD_LINKED, CARD_UNLINKED, FILE_ATTACHED, FILE_REMOVED. String — estável.
+  type      String
+  /// Resumo legível do evento (sem PII desnecessária).
+  summary   String
+  /// Ator que originou o evento (quando disponível).
+  actorId   String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,taskId)→Task(orgId,id)`. Cascade: fato derivado da Tarefa.
+  task         Task         @relation(fields: [orgId, taskId], references: [orgId, id], onDelete: Cascade)
+
+  @@index([orgId, taskId, createdAt])
+  @@map("TaskHistory")
+}
+
+/// TaskOverdueOccurrence — ocorrência canônica do Evento "Tarefa atrasada" (Story 5.1, gate §1535).
+/// **Append-only e IMUTÁVEL**: GRANT só SELECT+INSERT. NÃO persiste o estado `atrasada` (que é derivado);
+/// persiste o FATO de que a Tarefa foi detectada vencida numa dada VERSÃO do prazo. Idempotência por
+/// `@@unique([orgId, taskId, dueVersion])`: um retry/atraso do scheduler colide (P2002) e é ignorado —
+/// no máximo uma ocorrência por versão do prazo. Alterar o prazo bumpa `dueVersion` (nova versão pode
+/// emitir de novo). Consumida pela 5.7 (registro no motor E4 + Notificação). Ver a decision doc.
+model TaskOverdueOccurrence {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @db.Uuid
+  taskId     String   @db.Uuid
+  /// Versão do prazo detectada vencida (congela a identidade da ocorrência — idempotência).
+  dueVersion Int
+  /// Prazo (instante absoluto) que estava vencido — congelado no ato (padrão FormVersion/CardPhaseEntry).
+  dueAt      DateTime @db.Timestamptz(3)
+  /// Instante da detecção (quando o scan emitiu a ocorrência).
+  detectedAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt  DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,taskId)→Task(orgId,id)`. Cascade: fato derivado da Tarefa.
+  task         Task         @relation(fields: [orgId, taskId], references: [orgId, id], onDelete: Cascade)
+
+  /// Idempotência do Evento: ≤1 ocorrência por (Tarefa, versão do prazo). A 2ª colide (P2002).
+  @@unique([orgId, taskId, dueVersion])
+  @@index([orgId, taskId])
+  @@map("TaskOverdueOccurrence")
 }
