@@ -129,8 +129,8 @@ development_status:
   epic-4-retrospective: optional
 
   # ===== Wave 6 — Épico 5: Tarefas, Solicitações e Notificações =====
-  epic-5: backlog
-  5-1-tarefas-ciclo-de-vida-e-acompanhamento: backlog
+  epic-5: in-progress
+  5-1-tarefas-ciclo-de-vida-e-acompanhamento: done
   5-2-solicitacoes-ciclo-de-vida-e-responsavel: backlog
   5-3-fonte-unica-de-notificacoes-write-side: backlog
   5-4-superficies-leitura-e-preferencias: backlog
