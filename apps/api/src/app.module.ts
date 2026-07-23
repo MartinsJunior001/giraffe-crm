@@ -20,6 +20,7 @@ import { PipesModule } from './pipes/pipes.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { RealtimeModule } from './notifications/realtime/realtime.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -105,6 +106,10 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     // Épico 5 — Notificações (Story 5.3). Fonte única write-side (modelo canônico). Sem controller: criar é
     // ato de produtor de sistema (5.6/5.7/E8); leitura/superfícies são a 5.4. Exporta `NotificationsService`.
     NotificationsModule,
+    // Épico 5 — Tempo real (Story 5.5). Gateway Socket.IO como INVALIDAÇÃO (não fonte de verdade), global:
+    // a fonte única (5.3), o ciclo de Membership (8.5/8.6) e a troca de Org (1.9) injetam a mesma port por
+    // token. Handshake reusa a sessão (PRINCIPAL_PROVIDER) + Membership ativa; sala por (userId, orgId).
+    RealtimeModule,
     // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
     // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
     FilesModule.register(

@@ -3,14 +3,20 @@ import type { IncomingHttpHeaders } from 'node:http';
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
   aoAlterarMembership,
   preflightEncerramentoMembership,
 } from '../../pipes/cards/access/membership-contract';
+import {
+  NOTIFICATION_REALTIME,
+  type NotificationRealtimePort,
+} from '../../notifications/realtime/notification-realtime.port';
 import { AbilityCache } from '../../kernel/authz/ability.cache';
 import { StepUpService } from '../../kernel/auth/step-up.service';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
@@ -99,6 +105,11 @@ export class MembershipRemovalService {
     private readonly stepUp: StepUpService,
     private readonly abilityCache: AbilityCache,
     private readonly logger: PinoLogger,
+    // Story 5.5 — revogação do canal de tempo real ao encerrar a Membership (encerra inscrições
+    // anteriores). Opcional (degradação): sem o gateway, a remoção segue idêntica; backstop é a 5.4.
+    @Optional()
+    @Inject(NOTIFICATION_REALTIME)
+    private readonly realtime?: NotificationRealtimePort,
   ) {}
 
   /** Remoção administrativa: o Admin da Org encerra a Membership de `membershipId` (alvo por param). */
@@ -404,6 +415,10 @@ export class MembershipRemovalService {
     // deny-by-default (o contexto relê a Membership ACTIVE, e não há mais nenhuma) — sem janela de cache
     // obsoleto. Só a Org afetada; a Account NÃO é revogada globalmente.
     this.abilityCache.invalidar(resultado.alvoAccountId, contexto.orgId);
+
+    // Story 5.5 (AC2): ao encerrar (REMOVED), revoga o canal de tempo real do alvo na Org afetada —
+    // encerra as inscrições anteriores. Best-effort; o backstop real de acesso é a revalidação da 5.4.
+    this.realtime?.revogarCanal(contexto.orgId, resultado.alvoAccountId);
 
     this.auditar(contexto, 'update', 'Membership');
     this.auditar(contexto, 'create', 'MembershipEvent');

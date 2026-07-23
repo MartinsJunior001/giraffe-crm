@@ -286,6 +286,23 @@ const EnvSchema = z
     APP_PUBLIC_URL: vazioComoAusente(
       z.string().url('APP_PUBLIC_URL deve ser uma URL válida').optional(),
     ),
+
+    // ── Story 5.5 — tempo real como invalidação (Socket.IO) ──────────────────────────────────
+    // Backpressure/limites do canal de tempo real. Ambos com default seguro e faixa validada
+    // (fail-closed): valor ausente/ruim cai no default, nunca em "ilimitado". Sem segredo novo.
+
+    /**
+     * Janela de COALESCING por sala (ms). Uma rajada de Notificações para o mesmo destinatário
+     * colapsa num único sinal dentro desta janela — proteção contra tempestade de eventos (AC4). O
+     * cliente refaz UM fetch pela 5.4 que traz todas. Default conservador (250ms).
+     */
+    REALTIME_THROTTLE_MS: z.coerce.number().int().nonnegative().max(60_000).default(250),
+
+    /**
+     * Teto de conexões Socket.IO simultâneas por conta (fan-in). Conexão excedente é recusada no
+     * handshake — limita abuso/vazamento de recursos. Default 8.
+     */
+    REALTIME_MAX_SOCKETS_PER_USER: z.coerce.number().int().positive().max(1000).default(8),
   })
   /**
    * Coerência do proxy confiável (D5). Fail-fast no boot para configurações que só falhariam — em

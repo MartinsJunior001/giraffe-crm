@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { getEnv, parseCorsOrigins } from './kernel/config/env';
+import { RealtimeIoAdapter } from './notifications/realtime/realtime-io.adapter';
 
 async function bootstrap(): Promise<void> {
   // Fail-fast: valida o ambiente ANTES de subir o Nest. Lança se inválido.
@@ -13,9 +14,15 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(Logger));
 
   // CORS restrito e configurável — sem wildcard.
+  const corsOrigins = parseCorsOrigins(env.CORS_ALLOWED_ORIGINS);
   app.enableCors({
-    origin: parseCorsOrigins(env.CORS_ALLOWED_ORIGINS),
+    origin: corsOrigins,
   });
+
+  // Tempo real (Story 5.5): o Socket.IO tem CORS PRÓPRIO — o `enableCors` acima não o alcança. O
+  // adapter aplica a MESMA allowlist (sem wildcard) + credenciais, para o handshake cross-origin com
+  // cookie de sessão (web → api) funcionar. Lido no bootstrap; jamais no import de AppModule.
+  app.useWebSocketAdapter(new RealtimeIoAdapter(app, corsOrigins));
 
   // Encerramento gracioso (SIGTERM/SIGINT) — AD-32.
   app.enableShutdownHooks();

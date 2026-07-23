@@ -3,14 +3,20 @@ import type { IncomingHttpHeaders } from 'node:http';
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
   aoAlterarMembership,
   preflightEncerramentoMembership,
 } from '../../pipes/cards/access/membership-contract';
+import {
+  NOTIFICATION_REALTIME,
+  type NotificationRealtimePort,
+} from '../../notifications/realtime/notification-realtime.port';
 import { AbilityCache } from '../../kernel/authz/ability.cache';
 import { StepUpService } from '../../kernel/auth/step-up.service';
 import { type ContextoOrganizacional, RequestContext } from '../../kernel/context/request-context';
@@ -88,6 +94,11 @@ export class MembershipStateService {
     private readonly stepUp: StepUpService,
     private readonly abilityCache: AbilityCache,
     private readonly logger: PinoLogger,
+    // Story 5.5 — revogação do canal de tempo real ao suspender (encerra inscrições anteriores).
+    // Opcional (degradação): sem o gateway, a suspensão segue idêntica; o backstop é a 5.4.
+    @Optional()
+    @Inject(NOTIFICATION_REALTIME)
+    private readonly realtime?: NotificationRealtimePort,
   ) {}
 
   suspender(membershipId: string, headers: IncomingHttpHeaders): Promise<TransicaoEstadoVisao> {
@@ -393,6 +404,13 @@ export class MembershipStateService {
     // cai em deny-by-default, se suspenso, pois o contexto relê a Membership ACTIVE) — sem janela de
     // cache obsoleto. Só a Org afetada; a Account NÃO é revogada globalmente.
     this.abilityCache.invalidar(resultado.alvoAccountId, contexto.orgId);
+
+    // Story 5.5 (AC2): ao SUSPENDER, revoga o canal de tempo real do alvo na Org afetada — encerra as
+    // inscrições anteriores (desconecta os sockets). Na reativação não há acesso a revogar. Best-effort;
+    // o backstop real de acesso é a revalidação da 5.4 (um sinal opaco não vaza nada).
+    if (novoEstado === 'SUSPENDED') {
+      this.realtime?.revogarCanal(contexto.orgId, resultado.alvoAccountId);
+    }
 
     this.auditar(contexto, 'update', 'Membership');
     this.auditar(contexto, 'create', 'MembershipEvent');
