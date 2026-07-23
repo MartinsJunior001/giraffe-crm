@@ -19,6 +19,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PipesModule } from './pipes/pipes.module';
 import { TasksModule } from './tasks/tasks.module';
 import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -101,6 +102,9 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     TasksModule,
     // Épico 5 — Solicitações (Story 5.2). Twin da 5.1 sem eixo temporal; mesma autz por Pipe.
     SolicitacoesModule,
+    // Épico 5 — Notificações (Story 5.3). Fonte única write-side (modelo canônico). Sem controller: criar é
+    // ato de produtor de sistema (5.6/5.7/E8); leitura/superfícies são a 5.4. Exporta `NotificationsService`.
+    NotificationsModule,
     // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
     // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
     FilesModule.register(

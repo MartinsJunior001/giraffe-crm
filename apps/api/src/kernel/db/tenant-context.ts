@@ -83,6 +83,13 @@ const MODELOS_AUDITADOS = new Set([
   // cruzada por engano ficam cobertas. Twin da 5.1, sem eixo temporal (não há ocorrência de vencimento).
   'Solicitacao',
   'SolicitacaoHistory',
+  // Story 5.3. Fonte única de Notificações. `Notification` (conteúdo/evento canônico, append-only) e
+  // `NotificationRecipient` (estado de leitura por destinatário, mutável column-scoped) entram na trilha
+  // (FR-214), inclusive a tentativa negada por RLS. A escrita roda numa tx interativa no client raiz que
+  // audita manualmente (não passa pela extensão); escritas fora dela e uma inserção cruzada por engano ficam
+  // cobertas.
+  'Notification',
+  'NotificationRecipient',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

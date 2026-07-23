@@ -1,0 +1,114 @@
+import { describe, expect, it } from 'vitest';
+import {
+  chaveDeduplicacao,
+  escaparHtml,
+  estaLida,
+  resourceTypeValido,
+  sanitizarParametros,
+  sanitizarValorRenderizavel,
+  tipoValido,
+  uuidValido,
+} from '../src/notifications/notification-content.core';
+
+/**
+ * Provas do núcleo PURO de sanitização/derivação da fonte única de Notificações (Story 5.3), sem banco. É a
+ * defesa anti-XSS + allowlist estrutural fail-closed (§1571) e o estado DERIVADO de `readAt` (§1568).
+ */
+
+describe('escaparHtml / sanitizarValorRenderizavel — anti-XSS no write', () => {
+  it('escapa os metacaracteres de HTML (<script> nunca sai cru)', () => {
+    const out = escaparHtml('<script>alert(1)</script>');
+    expect(out).not.toContain('<script>');
+    expect(out).toContain('&lt;script&gt;');
+  });
+
+  it('sanitiza valor renderizável: trim + escape + remove controle', () => {
+    // `\x00` (NULL) e `\x07` (BEL) como ESCAPES no source (não bytes crus — mantém o arquivo texto/UTF-8, sem
+    // quebrar git diff/blame). Runtime: os mesmos code points chegam ao núcleo e devem ser removidos.
+    const out = sanitizarValorRenderizavel('  <b>oi</b>\x00\x07  ');
+    expect(out).toBe('&lt;b&gt;oi&lt;/b&gt;');
+  });
+
+  it('aplica teto de comprimento (500)', () => {
+    expect(sanitizarValorRenderizavel('a'.repeat(600)).length).toBe(500);
+  });
+});
+
+describe('sanitizarParametros — allowlist estrutural fail-closed', () => {
+  it('escapa HTML/script nos valores string (injeção)', () => {
+    const out = sanitizarParametros({ titulo: '<script>x</script>', nome: 'Ana' });
+    expect(out.titulo).toBe('&lt;script&gt;x&lt;/script&gt;');
+    expect(out.nome).toBe('Ana');
+  });
+
+  it('descarta chaves de prototype pollution e formato inválido', () => {
+    // JSON.parse cria `__proto__` como propriedade PRÓPRIA (o vetor real de um corpo JSON) — diferente do
+    // literal `{ __proto__: ... }`, que setaria o protótipo.
+    const raw = JSON.parse(
+      '{"__proto__":{"poluido":true},"constructor":"x","prototype":"y","chave com espaco":"z","_oculto":"w","valida":"ok"}',
+    );
+    const out = sanitizarParametros(raw);
+    expect(Object.keys(out)).toEqual(['valida']);
+    expect(({} as Record<string, unknown>).poluido).toBeUndefined();
+  });
+
+  it('descarta valores não-escalares (objeto/array/null) — sem payload aninhado', () => {
+    const out = sanitizarParametros({
+      obj: { token: 'segredo' },
+      arr: [1, 2, 3],
+      nulo: null,
+      num: 42,
+      bool: false,
+      txt: 'ok',
+    });
+    expect(out).toEqual({ num: 42, bool: false, txt: 'ok' });
+  });
+
+  it('raw não-objeto (string/array/null) vira {}', () => {
+    expect(sanitizarParametros('x')).toEqual({});
+    expect(sanitizarParametros(['a'])).toEqual({});
+    expect(sanitizarParametros(null)).toEqual({});
+  });
+
+  it('descarta número não-finito e aplica o teto de chaves (20)', () => {
+    const raw: Record<string, unknown> = { inf: Infinity };
+    for (let i = 0; i < 30; i++) raw[`k${String(i).padStart(2, '0')}`] = i;
+    const out = sanitizarParametros(raw);
+    expect(out.inf).toBeUndefined();
+    expect(Object.keys(out).length).toBe(20);
+  });
+});
+
+describe('validadores estruturais', () => {
+  it('tipo/resourceType exigem enum estrutural ^[A-Z][A-Z0-9_]*$', () => {
+    expect(tipoValido('TASK_ASSIGNED')).toBe(true);
+    expect(tipoValido('task_assigned')).toBe(false);
+    expect(tipoValido('X-Y')).toBe(false);
+    expect(resourceTypeValido('CARD')).toBe(true);
+    expect(resourceTypeValido('')).toBe(false);
+  });
+
+  it('uuidValido aceita só UUID', () => {
+    expect(uuidValido('11111111-1111-1111-1111-111111111111')).toBe(true);
+    expect(uuidValido('nope')).toBe(false);
+    expect(uuidValido(123)).toBe(false);
+  });
+});
+
+describe('chaveDeduplicacao — Org+Evento+tipo+destinatário', () => {
+  it('é determinística e colapsa múltiplos papéis da mesma pessoa', () => {
+    const k1 = chaveDeduplicacao('e1', 'TASK_ASSIGNED', 'm1');
+    const k2 = chaveDeduplicacao('e1', 'TASK_ASSIGNED', 'm1');
+    const k3 = chaveDeduplicacao('e1', 'TASK_ASSIGNED', 'm2');
+    expect(k1).toBe(k2);
+    expect(k1).not.toBe(k3);
+    expect(k1).toBe('e1|TASK_ASSIGNED|m1');
+  });
+});
+
+describe('estaLida — estado DERIVADO de readAt', () => {
+  it('nulo = não-lido; preenchido = lido', () => {
+    expect(estaLida(null)).toBe(false);
+    expect(estaLida(new Date())).toBe(true);
+  });
+});

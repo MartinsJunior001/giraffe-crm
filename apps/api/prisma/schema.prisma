@@ -317,43 +317,45 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships       Membership[]
-  pipes             Pipe[]
-  databases         Database[]
-  databaseGrants    DatabaseGrant[]
-  pipeGrants        PipeGrant[]
-  phases            Phase[]
-  forms             Form[]
-  fields            Field[]
-  formVersions      FormVersion[]
-  cards             Card[]
-  cardHistories     CardHistory[]
-  publicSubmissions SubmissaoPublica[]
-  publicFormRoutes  PublicFormRoute[]
-  cardGrants        CardGrant[]
-  cardResponsaveis  CardResponsavel[]
-  cardPhaseEntries  CardPhaseEntry[]
-  cardPhaseValues   CardPhaseValues[]
-  movementEvents    MovementEvent[]
-  records           Record[]
-  recordHistories   RecordHistory[]
-  fileObjects       FileObject[]
-  fileScans         FileScan[]
-  cardRecordLinks   CardRecordLink[]
-  accountAvatars    AccountAvatar[]
-  automations       Automation[]
-  automationVersions AutomationVersion[]
-  domainEvents      DomainEvent[]
-  invites           Invite[]
-  membershipEvents  MembershipEvent[]
-  automationExecutions   AutomationExecution[]
+  memberships             Membership[]
+  pipes                   Pipe[]
+  databases               Database[]
+  databaseGrants          DatabaseGrant[]
+  pipeGrants              PipeGrant[]
+  phases                  Phase[]
+  forms                   Form[]
+  fields                  Field[]
+  formVersions            FormVersion[]
+  cards                   Card[]
+  cardHistories           CardHistory[]
+  publicSubmissions       SubmissaoPublica[]
+  publicFormRoutes        PublicFormRoute[]
+  cardGrants              CardGrant[]
+  cardResponsaveis        CardResponsavel[]
+  cardPhaseEntries        CardPhaseEntry[]
+  cardPhaseValues         CardPhaseValues[]
+  movementEvents          MovementEvent[]
+  records                 Record[]
+  recordHistories         RecordHistory[]
+  fileObjects             FileObject[]
+  fileScans               FileScan[]
+  cardRecordLinks         CardRecordLink[]
+  accountAvatars          AccountAvatar[]
+  automations             Automation[]
+  automationVersions      AutomationVersion[]
+  domainEvents            DomainEvent[]
+  invites                 Invite[]
+  membershipEvents        MembershipEvent[]
+  automationExecutions    AutomationExecution[]
   automationActionResults AutomationActionResult[]
-  automationChainVisits  AutomationChainVisit[]
-  tasks                  Task[]
-  taskHistories          TaskHistory[]
-  taskOverdueOccurrences TaskOverdueOccurrence[]
-  solicitacoes           Solicitacao[]
-  solicitacaoHistories   SolicitacaoHistory[]
+  automationChainVisits   AutomationChainVisit[]
+  tasks                   Task[]
+  taskHistories           TaskHistory[]
+  taskOverdueOccurrences  TaskOverdueOccurrence[]
+  solicitacoes            Solicitacao[]
+  solicitacaoHistories    SolicitacaoHistory[]
+  notifications           Notification[]
+  notificationRecipients  NotificationRecipient[]
 
   @@map("Organization")
 }
@@ -1609,13 +1611,13 @@ model Automation {
   /// com Execução (a trilha da 4.8 é preservada).
   executions AutomationExecution[]
 
-  /// A consulta do motor (4.6) é "Automações ATIVAS de um Pipe"; a desta Story é "Automações de um Pipe".
-  @@index([orgId, pipeId, state])
   /// Alvo da FK COMPOSTA tenant-safe de `AutomationVersion` — o par `(orgId, id)` prova, no banco, que a
   /// versão e a Automação pertencem à MESMA Organização (mesmo racional de F-A1).
   @@unique([orgId, id])
   /// Idempotência de criação/duplicação (D-4.2-F). NULLs distintos ⇒ sem chave não há colisão.
   @@unique([orgId, pipeId, idempotencyKey])
+  /// A consulta do motor (4.6) é "Automações ATIVAS de um Pipe"; a desta Story é "Automações de um Pipe".
+  @@index([orgId, pipeId, state])
   @@map("Automation")
 }
 
@@ -1668,38 +1670,38 @@ model AutomationVersion {
 /// como `MovementEvent`/`CardHistory`/`FormVersion`. `eventId` DETERMINÍSTICO (uuidv5) + `@@unique([orgId,
 /// eventId])` ⇒ reprocessar o mesmo fato não cria 2ª linha lógica (idempotência).
 model DomainEvent {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @db.Uuid
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @db.Uuid
   /// Identidade lógica estável do evento (determinística por fato). Única por Organização.
-  eventId       String   @db.Uuid
+  eventId          String   @db.Uuid
   /// Tipo do catálogo (`event-catalog.ts`). String — vocabulário canônico estável (ex.: `CARD_CREATED`).
-  eventType     String
+  eventType        String
   /// Versão do CONTRATO do envelope canônico (`SCHEMA_VERSION_ENVELOPE`). Carimbada pelo servidor.
-  schemaVersion Int      @default(1)
+  schemaVersion    Int      @default(1)
   /// Pipe do recurso, quando aplicável (Card/vínculo). NULL para Registro puro (Story §1339).
-  pipeId        String?  @db.Uuid
+  pipeId           String?  @db.Uuid
   /// Recurso principal do Evento (polimórfico). `resourceType` ∈ {CARD, RECORD, CARD_RECORD_LINK}.
-  resourceType  String
-  resourceId    String   @db.Uuid
+  resourceType     String
+  resourceId       String   @db.Uuid
   /// Ator que originou o fato (quando disponível). Referência mínima de auditoria (pseudonimizável — D-4).
-  actorId       String?  @db.Uuid
+  actorId          String?  @db.Uuid
   /// Origem do fato (ex.: `SUBMISSION`, `PUBLIC`, `MOVE`). Vocabulário estável.
-  origin        String
+  origin           String
   /// Momento efetivo do fato (instante absoluto).
-  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
+  occurredAt       DateTime @default(now()) @db.Timestamptz(3)
   /// Correlação da operação (linka eventos relacionados de um mesmo fato). Base do `eventId` determinístico.
-  correlationId String   @db.Uuid
+  correlationId    String   @db.Uuid
   /// Evento causador (encadeamento por Automação — 4.7). NULL fora do motor.
-  causationId   String?  @db.Uuid
+  causationId      String?  @db.Uuid
   /// Cadeia de execução quando originado por Automação (4.7). NULL fora do motor.
-  executionChainId String? @db.Uuid
+  executionChainId String?  @db.Uuid
   /// Profundidade de encadeamento (Story 4.7). RAIZ (Evento externo) = 0; um Evento gerado por uma Ação carrega
   /// `profundidade-do-pai + 1`. O motor lê isto ao enfileirar a Execução-filha para aplicar `MAX_CHAIN_DEPTH`.
   /// INSERT-only (o outbox é append-only — GRANT sem UPDATE em `DomainEvent`).
-  chainDepth    Int      @default(0)
+  chainDepth       Int      @default(0)
   /// Envelope mínimo versionado (allowlist AD-30): só IDs/metadados da transição. NUNCA `valores`/PII/segredo.
-  payload       Json     @default("{}")
-  createdAt     DateTime @default(now())
+  payload          Json     @default("{}")
+  createdAt        DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -1841,18 +1843,18 @@ model AutomationExecution {
 /// **Sanitização (AD-30):** `targetResourceId` é só id de recurso; `valores`/PII NUNCA entram; `errorCode` é o
 /// enum estrutural sanitizado da recusa/falha.
 model AutomationActionResult {
-  id             String                      @id @default(uuid()) @db.Uuid
-  orgId          String                      @db.Uuid
-  executionId    String                      @db.Uuid
+  id               String                      @id @default(uuid()) @db.Uuid
+  orgId            String                      @db.Uuid
+  executionId      String                      @db.Uuid
   /// Posição estável da Ação na config `entao` (0-based) — a chave idempotente da Ação (§1403).
-  actionIndex    Int
-  actionType     String
-  state          AutomationActionResultState
+  actionIndex      Int
+  actionType       String
+  state            AutomationActionResultState
   /// Código sanitizado (motivo da recusa/falha) — nunca id/valor/PII/stack (AD-30). `null` no sucesso.
-  errorCode      String?
+  errorCode        String?
   /// Id do recurso ALVO efetivamente tocado (Card/Registro), quando houver. Só id — nunca `valores`.
-  targetResourceId String?                   @db.Uuid
-  createdAt      DateTime                    @default(now())
+  targetResourceId String?                     @db.Uuid
+  createdAt        DateTime                    @default(now())
 
   organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   execution    AutomationExecution @relation(fields: [orgId, executionId], references: [orgId, id], onDelete: Cascade)
@@ -1899,7 +1901,6 @@ model AutomationChainVisit {
   @@index([orgId, executionChainId])
   @@map("AutomationChainVisit")
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // ÉPICO 5 — Tarefas, Solicitações e Notificações. Story 5.1: Tarefas — ciclo de vida e acompanhamento.
@@ -2130,4 +2131,91 @@ model SolicitacaoHistory {
 
   @@index([orgId, solicitacaoId, createdAt])
   @@map("SolicitacaoHistory")
+}
+
+/// Estado de DISPONIBILIDADE do destinatário (Story 5.3). `SUPPRESSED` é atingido pela revalidação de
+/// acesso na LEITURA (5.4 — perda de acesso oculta a Notificação); a 5.3 entrega o campo + o GRANT de UPDATE
+/// que a torna possível, não a transição.
+enum NotificationAvailability {
+  AVAILABLE
+  SUPPRESSED
+}
+
+/// Conteúdo/evento canônico de uma Notificação (Story 5.3) — a FONTE ÚNICA (INV-NOTIF-01). **APPEND-ONLY,
+/// IMUTÁVEL** (GRANT só SELECT/INSERT, como `MembershipEvent`/`CardHistory`/`FormVersion`): o conteúdo é
+/// congelado no 1º write e nunca reescrito. O estado de leitura por destinatário vive em
+/// `NotificationRecipient` (mutável) — a separação é o ponto da Story (§1570). org-scoped: RLS ENABLE+FORCE +
+/// WITH CHECK (INSERT/UPDATE), em `MODELOS_AUDITADOS`.
+model Notification {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @db.Uuid
+  /// Tipo da Notificação. `String` — o catálogo canônico de tipos é a 5.6 (como `CardHistory.type`).
+  type          String
+  /// Versão do tipo — para renderização/evolução compatível (§1567).
+  typeVersion   Int      @default(1)
+  /// Evento de origem (idempotência). REFERÊNCIA-POR-ID sem FK — produtores 5.6/5.7/E8 têm origens distintas;
+  /// um FK acoplaria o modelo e criaria cascata. Obrigatório (sem ele não há idempotência — fail-closed).
+  sourceEventId String   @db.Uuid
+  /// Referência INTERNA ao recurso (ids, NUNCA payload) — permite à leitura (5.4) revalidar a autz atual e
+  /// ocultar/sanitizar/não-contar o inacessível. Referência-por-id sem FK (a Notificação NUNCA concede acesso).
+  resourceType  String
+  resourceId    String?  @db.Uuid
+  /// Ator/iniciador (referência-por-id de auditoria, como `MembershipEvent.actorId`). Nulo por defesa/sistema.
+  actorId       String?  @db.Uuid
+  /// Data/hora do evento (instante absoluto).
+  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
+  /// Parâmetros mínimos SANITIZADOS para renderização (allowlist estrutural fail-closed; HTML-escapado). NUNCA
+  /// payload bruto/token/segredo/URL/PII desnecessária.
+  params        Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  organization Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  recipients   NotificationRecipient[]
+
+  /// Idempotência do CONTEÚDO: 1 Notificação por (Org, Evento de origem, tipo). Reprocessar não duplica nem
+  /// sobrescreve o congelado.
+  @@unique([orgId, sourceEventId, type])
+  /// Alvo da FK COMPOSTA tenant-safe de `NotificationRecipient`.
+  @@unique([orgId, id])
+  @@map("Notification")
+}
+
+/// Estado de leitura por DESTINATÁRIO (Story 5.3) — um registro por pessoa. **MUTÁVEL, auditável**: GRANT
+/// SELECT/INSERT + UPDATE COLUMN-SCOPED (só `readAt`/`availabilityState`/`updatedAt`); **sem DELETE** (não se
+/// apaga dado do titular — LGPD; suprimir = `availabilityState`). O estado lido/não-lido é DERIVADO de
+/// `readAt` (nulo/preenchido), nunca um booleano persistido. org-scoped: RLS ENABLE+FORCE + WITH CHECK.
+model NotificationRecipient {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  orgId                 String                   @db.Uuid
+  notificationId        String                   @db.Uuid
+  /// Destinatário = a pessoa NA Org (a Membership). Referência-por-id SEM FK (como
+  /// `Solicitacao.responsavelMembershipId`/`CardResponsavel`: FK composta a Membership é inviável — `orgId`
+  /// compartilhado NOT NULL impede SetNull; Cascade quebraria LGPD). É a identidade que colapsa múltiplos papéis.
+  recipientMembershipId String                   @db.Uuid
+  /// `Account` global do destinatário (referência-por-id SEM FK — `Account` é global sem RLS; um FK Cascade
+  /// apagaria destinatários de TODAS as Orgs).
+  recipientUserId       String                   @db.Uuid
+  /// Nulo = NÃO-LIDO; preenchido = LIDO. O booleano `lido` é DERIVADO (`estaLida`), nunca persistido.
+  readAt                DateTime?                @db.Timestamptz(3)
+  /// Data de entrega LÓGICA (quando o registro do destinatário foi materializado).
+  deliveredAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  availabilityState     NotificationAvailability @default(AVAILABLE)
+  /// Chave de deduplicação determinística `"{sourceEventId}|{type}|{recipientMembershipId}"` — encoda
+  /// exatamente *Org + Evento de origem + tipo + destinatário* (§1569) num único índice, estável no reprocesso.
+  dedupeKey             String
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe `(orgId,notificationId)→Notification(orgId,id)`. Cascade: o destinatário é dado
+  /// da Notificação.
+  notification Notification @relation(fields: [orgId, notificationId], references: [orgId, id], onDelete: Cascade)
+
+  /// Idempotência do DESTINATÁRIO (o coração da Story): reprocesso E múltiplos papéis → mesma pessoa colapsam.
+  @@unique([orgId, dedupeKey])
+  /// Listar destinatários de uma Notificação.
+  @@index([orgId, notificationId])
+  /// Notificações de um destinatário (base da leitura/contagem da 5.4).
+  @@index([orgId, recipientMembershipId])
+  @@map("NotificationRecipient")
 }
