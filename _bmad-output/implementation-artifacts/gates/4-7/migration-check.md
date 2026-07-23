@@ -22,7 +22,17 @@ Nenhum backfill de dado; tabela nova vazia. Sem risco de reescrita de linha.
 duas tabelas). O valor de enum `HALTED_BY_LIMIT` NÃO é removível por `DROP VALUE` (limitação do PostgreSQL) —
 deixá-lo é INÓCUO (nenhuma linha o usa ao reverter). Documentado no cabeçalho da migration e no `.down.sql`.
 
-## Evidência de drill (banco descartável)
-- `db:migrate` (up) aplicou a migration sem erro; `db:status` = aplicada.
-- `db:rollback` (down) executou o `.down.sql`: tabela/índice/colunas removidos; re-`db:migrate` reaplicou limpo.
-- (Preencher com a saída real ao executar os gates — ver `tasks.md` item 11.)
+## Evidência de drill (banco descartável — PostgreSQL 16 real, porta 5451)
+Executado contra um PostgreSQL 16 descartável com os papéis `giraffe_migrator`/`giraffe_app` bootstrapados:
+- **UP**: `prisma migrate deploy` aplicou toda a cadeia, terminando em `20260729120000_automation_chaining` —
+  "All migrations have been successfully applied."
+- **DOWN (drill)**: aplicado `rollback/20260729120000_automation_chaining.down.sql` — `DROP TABLE`/`DROP INDEX`/
+  `ALTER TABLE` ok. Verificação: `AutomationChainVisit` = NULL (dropado), `chainDepth` ausente em
+  `AutomationExecution` e `DomainEvent` → `t|t|t`.
+- **RE-APPLY (up)**: re-aplicada a `migration.sql` — recriou tabela/policies/GRANT sem erro (`ADD VALUE IF NOT
+  EXISTS` idempotente); `AutomationChainVisit` presente → `t`.
+- **Provas de segurança via psql** (papel `giraffe_app`): UPDATE e DELETE em `AutomationChainVisit` →
+  `permission denied for table` (append-only); `chainDepth` ausente das colunas de UPDATE de `AutomationExecution`;
+  RLS ENABLE+FORCE (owner `giraffe_migrator`); 4 policies com WITH CHECK (INSERT/UPDATE); unique
+  `(orgId, executionChainId, signature)` presente; enum `HALTED_BY_LIMIT` presente.
+- **Suíte**: `automation-chaining-rls` (10/10) exercita a fase vermelha do GRANT/policy sob o runtime real.

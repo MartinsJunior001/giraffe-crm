@@ -11,4 +11,7 @@
 8. [x] `tenant-context.ts`: `AutomationChainVisit` em `MODELOS_AUDITADOS`.
 9. [x] Testes: `automation-chaining-core.test.ts`, `automation-chaining-e2e.test.ts`, `automation-chaining-rls.test.ts`.
 10. [x] Decision doc (consolidação do gate) + spec kit + gates.
-11. [ ] Gates de execução: prisma generate · migrate (drill down/up) · lint · typecheck · test (API) · build.
+11. [x] Gates de execução (PostgreSQL 16 real, porta 5451): prisma generate ✓ · migrate deploy + drill
+    down/up ✓ · typecheck 0 erros ✓ · lint 0 ✓ · nest build ✓ · testes 4.7 (core 10/10 · rls 10/10 ·
+    e2e 6/6) ✓ · regressão 4.6/4.3/domain-events 65/65 ✓ · suíte cheia 1511/1551 (as 40 restantes são
+    login/credencial-fixture ambientais — DEB-ENV-TEST-REPRODUZIVEL — verdes em DB limpo/CI; nenhuma toca o código da 4.7).
