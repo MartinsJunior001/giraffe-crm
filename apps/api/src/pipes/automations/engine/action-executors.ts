@@ -14,6 +14,10 @@ import {
   revalidarAcao,
 } from '../actions/action-revalidation.core';
 import type { PrincipalAutomacao } from '../actions/automation-principal';
+import {
+  EVENTO_GERADO_ASSIGN_RESPONSIBLE,
+  EVENTO_GERADO_RECORD_CREATE,
+} from '../actions/action-extension-contract';
 import type { ActionResultState, ErrorCode } from './engine-types';
 
 type Db = ReturnType<typeof withTenantContext>;
@@ -259,7 +263,8 @@ async function atribuirResponsavel(
       // Evento sem fato). O envelope propaga a cadeia/causação/profundidade; `actorId=null`/`origin=AUTOMATION`
       // (o ATOR é o principal Automação). `resourceId=cardId` (mesmo alvo) — a base da detecção de re-visita.
       const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
-        eventType: 'CARD_RESPONSIBLE_CHANGED',
+        // Identificador GERADO declarado pelo contrato de extensão (4.9): declarado = usado, sem drift.
+        eventType: EVENTO_GERADO_ASSIGN_RESPONSIBLE,
         pipeId,
         resourceType: 'CARD',
         resourceId: cardId,
@@ -364,7 +369,8 @@ async function criarRegistro(
       // barradas por PROFUNDIDADE, não por re-visita). `origin=AUTOMATION`; `correlationId=novo.id` (1:1 com o
       // Registro criado — `eventId` determinístico e retry-safe). Registro puro NÃO carrega `pipeId` (§1339).
       const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
-        eventType: 'RECORD_CREATED',
+        // Identificador GERADO declarado pelo contrato de extensão (4.9): declarado = usado, sem drift.
+        eventType: EVENTO_GERADO_RECORD_CREATE,
         pipeId: null,
         resourceType: 'RECORD',
         resourceId: novo.id,
