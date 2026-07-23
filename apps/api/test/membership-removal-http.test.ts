@@ -115,6 +115,18 @@ async function criarCardComAcesso(
   return { cardId, grantId, responsavelId };
 }
 
+/** Cria Pipe→Task com o membro como Responsável (referência-por-id). Devolve o taskId. */
+async function criarTarefaComResponsavel(orgId: string, membershipId: string): Promise<string> {
+  const dbC = withTenantContext(migrator, { orgId }, semLog);
+  const pipeId = randomUUID();
+  const taskId = randomUUID();
+  await dbC.pipe.create({ data: { id: pipeId, orgId, name: 'Pipe 5.1' } });
+  await dbC.task.create({
+    data: { id: taskId, orgId, pipeId, title: 'T', responsavelMembershipId: membershipId },
+  });
+  return taskId;
+}
+
 function cookieDe(res: Response): string {
   return (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
 }
@@ -192,6 +204,7 @@ afterAll(async () => {
   if (migrator) {
     for (const orgId of orgsCriadas) {
       const dbC = withTenantContext(migrator, { orgId }, semLog);
+      await dbC.task.deleteMany({ where: { orgId } }).catch(() => {});
       await dbC.cardResponsavel.deleteMany({ where: { orgId } }).catch(() => {});
       await dbC.cardGrant.deleteMany({ where: { orgId } }).catch(() => {});
       await dbC.card.deleteMany({ where: { orgId } }).catch(() => {});
@@ -276,6 +289,34 @@ describe('AC: remoção administrativa (step-up) — encerra, deny-by-default, r
       actorId: admin.accountId,
     });
     expect((eventos[0]!.payload as { saidaVoluntaria: boolean }).saidaVoluntaria).toBe(false);
+  });
+
+  it('Responsável de Tarefa (5.1) ESVAZIADO na mesma tx ao remover (contrato de reatribuição, §1525)', async () => {
+    const { orgId, cookie } = await orgComAdmin();
+    const alvo = await vincular(orgId, 'MEMBER');
+    const taskId = await criarTarefaComResponsavel(orgId, alvo.membershipId);
+
+    const res = await remover(cookie, alvo.membershipId);
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as { removedTaskResponsavelDe: string[] };
+    expect(corpo.removedTaskResponsavelDe).toEqual([taskId]);
+
+    // O Responsável da Tarefa foi esvaziado — sem referência operacional inválida silenciosa.
+    const dbC = withTenantContext(migrator, { orgId }, semLog);
+    const t = await dbC.task.findUnique({
+      where: { id: taskId },
+      select: { responsavelMembershipId: true },
+    });
+    expect(t?.responsavelMembershipId).toBeNull();
+
+    // A ação foi registrada no payload do evento canônico (auditoria via MembershipEvent, sem tocar TaskHistory).
+    const ev = await dbC.membershipEvent.findFirst({
+      where: { membershipId: alvo.membershipId },
+      select: { payload: true },
+    });
+    expect(
+      (ev?.payload as { removedTaskResponsavelDe: string[] }).removedTaskResponsavelDe,
+    ).toEqual([taskId]);
   });
 
   it('remover um membro SUSPENDED → 200 REMOVED (transição válida a partir de SUSPENDED)', async () => {

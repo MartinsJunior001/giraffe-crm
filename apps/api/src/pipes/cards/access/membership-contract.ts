@@ -53,6 +53,13 @@ export interface AlteracaoEntrada {
   grantsAtivos: readonly string[];
   /** Cards em que a Membership é Responsável atual (cardIds). */
   responsavelDe: readonly string[];
+  /**
+   * Tarefas (Story 5.1) em que a Membership é Responsável atual (taskIds). O Responsável da Tarefa é uma
+   * referência-por-id a uma Membership ATIVA; suspender/remover a Membership deve ESVAZIAR essa referência
+   * (senão restaria uma referência operacional inválida — §1525). Opcional para compatibilidade com chamadores
+   * anteriores à 5.1 (default vazio ⇒ nada a esvaziar).
+   */
+  taskResponsavelDe?: readonly string[];
 }
 
 /** Plano de reconciliação: o que E8 deve efetivar. NÃO executa — descreve. */
@@ -61,7 +68,9 @@ export interface AlteracaoPlano {
   revogarGrants: readonly string[];
   /** Cards cuja atribuição de Responsável deve ser removida (`state → REMOVED`), por cardId. */
   removerResponsavelDe: readonly string[];
-  /** Cards que ficaram SEM Responsável e precisam de reatribuição — SINALIZAÇÃO, não ação automática. */
+  /** Tarefas (Story 5.1) cujo Responsável deve ser esvaziado (`responsavelMembershipId → null`), por taskId. */
+  removerTaskResponsavelDe: readonly string[];
+  /** Cards/Tarefas que ficaram SEM Responsável e precisam de reatribuição — SINALIZAÇÃO, não ação automática. */
   reatribuir: readonly string[];
 }
 
@@ -76,11 +85,19 @@ export interface AlteracaoPlano {
  */
 export function aoAlterarMembership(entrada: AlteracaoEntrada): AlteracaoPlano {
   if (entrada.novoEstado === 'ACTIVE') {
-    return { revogarGrants: [], removerResponsavelDe: [], reatribuir: [] };
+    return {
+      revogarGrants: [],
+      removerResponsavelDe: [],
+      removerTaskResponsavelDe: [],
+      reatribuir: [],
+    };
   }
+  const tarefas = entrada.taskResponsavelDe ?? [];
   return {
     revogarGrants: [...entrada.grantsAtivos],
     removerResponsavelDe: [...entrada.responsavelDe],
-    reatribuir: [...entrada.responsavelDe],
+    removerTaskResponsavelDe: [...tarefas],
+    // Sinalização de reatribuição: Cards E Tarefas que ficaram órfãos (§1525 — reatribuir OU esvaziar).
+    reatribuir: [...entrada.responsavelDe, ...tarefas],
   };
 }
