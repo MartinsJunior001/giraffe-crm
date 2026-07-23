@@ -1,9 +1,13 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { IncomingMessage } from 'node:http';
 import { PinoLogger } from 'nestjs-pino';
 import { AUTH, type Auth } from '../auth/auth.tokens';
 import { PrismaService } from '../db/prisma.service';
 import { withAccountContext, withTenantContext } from '../db/tenant-context';
+import {
+  NOTIFICATION_REALTIME,
+  type NotificationRealtimePort,
+} from '../../notifications/realtime/notification-realtime.port';
 import { persistirOrganizacaoAtiva } from './persistir-preferencia';
 
 /** Uma Organização que a conta pode escolher. `papel` vem da MESMA Membership que concede o acesso. */
@@ -37,6 +41,13 @@ export class OrganizacaoAtivaService {
     @Inject(AUTH) private readonly auth: Auth,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    // Story 5.5 — a troca de Org ativa encerra as inscrições de tempo real da Org anterior (AC2). Port
+    // TÉCNICO transversal (sinal genérico "revalide"/"revogue por canal"), injetado por token global e
+    // OPCIONAL: sem o gateway, a troca segue idêntica. O adapter (gateway) vive em `notifications/`; aqui
+    // só se fala com a interface (nenhuma regra de negócio de Notificação entra no kernel).
+    @Optional()
+    @Inject(NOTIFICATION_REALTIME)
+    private readonly realtime?: NotificationRealtimePort,
   ) {}
 
   /**
@@ -136,10 +147,30 @@ export class OrganizacaoAtivaService {
       throw new NotFoundException();
     }
 
+    // A Org ativa ANTERIOR (para revogar a inscrição de tempo real dela). Lida da sessão validada no
+    // servidor, ANTES da persistência sobrescrever. Best-effort: falha aqui não impede a troca.
+    const anterior = await this.orgAtivaAtual(req);
+
     await this.persistirPreferencia(req, accountId, orgId);
+
+    // Story 5.5 (AC2): a troca encerra as inscrições anteriores — revoga o canal de tempo real da Org
+    // anterior do usuário (o cliente reabre o socket já na nova Org). Só quando havia outra Org ativa.
+    if (anterior && anterior !== orgId) this.realtime?.revogarCanal(anterior, accountId);
 
     this.logger.info({ event: 'org.trocada', accountId, orgId }, 'Organização ativa trocada');
     return this.comNome(orgId, membership.role);
+  }
+
+  /** A Organização ativa persistida na sessão desta requisição (ou `null`). Resolvida no servidor. */
+  private async orgAtivaAtual(req: IncomingMessage): Promise<string | null> {
+    try {
+      const sessao = await this.auth.api.getSession({ headers: paraHeaders(req.headers) });
+      const atual = (sessao?.session as { activeOrganizationId?: string | null } | undefined)
+        ?.activeOrganizationId;
+      return atual ?? null;
+    } catch {
+      return null; // best-effort: sem a Org anterior, apenas não revogamos (a troca segue).
+    }
   }
 
   /**
@@ -157,4 +188,14 @@ export class OrganizacaoAtivaService {
   ): Promise<void> {
     await persistirOrganizacaoAtiva(this.auth, this.prisma, req, accountId, orgId);
   }
+}
+
+/** Headers do Node → `Headers` do padrão web, preservando repetições (mesmo critério da 1.4/1.9). */
+function paraHeaders(brutos: IncomingMessage['headers']): Headers {
+  const headers = new Headers();
+  for (const [chave, valor] of Object.entries(brutos)) {
+    if (Array.isArray(valor)) valor.forEach((v) => headers.append(chave, v));
+    else if (valor !== undefined) headers.append(chave, valor);
+  }
+  return headers;
 }

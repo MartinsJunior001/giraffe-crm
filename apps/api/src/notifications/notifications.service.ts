@@ -2,10 +2,17 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import {
+  NOTIFICATION_REALTIME,
+  type NotificationRealtimePort,
+} from './realtime/notification-realtime.port';
+import { construirSinal } from './realtime/realtime-signal.core';
 import { Prisma } from '../../generated/prisma';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
@@ -73,6 +80,12 @@ export class NotificationsService {
     private readonly requestContext: RequestContext,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    // Story 5.5 — tempo real como INVALIDAÇÃO. Opcional (degradação): sem o gateway, a escrita segue
+    // idêntica e as superfícies leem por HTTP (5.4). Injetado por token global; ausente em testes que
+    // instanciam este serviço diretamente (`new NotificationsService(...)`) → no-op.
+    @Optional()
+    @Inject(NOTIFICATION_REALTIME)
+    private readonly realtime?: NotificationRealtimePort,
   ) {}
 
   private db(): { contexto: ContextoOrganizacional; db: Db } {
@@ -202,6 +215,19 @@ export class NotificationsService {
     }
     if (notificacaoCriada) {
       this.auditar(contexto, 'create', 'Notification');
+    }
+
+    // Tempo real (Story 5.5): APÓS o commit, sinaliza "revalide" ao canal (userId, org) de cada
+    // destinatário. Só quando ALGO novo foi materializado (`destinatariosCriados > 0`) — o reprocesso
+    // idempotente (count=0) não emite (nada novo a revalidar), coerente com a auditoria acima.
+    // Best-effort/fault-isolated: o `port` engole falhas; a escrita já está commitada e a fonte é o
+    // banco. Trafega SÓ o sinal (`id`+`at`), NUNCA o conteúdo/PII — a revalidação de acesso é da 5.4.
+    if (resultado.destinatariosCriados > 0) {
+      this.realtime?.notificarDestinatarios(
+        contexto.orgId,
+        destinatarios.map((d) => d.userId),
+        construirSinal(resultado.notificacao.id, resultado.notificacao.occurredAt),
+      );
     }
     return resultado;
   }
