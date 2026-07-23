@@ -1,20 +1,24 @@
 import { Module } from '@nestjs/common';
+import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
+import { NotificationPreferencesService } from './read/notification-preferences.service';
+import { NotificationsReadService } from './read/notifications-read.service';
 
 /**
- * Módulo da fonte única de Notificações (Épico 5, Story 5.3). Provê e EXPORTA `NotificationsService` — o
- * ÚNICO ponto de escrita de Notificação (write-side), a ser consumido pelos PRODUTORES de sistema
- * (contrato-futuro 5.6/5.7/E8) e pela superfície de leitura (5.4). Entidade DISTINTA (não reusa Card/Task/
- * Solicitação). Não expõe controller: criar Notificação é ato de sistema (sem rota de cliente), e a
- * leitura/marcar-lido-via-HTTP/contagem são a 5.4. Depende do contexto de Organização e do Prisma (globais
- * via `ContextModule`/`DbModule`).
+ * Módulo de Notificações (Épico 5). A 5.3 proveu `NotificationsService` — a ÚNICA fonte de escrita (write-side:
+ * `registrarNotificacao`, `marcarComoLida`, e desde a 5.4 `marcarTodasComoLidas`), consumida pelos PRODUTORES de
+ * sistema (contrato-futuro 5.6/5.7/E8).
  *
- * O consumidor concreto que evita "módulo vazio" (Constitution — sem abstração especulativa) é o próprio
- * serviço de escrita, testado ponta-a-ponta (`notifications-write`): idempotência, sanitização, `readAt` e
- * isolamento provados contra PostgreSQL real.
+ * A 5.4 acrescenta as SUPERFÍCIES (leitura): `NotificationsController` (badge/popover/página + marcar-lido +
+ * preferências), `NotificationsReadService` (superfícies + contagem no servidor + revalidação de acesso por
+ * `resourceType`) e `NotificationPreferencesService` (preferências por tipo do próprio usuário). A revalidação
+ * reusa as guardas finas PURAS de `pipe-authz`/`database-authz` (sem ciclo de módulo — são funções, não
+ * providers) e o `ability.ts`/guard (C3) permanece congelado (a guarda GROSSA é `@Requer('ler','Organizacao')`,
+ * o piso). Depende do contexto de Organização e do Prisma (globais via `ContextModule`/`DbModule`).
  */
 @Module({
-  providers: [NotificationsService],
+  controllers: [NotificationsController],
+  providers: [NotificationsService, NotificationsReadService, NotificationPreferencesService],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

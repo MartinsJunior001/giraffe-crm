@@ -90,6 +90,9 @@ const MODELOS_AUDITADOS = new Set([
   // cobertas.
   'Notification',
   'NotificationRecipient',
+  // Story 5.4. Preferência de Notificação por tipo (setar/upsert é mutação org-scoped) — na trilha (FR-214),
+  // inclusive a tentativa negada por RLS.
+  'NotificationPreference',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
