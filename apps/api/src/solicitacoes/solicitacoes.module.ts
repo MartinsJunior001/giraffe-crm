@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { SolicitacoesController } from './solicitacoes.controller';
 import { SolicitacoesService } from './solicitacoes.service';
 import { SolicitacoesReadService } from './solicitacoes-read.service';
@@ -18,6 +19,7 @@ import { SolicitacaoFilesController } from './files/solicitacao-files.controller
  * `FileEventDispatcher` (→ `SolicitacaoHistory`).
  */
 @Module({
+  imports: [NotificationsModule],
   controllers: [SolicitacoesController, SolicitacaoFilesController],
   providers: [SolicitacoesService, SolicitacoesReadService],
 })

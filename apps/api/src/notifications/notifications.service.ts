@@ -16,7 +16,11 @@ import { construirSinal } from './realtime/realtime-signal.core';
 import { Prisma } from '../../generated/prisma';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
-import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import {
+  definirContextoOrg,
+  type TenantContext,
+  withTenantContext,
+} from '../kernel/db/tenant-context';
 import {
   chaveDeduplicacao,
   estaLida,
@@ -101,8 +105,21 @@ export class NotificationsService {
    * duplicidade); múltiplos papéis -> mesma pessoa colapsam pela `dedupeKey`. Nunca 500 em conflito.
    */
   async registrarNotificacao(evento: EventoNotificavel): Promise<NotificacaoRegistrada> {
-    const { contexto } = this.db();
+    return this.registrarNotificacaoNoContexto(this.requestContext.obter(), evento);
+  }
 
+  /**
+   * Mesma escrita da fonte única, com o contexto organizacional passado EXPLICITAMENTE (Story 5.6) — para
+   * produtores de **sistema** que não rodam numa requisição HTTP (ex.: o scan de Tarefa atrasada, 5.1). O corpo
+   * é IDÊNTICO ao de `registrarNotificacao` (idempotência/auditoria/sanitização/tempo real inalterados); só a
+   * ORIGEM do contexto muda — exatamente como `withTenantContext`/`definirContextoOrg` já são parametrizados por
+   * contexto. `accountId` ausente ⇒ ator de auditoria nulo (evento de sistema), explicitamente. Não reimplementa
+   * a fonte; é o mesmo e único ponto de escrita de `Notification`/`NotificationRecipient`.
+   */
+  async registrarNotificacaoNoContexto(
+    contexto: TenantContext,
+    evento: EventoNotificavel,
+  ): Promise<NotificacaoRegistrada> {
     // 1) Validação/sanitização fail-closed (contrato do produtor).
     if (!tipoValido(evento.type)) throw new BadRequestException('tipo de Notificação inválido');
     if (!resourceTypeValido(evento.resourceType)) {
@@ -203,7 +220,7 @@ export class NotificationsService {
       if (isConflito(err)) {
         // Idempotente sob corrida remanescente: releia e devolva (nunca 500). Nada foi inserido por ESTA
         // chamada (a tx deu rollback) — por isso não há auditoria de criação aqui.
-        return this.relerRegistrada(evento.sourceEventId, evento.type);
+        return this.relerRegistrada(contexto, evento.sourceEventId, evento.type);
       }
       throw err;
     }
@@ -234,10 +251,11 @@ export class NotificationsService {
 
   /** Releitura idempotente do conteúdo já gravado (caminho de conflito remanescente). */
   private async relerRegistrada(
+    contexto: TenantContext,
     sourceEventId: string,
     type: string,
   ): Promise<NotificacaoRegistrada> {
-    const { db } = this.db();
+    const db = withTenantContext(this.prisma, contexto, this.logger);
     const n = await db.notification.findFirst({
       where: { sourceEventId, type },
       select: SELECT_NOTIFICATION,
@@ -392,11 +410,15 @@ export class NotificationsService {
   }
 
   /** Auditoria manual (FR-214) — a tx raiz não passa pela extensão. Só metadados; nunca PII/params. */
-  private auditar(contexto: ContextoOrganizacional, action: string, resource: string): void {
+  private auditar(
+    contexto: { orgId: string; accountId?: string | null },
+    action: string,
+    resource: string,
+  ): void {
     this.logger.info(
       {
         event: 'audit',
-        actor: contexto.accountId,
+        actor: contexto.accountId ?? null,
         orgId: contexto.orgId,
         action,
         resource,

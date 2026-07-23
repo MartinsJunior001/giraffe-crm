@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 import { TasksReadService } from './tasks-read.service';
@@ -19,6 +20,7 @@ import { TaskFilesController } from './files/task-files.controller';
  * roteada por `FileAuthzDispatcher` (branch TASK → `pipe-authz`) e a trilha por `FileEventDispatcher` (→ `TaskHistory`).
  */
 @Module({
+  imports: [NotificationsModule],
   controllers: [TasksController, TaskFilesController],
   providers: [TasksService, TasksReadService, TaskOverdueService],
   exports: [TaskOverdueService],
