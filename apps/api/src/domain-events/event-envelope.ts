@@ -48,6 +48,12 @@ export interface DadosEvento {
   causationId?: string | null;
   /** Cadeia de execução quando originado por Automação (4.7). Ausente fora do motor. */
   executionChainId?: string | null;
+  /**
+   * Profundidade de encadeamento (Story 4.7). A RAIZ (Evento externo) é 0; um Evento gerado por uma Ação carrega
+   * `profundidade-do-pai + 1`. É o carimbo que o motor lê ao enfileirar a Execução-filha para aplicar o limite
+   * de profundidade (`MAX_CHAIN_DEPTH`). Ausente/0 fora do encadeamento.
+   */
+  chainDepth?: number;
   /** Estado antes/depois MINIMIZADO (só IDs/metadados). Ver `minimizarPayload`. */
   payload?: Record<string, unknown>;
 }
@@ -67,6 +73,7 @@ export interface EnvelopeEvento {
   correlationId: string;
   causationId: string | null;
   executionChainId: string | null;
+  chainDepth: number;
   payload: Record<string, unknown>;
 }
 
@@ -182,6 +189,17 @@ export function montarEnvelope(dados: DadosEvento): EnvelopeEvento {
     correlationId: dados.correlationId,
     causationId: dados.causationId ?? null,
     executionChainId: dados.executionChainId ?? null,
+    // Default defensivo: profundidade malformada/≤0 vira 0. INALCANÇÁVEL no fluxo real — os dois executores
+    // sempre passam `exec.chainDepth + 1` (Int do banco ≥1) e nenhuma rota escreve no outbox. A garantia do
+    // eixo profundidade é o Int NOT NULL + o +1 do executor + a barreira do motor (`excedeuProfundidade`),
+    // não este clamp; um 0 aqui ainda seria pego pela detecção por assinatura. Endurecer (malformado COM
+    // `executionChainId` ⇒ tratar como excedido) é `DEB-4-7-ENVELOPE-DEPTH-FAIL-CLOSED` (LOW, não alcançável).
+    chainDepth:
+      typeof dados.chainDepth === 'number' &&
+      Number.isFinite(dados.chainDepth) &&
+      dados.chainDepth > 0
+        ? Math.floor(dados.chainDepth)
+        : 0,
     payload: minimizarPayload(dados.payload),
   };
 }

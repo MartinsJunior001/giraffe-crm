@@ -19,7 +19,11 @@ export type ExecutionState =
   | 'PARTIAL'
   | 'FAILED'
   | 'SKIPPED_CONDITIONS'
-  | 'BLOCKED_CONFIRMATION';
+  | 'BLOCKED_CONFIRMATION'
+  // Story 4.7 — Execução BARRADA por um limite de encadeamento (profundidade/ciclo/timeout da cadeia). Estado
+  // TERMINAL e HONESTO (§1432, UX-DR6 — "interrompida por limite"): dead-letter auditável, não reivindicável,
+  // sem loop silencioso. O `lastErrorCode` distingue o motivo (DEPTH_EXCEEDED/CYCLE_DETECTED/CHAIN_TIMEOUT).
+  | 'HALTED_BY_LIMIT';
 
 /** Estado do resultado de UMA Ação (espelha `AutomationActionResultState`). */
 export type ActionResultState =
@@ -38,4 +42,10 @@ export type ErrorCode =
   | 'EXECUTOR_ERROR'
   | 'MAX_ATTEMPTS_EXCEEDED'
   | 'REQUIRES_CONFIRMATION'
-  | 'PRIOR_ACTION_BLOCKED';
+  | 'PRIOR_ACTION_BLOCKED'
+  // Story 4.7 — motivos SANITIZADOS de BARREIRA de encadeamento (prevenção de ciclos/estouro — NFR-7/AD-18).
+  | 'DEPTH_EXCEEDED'
+  | 'CYCLE_DETECTED'
+  | 'CHAIN_TIMEOUT'
+  | 'ACTION_TIMEOUT'
+  | 'EXECUTION_TIMEOUT';

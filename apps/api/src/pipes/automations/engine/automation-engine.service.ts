@@ -11,8 +11,16 @@ import { executarAcao, type ExecContext } from './action-executors';
 import { proximaAcaoPendente } from './engine-dedup.core';
 import { completarEstadosDeAcao, estadoFinalDaExecucao } from './execution-plan.core';
 import { ehErroTransitorio, esgotou, leaseAte, proximaTentativaEm } from './retry-policy.core';
+import {
+  avaliarBarreira,
+  derivarAssinaturaVisita,
+  type MotivoBarreiraCadeia,
+} from './chain-guard.core';
 import { montarSnapshotEContexto } from './snapshot-builder';
 import type { ActionResultState } from './engine-types';
+
+/** Teto de segurança de iterações do drain de cadeia — belt-and-suspenders sobre o limite de profundidade. */
+const MAX_ITERACOES_DRAIN = 1_000;
 
 type Db = ReturnType<typeof withTenantContext>;
 
@@ -103,12 +111,19 @@ export class AutomationEngineService {
         eventId: true,
         eventType: true,
         pipeId: true,
+        resourceId: true,
         actorId: true,
         correlationId: true,
         executionChainId: true,
+        chainDepth: true,
       },
     });
     if (!evento) return 0;
+
+    // RAIZ da cadeia = Evento externo (sem `executionChainId`): a raiz é o próprio `eventId`, para que TODAS as
+    // Automações do mesmo Evento compartilhem a MESMA cadeia. Um filho HERDA o `executionChainId` do gerador (4.7).
+    const chainId = evento.executionChainId ?? evento.eventId;
+    const ehRaiz = evento.executionChainId === null || evento.executionChainId === undefined;
 
     const automacoes = await db.automation.findMany({
       where: { state: 'ACTIVE', ...(evento.pipeId ? { pipeId: evento.pipeId } : {}) },
@@ -127,28 +142,179 @@ export class AutomationEngineService {
       if (!config) continue;
       if (config.quando.tipo !== evento.eventType) continue; // gatilho não casa ⇒ não enfileira
 
-      try {
-        await db.automationExecution.create({
-          data: {
-            orgId,
-            eventId: evento.eventId,
-            automationId: auto.id,
-            automationVersionId: auto.activeVersion,
-            configSnapshotRevision: versao.revision,
-            pipeId: auto.pipeId,
-            state: 'PENDING',
-            initiatorType: evento.actorId ? 'HUMANO' : 'SISTEMA',
-            initiatorAccountId: evento.actorId,
-            correlationId: evento.correlationId,
-            executionChainId: evento.executionChainId,
-          },
-        });
-        criadas++;
-      } catch (err) {
-        if (!isP2002(err)) throw err; // já enfileirada (dedup) ⇒ idempotente; qualquer outro erro propaga
-      }
+      const criada = await this.enfileirarUmaExecucao(orgId, db, {
+        evento,
+        chainId,
+        ehRaiz,
+        automationId: auto.id,
+        automationVersionId: auto.activeVersion,
+        pipeId: auto.pipeId,
+        configSnapshotRevision: versao.revision,
+      });
+      if (criada) criadas++;
     }
     return criadas;
+  }
+
+  /**
+   * Enfileira UMA Execução (evento × Automação × versão) aplicando a PREVENÇÃO DE CICLOS (Story 4.7) ANTES de a
+   * tornar PENDING (§1428 — a barreira é consultada antes de enfileirar/processar a Execução-filha):
+   *
+   *  1. **dedup** — se a Execução já existe (`@@unique`), é redelivery at-least-once ⇒ NÃO recria (idempotente);
+   *  2. **barreira PURA** — profundidade (`MAX_CHAIN_DEPTH`) e duração da cadeia (`MAX_CHAIN_DURATION_MS`, via o
+   *     `min(createdAt)` das visitas da cadeia). Barrado ⇒ Execução TERMINAL `HALTED_BY_LIMIT` (dead-letter), sem rodar;
+   *  3. **assinatura de visita** — registra `(chainId, signature)`. Colisão com `eventId` DISTINTO ⇒ re-visita
+   *     (ciclo A→A / A→B→A) ⇒ `HALTED_BY_LIMIT`/`CYCLE_DETECTED`. `eventId` igual ⇒ redelivery (não é ciclo).
+   *
+   * Toda Execução (inclusive a barrada) é PERSISTIDA para a trilha da 4.8 (§1432 — "com motivo registrado, sem
+   * loop silencioso"). Retorna `true` se materializou uma Execução nova (PENDING ou HALTED), `false` no dedup.
+   */
+  private async enfileirarUmaExecucao(
+    orgId: string,
+    db: Db,
+    p: {
+      evento: {
+        eventId: string;
+        eventType: string;
+        actorId: string | null;
+        correlationId: string;
+        resourceId: string;
+        chainDepth: number;
+      };
+      chainId: string;
+      ehRaiz: boolean;
+      automationId: string;
+      automationVersionId: number;
+      pipeId: string;
+      configSnapshotRevision: string;
+    },
+  ): Promise<boolean> {
+    // (1) Dedup lógico: a Execução já existe? (redelivery at-least-once) ⇒ idempotente, não recria nem revisita.
+    const jaExiste = await db.automationExecution.findFirst({
+      where: {
+        eventId: p.evento.eventId,
+        automationId: p.automationId,
+        automationVersionId: p.automationVersionId,
+      },
+      select: { id: true },
+    });
+    if (jaExiste) return false;
+
+    const execId = randomUUID();
+    const agora = new Date();
+
+    // (2) Barreira PURA: profundidade + duração da cadeia. Início da cadeia = min(createdAt) das visitas.
+    const inicioCadeia = p.ehRaiz ? null : await this.inicioDaCadeia(db, p.chainId);
+    const barreira = avaliarBarreira({
+      chainDepth: p.evento.chainDepth,
+      chainStartedAt: inicioCadeia,
+      ehRaiz: p.ehRaiz,
+      agora,
+    });
+    let motivoBarrado: MotivoBarreiraCadeia | null = barreira.barrado ? barreira.motivo : null;
+
+    // (3) Assinatura de visita (só se ainda não barrado por profundidade/timeout). Detecção de ciclo pelo BANCO.
+    if (!motivoBarrado) {
+      const assinatura = derivarAssinaturaVisita(
+        p.automationId,
+        p.automationVersionId,
+        p.evento.eventType,
+        p.evento.resourceId,
+      );
+      motivoBarrado = await this.registrarVisita(
+        orgId,
+        db,
+        p.chainId,
+        assinatura,
+        p.evento.eventId,
+        execId,
+      );
+    }
+
+    // (4) Materializa a Execução — PENDING (liberada) ou HALTED_BY_LIMIT (barrada, dead-letter auditável).
+    const initiatorType = p.evento.actorId ? 'HUMANO' : 'SISTEMA';
+    try {
+      await db.automationExecution.create({
+        data: {
+          id: execId,
+          orgId,
+          eventId: p.evento.eventId,
+          automationId: p.automationId,
+          automationVersionId: p.automationVersionId,
+          configSnapshotRevision: p.configSnapshotRevision,
+          pipeId: p.pipeId,
+          state: motivoBarrado ? 'HALTED_BY_LIMIT' : 'PENDING',
+          initiatorType,
+          initiatorAccountId: p.evento.actorId,
+          correlationId: p.evento.correlationId,
+          executionChainId: p.chainId,
+          chainDepth: p.evento.chainDepth,
+          ...(motivoBarrado ? { finishedAt: agora, lastErrorCode: motivoBarrado } : {}),
+        },
+      });
+    } catch (err) {
+      if (isP2002(err)) return false; // corrida com outro worker no dedup ⇒ idempotente
+      throw err;
+    }
+    if (motivoBarrado) {
+      this.logger.warn(
+        { event: 'automation.chain.halted', orgId, execId, motivo: motivoBarrado },
+        'Execução barrada por limite de encadeamento',
+      );
+    }
+    return true;
+  }
+
+  /** Início da cadeia = instante da 1ª visita (o mais antigo). `null` se a cadeia ainda não tem visita. */
+  private async inicioDaCadeia(db: Db, chainId: string): Promise<Date | null> {
+    const agg = await db.automationChainVisit.aggregate({
+      where: { executionChainId: chainId },
+      _min: { createdAt: true },
+    });
+    return agg._min.createdAt ?? null;
+  }
+
+  /**
+   * Registra a assinatura de visita da cadeia. Devolve `null` (liberado) ou `'CYCLE_DETECTED'` (re-visita). Lê
+   * antes de inserir para NÃO confundir REDELIVERY do MESMO Evento (mesmo `eventId` — não é ciclo) com RE-VISITA
+   * (Evento distinto, mesma assinatura — é ciclo). A corrida de concorrência é arbitrada pelo `@@unique` do banco
+   * (P2002): o perdedor RELÊ e decide pelo `eventId` da visita vencedora — sem falso positivo em at-least-once.
+   */
+  private async registrarVisita(
+    orgId: string,
+    db: Db,
+    chainId: string,
+    assinatura: string,
+    eventId: string,
+    execId: string,
+  ): Promise<MotivoBarreiraCadeia | null> {
+    const existente = await db.automationChainVisit.findFirst({
+      where: { executionChainId: chainId, signature: assinatura },
+      select: { eventId: true },
+    });
+    if (existente) {
+      return existente.eventId === eventId ? null : 'CYCLE_DETECTED';
+    }
+    try {
+      await db.automationChainVisit.create({
+        data: {
+          orgId,
+          executionChainId: chainId,
+          signature: assinatura,
+          eventId,
+          executionId: execId,
+        },
+      });
+      return null;
+    } catch (err) {
+      if (!isP2002(err)) throw err;
+      // Corrida: outro worker inseriu a mesma assinatura — relê e decide pelo eventId (fail-closed em CYCLE).
+      const venceu = await db.automationChainVisit.findFirst({
+        where: { executionChainId: chainId, signature: assinatura },
+        select: { eventId: true },
+      });
+      return venceu && venceu.eventId === eventId ? null : 'CYCLE_DETECTED';
+    }
   }
 
   /**
@@ -157,11 +323,21 @@ export class AutomationEngineService {
    * crash — §1406); o dedup por Ação garante que efeitos já concluídos não repetem. Devolve quantas processou.
    */
   async drenarOrg(orgId: string, limite = 20): Promise<number> {
-    const ids = await this.reivindicar(orgId, limite);
-    for (const id of ids) {
-      await this.processarReivindicada(orgId, id);
+    let total = 0;
+    // Loop de cadeia (Story 4.7): processar uma Execução pode GERAR Eventos (encadeamento) que precisam ser
+    // enfileirados e drenados. Reivindica → processa → enfileira os Eventos gerados → repete até esvaziar. O
+    // término é GARANTIDO pela prevenção (profundidade/ciclo/timeout barram filhos como HALTED = não-reivindicáveis)
+    // + o teto de segurança `MAX_ITERACOES_DRAIN`. O driver contínuo multi-réplica segue deferido (DEB-4-6-DRIVER-CONTINUO).
+    for (let iter = 0; iter < MAX_ITERACOES_DRAIN; iter++) {
+      const ids = await this.reivindicar(orgId, limite);
+      if (ids.length === 0) break;
+      for (const id of ids) {
+        const eventosGerados = await this.processarReivindicada(orgId, id);
+        for (const evId of eventosGerados) await this.enfileirarParaEvento(orgId, evId);
+        total++;
+      }
     }
-    return ids.length;
+    return total;
   }
 
   /** Conveniência síncrona (testes / caminho direto): enfileira e drena o próprio Evento. */
@@ -203,8 +379,11 @@ export class AutomationEngineService {
     });
   }
 
-  /** Processa uma Execução já REIVINDICADA (RUNNING). Idempotente por Ação; trata transitório com backoff. */
-  private async processarReivindicada(orgId: string, execId: string): Promise<void> {
+  /**
+   * Processa uma Execução já REIVINDICADA (RUNNING). Idempotente por Ação; trata transitório com backoff. Devolve
+   * os `eventId`s dos Eventos que suas Ações GERARAM (encadeamento — 4.7), para o drain os enfileirar em seguida.
+   */
+  private async processarReivindicada(orgId: string, execId: string): Promise<string[]> {
     const db = this.db(orgId);
     const exec = await db.automationExecution.findUnique({
       where: { id: execId },
@@ -217,18 +396,19 @@ export class AutomationEngineService {
         attempt: true,
         correlationId: true,
         executionChainId: true,
+        chainDepth: true,
         initiatorType: true,
         initiatorAccountId: true,
       },
     });
-    if (!exec) return;
+    if (!exec) return [];
 
     try {
-      await this.executarPipeline(orgId, db, exec);
+      return await this.executarPipeline(orgId, db, exec);
     } catch (err) {
       if (ehErroTransitorio(err)) {
         await this.agendarRetry(orgId, execId, exec.attempt);
-        return;
+        return [];
       }
       // Erro inesperado (não transitório): estado final explícito FAILED — nenhuma falha desaparece (§1405).
       await this.finalizar(orgId, execId, 'FAILED', 'EXECUTOR_ERROR');
@@ -236,10 +416,14 @@ export class AutomationEngineService {
         { event: 'automation.engine.error', orgId, execId },
         'falha não-transitória na Execução',
       );
+      return [];
     }
   }
 
-  /** O núcleo: monta snapshot → avalia Condições → executa Ações em ordem (efeitos parciais) → estado final. */
+  /**
+   * O núcleo: monta snapshot → avalia Condições → executa Ações em ordem (efeitos parciais) → estado final.
+   * Devolve os `eventId`s dos Eventos que as Ações GERARAM (encadeamento — 4.7), para o drain os enfileirar.
+   */
   private async executarPipeline(
     orgId: string,
     db: Db,
@@ -249,8 +433,10 @@ export class AutomationEngineService {
       automationId: string;
       automationVersionId: number;
       pipeId: string;
+      executionChainId: string | null;
+      chainDepth: number;
     },
-  ): Promise<void> {
+  ): Promise<string[]> {
     const evento = await db.domainEvent.findFirst({
       where: { eventId: exec.eventId },
       select: {
@@ -269,8 +455,16 @@ export class AutomationEngineService {
     const config = versao ? this.lerConfig(versao.snapshot) : null;
     if (!evento || !config) {
       await this.finalizar(orgId, exec.id, 'FAILED', 'EXECUTOR_ERROR');
-      return;
+      return [];
     }
+
+    // Cadeia (4.7) propagada a cada executor: um Evento gerado por Ação herda esta cadeia e `chainDepth + 1`.
+    const cadeia = {
+      causationEventId: exec.eventId,
+      executionChainId: exec.executionChainId ?? exec.eventId,
+      chainDepth: exec.chainDepth,
+    };
+    const eventosGerados: string[] = [];
 
     const principal = this.montarPrincipal(
       orgId,
@@ -285,7 +479,7 @@ export class AutomationEngineService {
     const avaliacao = avaliarCondicoes(config.condicoes, snapshot);
     if (!avaliacao.aprovado) {
       await this.finalizar(orgId, exec.id, 'SKIPPED_CONDITIONS', 'CONDITION_NOT_MET');
-      return;
+      return [];
     }
 
     // Ações em ORDEM. Retomada idempotente: pula índices JÁ gravados (dedup por Ação — §1403).
@@ -330,6 +524,7 @@ export class AutomationEngineService {
         principal,
         executionId: exec.id,
         actionIndex: i,
+        cadeia,
       };
       const r = await executarAcao(ctx, config.entao[i]!, contexto);
       await this.gravarResultado(
@@ -341,6 +536,7 @@ export class AutomationEngineService {
         r.errorCode,
         r.targetResourceId,
       );
+      if (r.emittedEventId) eventosGerados.push(r.emittedEventId); // encadeamento (4.7)
       executados[i] = r.state;
       if (r.state === 'FAILED' || r.state === 'DENIED' || r.state === 'BLOCKED_CONFIRMATION')
         encerrou = true;
@@ -352,6 +548,7 @@ export class AutomationEngineService {
     );
     const estadoFinal = estadoFinalDaExecucao(completos);
     await this.finalizar(orgId, exec.id, estadoFinal, null);
+    return eventosGerados;
   }
 
   /** Grava o resultado de UMA Ação (append-only, dedup por índice). Colisão P2002 = já gravado ⇒ ignora. */
