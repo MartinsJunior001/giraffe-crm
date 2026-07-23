@@ -60,6 +60,12 @@ export interface AlteracaoEntrada {
    * anteriores à 5.1 (default vazio ⇒ nada a esvaziar).
    */
   taskResponsavelDe?: readonly string[];
+  /**
+   * Solicitações (Story 5.2) em que a Membership é Responsável atual (solicitacaoIds). Análogo à Tarefa: o
+   * Responsável é referência-por-id a uma Membership ATIVA; suspender/remover a Membership deve ESVAZIAR essa
+   * referência (§1546). Opcional para compatibilidade com chamadores anteriores à 5.2 (default vazio).
+   */
+  requestResponsavelDe?: readonly string[];
 }
 
 /** Plano de reconciliação: o que E8 deve efetivar. NÃO executa — descreve. */
@@ -70,7 +76,9 @@ export interface AlteracaoPlano {
   removerResponsavelDe: readonly string[];
   /** Tarefas (Story 5.1) cujo Responsável deve ser esvaziado (`responsavelMembershipId → null`), por taskId. */
   removerTaskResponsavelDe: readonly string[];
-  /** Cards/Tarefas que ficaram SEM Responsável e precisam de reatribuição — SINALIZAÇÃO, não ação automática. */
+  /** Solicitações (Story 5.2) cujo Responsável deve ser esvaziado (`→ null`), por solicitacaoId. */
+  removerRequestResponsavelDe: readonly string[];
+  /** Cards/Tarefas/Solicitações que ficaram SEM Responsável e precisam de reatribuição — SINALIZAÇÃO, não ação automática. */
   reatribuir: readonly string[];
 }
 
@@ -89,15 +97,18 @@ export function aoAlterarMembership(entrada: AlteracaoEntrada): AlteracaoPlano {
       revogarGrants: [],
       removerResponsavelDe: [],
       removerTaskResponsavelDe: [],
+      removerRequestResponsavelDe: [],
       reatribuir: [],
     };
   }
   const tarefas = entrada.taskResponsavelDe ?? [];
+  const solicitacoes = entrada.requestResponsavelDe ?? [];
   return {
     revogarGrants: [...entrada.grantsAtivos],
     removerResponsavelDe: [...entrada.responsavelDe],
     removerTaskResponsavelDe: [...tarefas],
-    // Sinalização de reatribuição: Cards E Tarefas que ficaram órfãos (§1525 — reatribuir OU esvaziar).
-    reatribuir: [...entrada.responsavelDe, ...tarefas],
+    removerRequestResponsavelDe: [...solicitacoes],
+    // Sinalização de reatribuição: Cards, Tarefas E Solicitações órfãos (§1525/§1546 — reatribuir OU esvaziar).
+    reatribuir: [...entrada.responsavelDe, ...tarefas, ...solicitacoes],
   };
 }

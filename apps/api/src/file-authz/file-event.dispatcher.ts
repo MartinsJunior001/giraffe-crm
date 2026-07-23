@@ -2,11 +2,13 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
 import type { ContextoEvento, EventoArquivo, FileEventSink } from '../files/file-event-sink';
 
-/** `resourceType`s concretos que 3.8/5.1 ligam (allowlist; tipo desconhecido → não emite, sem falhar a operação). */
+/** `resourceType`s concretos que 3.8/5.1/5.2 ligam (allowlist; tipo desconhecido → não emite, sem falhar). */
 const RESOURCE_CARD = 'CARD';
 const RESOURCE_RECORD = 'RECORD';
 /** Story 5.1 — anexo geral de Tarefa: o evento vai para a trilha `TaskHistory`. */
 const RESOURCE_TASK = 'TASK';
+/** Story 5.2 — anexo geral de Solicitação: o evento vai para a trilha `SolicitacaoHistory`. */
+const RESOURCE_SOLICITACAO = 'SOLICITACAO';
 
 /** Resumos legíveis por tipo de evento (sem PII/chave — só a referência ao `fileId` vai no summary). */
 const RESUMO: Record<EventoArquivo['tipo'], string> = {
@@ -47,6 +49,10 @@ export class FileEventDispatcher implements FileEventSink {
     }
     if (evento.resourceType === RESOURCE_TASK) {
       await tx.taskHistory.create({ data: { ...base, taskId: evento.resourceId } });
+      return;
+    }
+    if (evento.resourceType === RESOURCE_SOLICITACAO) {
+      await tx.solicitacaoHistory.create({ data: { ...base, solicitacaoId: evento.resourceId } });
       return;
     }
     // resourceType sem trilha conhecida: silêncio (não emite, não falha a operação do arquivo).
