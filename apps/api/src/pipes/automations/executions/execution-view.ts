@@ -62,6 +62,7 @@ const MOTIVOS: Readonly<Record<string, string>> = {
   PRIOR_ACTION_BLOCKED: 'Ação anterior falhou ou foi bloqueada',
   REQUIRES_CONFIRMATION: 'Ação requer confirmação humana',
   ALVO_INDETERMINADO: 'Alvo da ação indeterminado',
+  SEM_CAPACIDADE: 'Sem capacidade autorizada para executar a ação',
   FORA_DO_ESCOPO: 'Alvo fora do escopo autorizado',
   FORA_DA_ORG: 'Alvo fora da organização',
   ESTADO_INVALIDO: 'Estado inválido para a ação',
@@ -75,13 +76,25 @@ const MOTIVOS: Readonly<Record<string, string>> = {
 const CODIGO_RE = /^[A-Z][A-Z_]*$/;
 
 /**
+ * Código de erro SANITIZADO para saída, fail-closed (AD-30): devolve o código **apenas** se for um enum
+ * estrutural (`^[A-Z_]+$`); qualquer valor não-estrutural (texto livre, PII, metacaracteres) vira `null` —
+ * nunca é ecoado cru. É a **fonte única** da defesa, aplicada tanto ao campo RAW (`lastErrorCode`/`errorCode`)
+ * quanto à derivação `motivoLegivel`. Hoje o único escritor é o motor (unions fechadas, INSERT-only), mas o
+ * contrato de segurança vale independentemente da origem do dado — o código bate com o que o doc promete.
+ */
+export function codigoSanitizado(codigo: string | null | undefined): string | null {
+  if (!codigo) return null;
+  return CODIGO_RE.test(codigo) ? codigo : null;
+}
+
+/**
  * Motivo legível de um código sanitizado. `null` → sem motivo. Código conhecido → rótulo do mapa. Código válido
  * porém não mapeado → rótulo genérico que **preserva** o código (já sanitizado). Código malformado → sem eco.
  */
 export function motivoLegivel(codigo: string | null | undefined): string | null {
-  if (!codigo) return null;
-  if (!CODIGO_RE.test(codigo)) return null; // defesa: não ecoa nada que não seja enum estrutural
-  return MOTIVOS[codigo] ?? `Falha (código: ${codigo})`;
+  const c = codigoSanitizado(codigo);
+  if (!c) return null; // defesa: não ecoa nada que não seja enum estrutural
+  return MOTIVOS[c] ?? `Falha (código: ${c})`;
 }
 
 /** Duração da Execução em ms, quando início e fim estão presentes; senão `null`. */
@@ -220,7 +233,7 @@ export function projetarResultadoAcao(
     actionIndex: r.actionIndex,
     actionType: r.actionType,
     state: r.state,
-    errorCode: r.errorCode,
+    errorCode: codigoSanitizado(r.errorCode), // RAW fail-closed (AD-30): não-estrutural → null
     motivoLegivel: motivoLegivel(r.errorCode),
     targetResourceId: alvoVisivel ? r.targetResourceId : null,
     referenciaRestrita: r.targetResourceId !== null && !alvoVisivel,
@@ -262,7 +275,7 @@ export function projetarExecucao(
     correlationId: e.correlationId,
     executionChainId: e.executionChainId,
     chainDepth: e.chainDepth,
-    lastErrorCode: e.lastErrorCode,
+    lastErrorCode: codigoSanitizado(e.lastErrorCode), // RAW fail-closed (AD-30): não-estrutural → null
     motivoLegivel: motivoLegivel(e.lastErrorCode),
     createdAt: e.createdAt,
   };

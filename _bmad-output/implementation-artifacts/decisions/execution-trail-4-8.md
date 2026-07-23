@@ -16,7 +16,9 @@ internas (autz, projeção, paginação, sanitização), resolvidas pela Ordem d
 ## 1. Autorização e escopo multi-tenant (Decisão D1)
 
 **Grão = por Pipe.** A Automação pertence a exatamente um Pipe (RN-100) e a Execução carrega `pipeId`. A aba
-"Execuções" é, portanto, a trilha das Automações de UM Pipe. Rota aninhada: `pipes/:pipeId/automations/executions`.
+"Execuções" é, portanto, a trilha das Automações de UM Pipe. Rota aninhada em segmento **estático**
+`pipes/:pipeId/automation-executions` (não `automations/executions`, que colidiria com `automations/:automationId`
+do `AutomationsController` — o segmento `executions` seria capturado como `:automationId`).
 
 **Piso de acesso = OPERAR o Pipe.** O epics §1447 enumera quem vê: **Admin da Org, Admin do Pipe, Membro**;
 **Convidado não acessa**. Fail-closed, o piso é `exigirOperarPipe` (reuso de `pipe-authz.ts`):
@@ -182,8 +184,8 @@ serviço **não** carregam `valores`/PII/segredo/`targetResourceId` mascarado. S
 
 | AC | Prova |
 |---|---|
-| §1445 — registra o conjunto mínimo, versão, `executionChainId`, estados distintos (inclui cadeias/interrupções 4.7) | `execution-trail-e2e`: cria Execuções em cada estado (SUCCEEDED/PARTIAL/FAILED/SKIPPED_CONDITIONS/BLOCKED_CONFIRMATION/HALTED_BY_LIMIT/PENDING/RUNNING) e afirma os campos + `avaliacaoCondicoes` + `executionChainId`/`chainDepth` distintos |
-| §1446 — sanitizada (nunca payload/segredo/token/URL/stack/prompt/PII) | `execution-trail-e2e` **asserção negativa**: o JSON serializado da resposta **não** contém chaves/valores proibidos; `execution-view.core` (unit) prova a projeção allowlist e o mascaramento |
+| §1445 — registra o conjunto mínimo, versão, `executionChainId`, estados distintos (inclui cadeias/interrupções 4.7) | `execution-trail-http`: cria Execuções em cada estado (SUCCEEDED/PARTIAL/FAILED/SKIPPED_CONDITIONS/BLOCKED_CONFIRMATION/HALTED_BY_LIMIT/PENDING/RUNNING) e afirma os campos + `avaliacaoCondicoes` + `executionChainId`/`chainDepth` distintos |
+| §1446 — sanitizada (nunca payload/segredo/token/URL/stack/prompt/PII) | `execution-trail-http` **asserção negativa**: o JSON serializado da resposta **não** contém chaves/valores proibidos; `execution-view.core` (unit) prova a projeção allowlist e o mascaramento |
 | §1447 — Membro só vê recursos que acessa; referências inacessíveis restritas; Convidado não acessa | `execution-trail-http`: Admin Org/Admin Pipe/Membro-não-restrito → todas; Membro restrito → subconjunto; Viewer/Convidado → 403; sem acesso → 404; cross-tenant (RLS) invisível; `targetResourceId` mascarado para restrito |
 | §1448 — filtros período/estado/Evento + paginação; separada da observabilidade técnica | `execution-trail-http`: cada filtro (inclui allowlist fail-closed → 400) + cursor determinístico; sem evento de auditoria de leitura |
 

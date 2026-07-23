@@ -3,6 +3,7 @@ import {
   type ExecucaoBruta,
   type ExecutionState,
   avaliacaoCondicoes,
+  codigoSanitizado,
   duracaoMs,
   motivoLegivel,
   projetarCadeia,
@@ -57,6 +58,34 @@ describe('motivoLegivel — mapa estático, fail-closed no eco', () => {
     expect(motivoLegivel('CYCLE_DETECTED')).toBe('Ciclo de automação detectado');
     expect(motivoLegivel('CHAIN_TIMEOUT')).toBe('Tempo máximo da cadeia excedido');
     expect(motivoLegivel('PRIOR_ACTION_BLOCKED')).toBe('Ação anterior falhou ou foi bloqueada');
+    // SEM_CAPACIDADE (MotivoRecusa da revalidação 4.5) tem entrada própria — não cai no genérico.
+    expect(motivoLegivel('SEM_CAPACIDADE')).toBe('Sem capacidade autorizada para executar a ação');
+  });
+  it('todos os códigos canônicos (ErrorCode 4.5/4.6/4.7) têm motivo próprio, sem cair no genérico', () => {
+    const CANONICOS = [
+      'ACAO_DESCONHECIDA',
+      'ALVO_INDETERMINADO',
+      'SEM_CAPACIDADE',
+      'NAO_ENCONTRADO',
+      'FORA_DA_ORG',
+      'FORA_DO_ESCOPO',
+      'ESTADO_INVALIDO',
+      'CONDITION_NOT_MET',
+      'TRANSIENT_CONFLICT',
+      'EXECUTOR_ERROR',
+      'MAX_ATTEMPTS_EXCEEDED',
+      'REQUIRES_CONFIRMATION',
+      'PRIOR_ACTION_BLOCKED',
+      'DEPTH_EXCEEDED',
+      'CYCLE_DETECTED',
+      'CHAIN_TIMEOUT',
+      'ACTION_TIMEOUT',
+      'EXECUTION_TIMEOUT',
+    ];
+    for (const c of CANONICOS) {
+      expect(motivoLegivel(c), `${c} deveria ter motivo próprio`).not.toMatch(/^Falha \(código:/);
+      expect(motivoLegivel(c)).not.toBeNull();
+    }
   });
   it('código válido não mapeado → rótulo genérico preservando o código', () => {
     expect(motivoLegivel('ALGUM_CODIGO_NOVO')).toBe('Falha (código: ALGUM_CODIGO_NOVO)');
@@ -70,6 +99,19 @@ describe('motivoLegivel — mapa estático, fail-closed no eco', () => {
     expect(motivoLegivel('erro: senha=abc123')).toBeNull();
     expect(motivoLegivel('<script>')).toBeNull();
     expect(motivoLegivel('mixedCase')).toBeNull();
+  });
+});
+
+describe('codigoSanitizado — fail-closed no campo RAW (AD-30)', () => {
+  it('ecoa código estrutural, rejeita não-estrutural', () => {
+    expect(codigoSanitizado('DEPTH_EXCEEDED')).toBe('DEPTH_EXCEEDED');
+    expect(codigoSanitizado('SEM_CAPACIDADE')).toBe('SEM_CAPACIDADE');
+    expect(codigoSanitizado('Erro: senha=abc')).toBeNull();
+    expect(codigoSanitizado('boom 123')).toBeNull();
+    expect(codigoSanitizado('<script>alert(1)</script>')).toBeNull();
+    expect(codigoSanitizado('lower_case')).toBeNull();
+    expect(codigoSanitizado(null)).toBeNull();
+    expect(codigoSanitizado('')).toBeNull();
   });
 });
 
@@ -138,6 +180,24 @@ describe('projetarExecucao — allowlist, sem campos internos', () => {
     expect(v.motivoLegivel).toBe('Limite de profundidade de encadeamento atingido');
     expect(v.avaliacaoCondicoes).toBe('NAO_AVALIADA');
   });
+
+  it('lastErrorCode RAW é fail-closed: valor não-estrutural → null (nunca ecoa texto livre)', () => {
+    // Fase vermelha (mental): sem o filtro no RAW, este valor livre vazaria no campo lastErrorCode.
+    const v = projetarExecucao(
+      { ...EXEC_BASE, state: 'FAILED', lastErrorCode: 'Erro: senha=abc123 boom' },
+      null,
+      null,
+    );
+    expect(v.lastErrorCode).toBeNull();
+    expect(v.motivoLegivel).toBeNull();
+    // e um código estrutural continua ecoando cru
+    const ok = projetarExecucao(
+      { ...EXEC_BASE, state: 'FAILED', lastErrorCode: 'EXECUTOR_ERROR' },
+      null,
+      null,
+    );
+    expect(ok.lastErrorCode).toBe('EXECUTOR_ERROR');
+  });
 });
 
 describe('projetarResultadoAcao — mascaramento §1447', () => {
@@ -183,6 +243,21 @@ describe('projetarResultadoAcao — mascaramento §1447', () => {
     expect(v.targetResourceId).toBeNull();
     expect(v.referenciaRestrita).toBe(false);
     expect(v.motivoLegivel).toBe('Falha ao executar a ação');
+  });
+  it('errorCode RAW é fail-closed: valor não-estrutural → null (nunca ecoa texto livre)', () => {
+    // Fase vermelha (mental): sem o filtro no RAW, o errorCode livre vazaria.
+    const v = projetarResultadoAcao(
+      {
+        actionIndex: 3,
+        actionType: 'CARD_MOVE',
+        state: 'FAILED',
+        errorCode: 'boom 123: token=xyz',
+        targetResourceId: null,
+      },
+      () => true,
+    );
+    expect(v.errorCode).toBeNull();
+    expect(v.motivoLegivel).toBeNull();
   });
 });
 

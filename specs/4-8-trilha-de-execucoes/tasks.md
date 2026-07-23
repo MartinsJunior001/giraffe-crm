@@ -9,6 +9,5 @@ Dependência-ordenada. Read-side puro (sem migration/GRANT).
 - T5. Wiring em `pipes.module.ts`.
 - T6. Testes de integração PG real:
   - `execution-view.core.test.ts` (unit puro): motivo legível, agregado de condição, duração, mascaramento, allowlist.
-  - `execution-trail-http.test.ts`: autz por papel (Admin Org/Admin Pipe/Membro/restrito/Viewer/Convidado/sem-acesso), 404 não-enumerante, filtros + fail-closed, cursor, cross-tenant.
-  - `execution-trail-e2e.test.ts`: estados distintos + conjunto mínimo + asserção negativa de sanitização + cadeia/interrupção 4.7.
+  - `execution-trail-http.test.ts` (consolida HTTP + e2e): autz por papel (Admin Org/Admin Pipe/Membro/restrito/Viewer/Convidado/sem-acesso), 404 não-enumerante, filtros + fail-closed, cursor, cross-tenant, estados distintos + conjunto mínimo + asserção negativa de sanitização + cadeia/interrupção 4.7.
 - T7. Gates: format/lint/typecheck/build; suíte da API; regressão 4.6/4.7; `prisma generate` sem diff. Fase vermelha documentada.
