@@ -348,6 +348,7 @@ model Organization {
   membershipEvents  MembershipEvent[]
   automationExecutions   AutomationExecution[]
   automationActionResults AutomationActionResult[]
+  automationChainVisits  AutomationChainVisit[]
 
   @@map("Organization")
 }
@@ -1678,6 +1679,10 @@ model DomainEvent {
   causationId   String?  @db.Uuid
   /// Cadeia de execução quando originado por Automação (4.7). NULL fora do motor.
   executionChainId String? @db.Uuid
+  /// Profundidade de encadeamento (Story 4.7). RAIZ (Evento externo) = 0; um Evento gerado por uma Ação carrega
+  /// `profundidade-do-pai + 1`. O motor lê isto ao enfileirar a Execução-filha para aplicar `MAX_CHAIN_DEPTH`.
+  /// INSERT-only (o outbox é append-only — GRANT sem UPDATE em `DomainEvent`).
+  chainDepth    Int      @default(0)
   /// Envelope mínimo versionado (allowlist AD-30): só IDs/metadados da transição. NUNCA `valores`/PII/segredo.
   payload       Json     @default("{}")
   createdAt     DateTime @default(now())
@@ -1717,6 +1722,10 @@ enum AutomationExecutionState {
   FAILED
   SKIPPED_CONDITIONS
   BLOCKED_CONFIRMATION
+  /// Story 4.7 — Execução BARRADA por limite de encadeamento (profundidade/ciclo/timeout da cadeia). TERMINAL,
+  /// dead-letter auditável, NÃO reivindicável (a fila só reivindica PENDING/RUNNING-lease-vencida). "Interrompida
+  /// por limite" (§1432, UX-DR6); o motivo exato vive em `lastErrorCode` (DEPTH_EXCEEDED/CYCLE_DETECTED/CHAIN_TIMEOUT).
+  HALTED_BY_LIMIT
 }
 
 /// Estado do resultado de UMA Ação dentro da Execução (Story 4.6). `SUCCEEDED`/`FAILED` (efeito ou falha reais),
@@ -1780,8 +1789,12 @@ model AutomationExecution {
   initiatorAccountId     String?                  @db.Uuid
   initiatorAutomationId  String?                  @db.Uuid
   correlationId          String                   @db.Uuid
-  /// Cadeia de execução quando originado por Automação (propagação = 4.7; NULL na Fase 1 fora de encadeamento).
+  /// Cadeia de execução — propagada na 4.7. RAIZ (Evento externo) = o próprio `eventId` do gatilho; um filho
+  /// HERDA o `executionChainId` do Evento gerador. NULL só em linhas legadas anteriores à 4.7.
   executionChainId       String?                  @db.Uuid
+  /// Profundidade da Execução na cadeia (Story 4.7). RAIZ = 0; herdada do `DomainEvent.chainDepth` no enfileiramento.
+  /// INSERT-only (não migra de nível — fora do GRANT de UPDATE column-scoped).
+  chainDepth             Int                      @default(0)
   /// Código de erro SANITIZADO da última falha (enum estrutural em texto — NUNCA id/valor/PII/stack, AD-30).
   lastErrorCode          String?
   createdAt              DateTime                 @default(now())
@@ -1800,6 +1813,8 @@ model AutomationExecution {
   @@unique([orgId, id])
   /// Fila de reivindicação do drain: PENDING/lease-vencida por prazo.
   @@index([orgId, state, nextAttemptAt])
+  /// Story 4.7 — consulta por cadeia (início da cadeia p/ timeout; inspeção de encadeamento).
+  @@index([orgId, executionChainId])
   @@map("AutomationExecution")
 }
 
@@ -1832,4 +1847,41 @@ model AutomationActionResult {
   @@unique([orgId, executionId, actionIndex])
   @@index([orgId, executionId])
   @@map("AutomationActionResult")
+}
+
+/// AutomationChainVisit — registro APPEND-ONLY da ASSINATURA DE VISITA de uma cadeia (Story 4.7 — NFR-7, AD-18).
+/// É o mecanismo de PREVENÇÃO DE CICLOS imposto pelo BANCO: cada Execução que o motor está prestes a rodar numa
+/// cadeia registra sua assinatura determinística `(automationId + versão + eventType + resourceId)` sob o
+/// `executionChainId`. O índice único `(orgId, executionChainId, signature)` faz a 2ª tentativa de rodar a MESMA
+/// assinatura na MESMA cadeia colidir (P2002) — é a detecção de RE-VISITA (ciclo direto A→A e indireto A→B→A),
+/// race-safe por construção (o banco arbitra dois workers concorrentes), FAIL-CLOSED (colisão ⇒ Execução barrada
+/// como `HALTED_BY_LIMIT`/`CYCLE_DETECTED`, nunca executa). O `eventId` distingue REDELIVERY do MESMO Evento
+/// (at-least-once — não é ciclo) de um Evento DIFERENTE com a mesma assinatura (é ciclo): a assinatura já
+/// registrada com o MESMO `eventId` é a mesma ocorrência; com `eventId` distinto é re-visita.
+///
+/// **Isolamento pelo BANCO:** RLS ENABLE+FORCE, policies por `current_org_id()` com WITH CHECK no INSERT (e no
+/// UPDATE por simetria/defesa — o runtime não tem GRANT de UPDATE). **GRANT como fronteira:** SÓ `SELECT/INSERT`
+/// (append-only imutável, como `CardHistory`/`FormVersion`/`DomainEvent`/`AutomationActionResult`) — **sem DELETE**.
+/// `executionId` é referência por id (sem FK, isolada por RLS+orgId), como `eventId` em `AutomationExecution`: a
+/// visita SOBREVIVE ao expurgo eventual da Execução (é a prova durável de que a assinatura foi visitada).
+model AutomationChainVisit {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @db.Uuid
+  /// Raiz da cadeia (o `executionChainId` propagado). Todas as visitas de uma cadeia compartilham este valor.
+  executionChainId String   @db.Uuid
+  /// Assinatura determinística de visita (SHA-256 hex de `automationId:versão:eventType:resourceId`) — §1425/§1431.
+  signature        String
+  /// Evento gatilho que registrou a visita — distingue REDELIVERY (mesmo eventId) de RE-VISITA (eventId distinto).
+  eventId          String   @db.Uuid
+  /// Execução que registrou a visita (referência por id, sem FK — isolada por RLS+orgId).
+  executionId      String   @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// PREVENÇÃO DE CICLO (o coração de segurança): ≤1 visita por (cadeia, assinatura). A 2ª colide (P2002).
+  @@unique([orgId, executionChainId, signature])
+  /// Início da cadeia (min createdAt) para o timeout de duração e inspeção do encadeamento.
+  @@index([orgId, executionChainId])
+  @@map("AutomationChainVisit")
 }

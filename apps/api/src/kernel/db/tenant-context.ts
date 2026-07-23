@@ -59,6 +59,9 @@ const MODELOS_AUDITADOS = new Set([
   // tentativa negada por RLS entram na trilha (FR-214). Sem DELETE de runtime.
   'AutomationExecution',
   'AutomationActionResult',
+  // Story 4.7. `AutomationChainVisit` — registro append-only da assinatura de visita (prevenção de ciclo). O
+  // INSERT (e a tentativa negada por RLS) entram na trilha. Sem UPDATE/DELETE de runtime.
+  'AutomationChainVisit',
   // Story 8.2. Todo ciclo do Convite (criar/reenviar/cancelar/expirar/aceitar = INSERT/UPDATE) é
   // auditado — inclusive a tentativa negada por RLS. É o write-side de Auditoria de Membros (D5.1).
   'Invite',

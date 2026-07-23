@@ -51,6 +51,7 @@ export async function emitirEventoDeDominio(
       correlationId: envelope.correlationId,
       causationId: envelope.causationId,
       executionChainId: envelope.executionChainId,
+      chainDepth: envelope.chainDepth,
       payload: envelope.payload as Prisma.InputJsonValue,
     },
   });

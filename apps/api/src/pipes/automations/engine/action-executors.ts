@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../../../generated/prisma';
 import type { PrismaService } from '../../../kernel/db/prisma.service';
 import { definirContextoOrg, type withTenantContext } from '../../../kernel/db/tenant-context';
+import { emitirEventoDeDominio } from '../../../domain-events/domain-event-emission';
+import { NS_DOMAIN_EVENT, uuidV5 } from '../../../domain-events/event-envelope';
 import { resolverAcessoDaMembership } from '../../pipe-authz';
 import { SubmissaoInvalidaError, validarSubmissao } from '../../cards/submission';
 import type { Acao } from '../automation-config';
@@ -34,6 +36,20 @@ type Db = ReturnType<typeof withTenantContext>;
  * reexecuta uma Ação com resultado), REFORÇADA por chaves idempotentes determinísticas nas mutações de criação.
  */
 
+/**
+ * Cadeia de encadeamento (Story 4.7) que o motor injeta para que um executor que GERA um novo Evento propague a
+ * causalidade: o filho herda `executionChainId` (a raiz), aponta `causationId` ao Evento gatilho e incrementa a
+ * profundidade (`chainDepth + 1`). Sem isto, um Evento gerado por Ação não continuaria a cadeia (nem a prevenção).
+ */
+export interface ContextoCadeia {
+  /** `eventId` do Evento gatilho desta Execução — vira o `causationId` do Evento que a Ação gerar. */
+  readonly causationEventId: string;
+  /** Raiz da cadeia — propagada para o Evento gerado (o filho herda a MESMA cadeia). */
+  readonly executionChainId: string;
+  /** Profundidade DESTA Execução; o Evento gerado carrega `chainDepth + 1`. */
+  readonly chainDepth: number;
+}
+
 /** Contexto de execução que o motor injeta em cada executor (singleton — sem `RequestContext`). */
 export interface ExecContext {
   readonly prisma: PrismaService;
@@ -43,6 +59,8 @@ export interface ExecContext {
   /** Identidade da Execução + posição da Ação — base das chaves idempotentes determinísticas de criação. */
   readonly executionId: string;
   readonly actionIndex: number;
+  /** Encadeamento (4.7) — para propagar cadeia/causação/profundidade ao Evento que a Ação gerar. */
+  readonly cadeia: ContextoCadeia;
 }
 
 /** Desfecho de UMA Ação — o que o motor grava em `AutomationActionResult`. */
@@ -50,6 +68,20 @@ export interface ResultadoExecucao {
   readonly state: ActionResultState;
   readonly errorCode: ErrorCode | null;
   readonly targetResourceId: string | null;
+  /**
+   * `eventId` do Evento canônico que esta Ação GEROU (encadeamento — 4.7), ou `null` se não gerou. O motor o
+   * enfileira (sob a barreira de profundidade/ciclo/timeout) para continuar a cadeia.
+   */
+  readonly emittedEventId?: string | null;
+}
+
+/**
+ * `correlationId` DETERMINÍSTICO do Evento gerado por uma Ação (encadeamento — 4.7). Derivado de
+ * `(executionId, actionIndex)`: um retry da MESMA Ação reproduz o mesmo `correlationId` ⇒ o mesmo `eventId`
+ * (uuidv5 do envelope) ⇒ o `@@unique(orgId,eventId)` do outbox faz o 2º INSERT colidir (idempotente, sem 2º Evento).
+ */
+function correlationDeterministico(executionId: string, actionIndex: number): string {
+  return uuidV5(NS_DOMAIN_EVENT, `corr:${executionId}:${actionIndex}`);
 }
 
 function conflito(err: unknown): boolean {
@@ -160,7 +192,7 @@ export async function executarAcao(
   // Só chegam aqui as Ações SEM confirmação: CARD_ASSIGN_RESPONSIBLE, RECORD_CREATE, RECORD_CREATE_RELATED.
   switch (acao.tipo) {
     case 'CARD_ASSIGN_RESPONSIBLE':
-      return atribuirResponsavel(ctx, acao, alvoResolvido!.recursoId);
+      return atribuirResponsavel(ctx, acao, alvoResolvido!.recursoId, alvoSnapshot.pipeId);
     case 'RECORD_CREATE':
       return criarRegistro(ctx, acao, alvoResolvido!.recursoId, null);
     case 'RECORD_CREATE_RELATED':
@@ -180,6 +212,7 @@ async function atribuirResponsavel(
   ctx: ExecContext,
   acao: Acao,
   cardId: string,
+  pipeId: string | null,
 ): Promise<ResultadoExecucao> {
   const membershipId = String(acao.parametros.membershipId);
 
@@ -194,9 +227,11 @@ async function atribuirResponsavel(
     select: { id: true, membershipId: true },
   });
   if (atual && atual.membershipId === membershipId) {
-    return { state: 'SUCCEEDED', errorCode: null, targetResourceId: cardId }; // idempotente
+    // Idempotente: NENHUMA mudança ⇒ NENHUM Evento gerado (não continua a cadeia por um no-op — §1427).
+    return { state: 'SUCCEEDED', errorCode: null, targetResourceId: cardId, emittedEventId: null };
   }
 
+  let emittedEventId: string | null = null;
   try {
     await ctx.prisma.$transaction(async (tx) => {
       for (const p of definirContextoOrg(tx, ctx.contexto)) await p;
@@ -220,13 +255,30 @@ async function atribuirResponsavel(
           actorId: ctx.contexto.accountId ?? null,
         },
       });
+      // ENCADEAMENTO (4.7): a mudança de Responsável GERA `CARD_RESPONSIBLE_CHANGED`, na MESMA tx (AD-13 — sem
+      // Evento sem fato). O envelope propaga a cadeia/causação/profundidade; `actorId=null`/`origin=AUTOMATION`
+      // (o ATOR é o principal Automação). `resourceId=cardId` (mesmo alvo) — a base da detecção de re-visita.
+      const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
+        eventType: 'CARD_RESPONSIBLE_CHANGED',
+        pipeId,
+        resourceType: 'CARD',
+        resourceId: cardId,
+        actorId: null,
+        origin: 'AUTOMATION',
+        occurredAt: new Date(),
+        correlationId: correlationDeterministico(ctx.executionId, ctx.actionIndex),
+        causationId: ctx.cadeia.causationEventId,
+        executionChainId: ctx.cadeia.executionChainId,
+        chainDepth: ctx.cadeia.chainDepth + 1,
+      });
+      emittedEventId = eventId;
     });
   } catch (err) {
     if (conflito(err))
       return { state: 'FAILED', errorCode: 'TRANSIENT_CONFLICT', targetResourceId: cardId };
     throw err; // erro inesperado ⇒ retry do motor
   }
-  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: cardId };
+  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: cardId, emittedEventId };
 }
 
 /**
@@ -270,6 +322,7 @@ async function criarRegistro(
   const idempotencyKey = `auto:${ctx.executionId}:${ctx.actionIndex}`;
   const correlationId = randomUUID();
   let recordId: string;
+  let emittedEventId: string | null = null;
 
   try {
     recordId = await ctx.prisma.$transaction(async (tx) => {
@@ -306,6 +359,24 @@ async function criarRegistro(
           },
         });
       }
+      // ENCADEAMENTO (4.7): criar o Registro GERA `RECORD_CREATED`, na MESMA tx (AD-13). `resourceId=novo.id`
+      // (o Registro criado — alvo NOVO a cada vez ⇒ assinatura distinta por nível: cadeias "que expandem" são
+      // barradas por PROFUNDIDADE, não por re-visita). `origin=AUTOMATION`; `correlationId=novo.id` (1:1 com o
+      // Registro criado — `eventId` determinístico e retry-safe). Registro puro NÃO carrega `pipeId` (§1339).
+      const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
+        eventType: 'RECORD_CREATED',
+        pipeId: null,
+        resourceType: 'RECORD',
+        resourceId: novo.id,
+        actorId: null,
+        origin: 'AUTOMATION',
+        occurredAt: new Date(),
+        correlationId: novo.id,
+        causationId: ctx.cadeia.causationEventId,
+        executionChainId: ctx.cadeia.executionChainId,
+        chainDepth: ctx.cadeia.chainDepth + 1,
+      });
+      emittedEventId = eventId;
       return novo.id;
     });
   } catch (err) {
@@ -315,10 +386,16 @@ async function criarRegistro(
         where: { databaseId, idempotencyKey },
         select: { id: true },
       });
-      if (existente) return { state: 'SUCCEEDED', errorCode: null, targetResourceId: existente.id };
+      if (existente)
+        return {
+          state: 'SUCCEEDED',
+          errorCode: null,
+          targetResourceId: existente.id,
+          emittedEventId: null,
+        };
       return { state: 'FAILED', errorCode: 'TRANSIENT_CONFLICT', targetResourceId: databaseId };
     }
     throw err;
   }
-  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: recordId };
+  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: recordId, emittedEventId };
 }
