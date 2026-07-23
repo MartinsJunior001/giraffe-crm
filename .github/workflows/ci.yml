@@ -143,6 +143,9 @@ jobs:
             # O compose exige (`:?`) a origem pública da Web para interpolar o serviço `web`,
             # mesmo subindo só o `db` — o arquivo inteiro é interpolado.
             echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
+            # Idem: o serviço `api` exige (`:?`) APP_PUBLIC_URL (Story 8.2, link do Convite). O arquivo
+            # inteiro é interpolado mesmo subindo só o `db`; sem ela, `docker compose` falha.
+            echo "APP_PUBLIC_URL=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
       - name: Instalar dependências (imutável)
@@ -260,6 +263,8 @@ jobs:
             echo "BETTER_AUTH_URL=http://localhost:3001"
             echo "CORS_ALLOWED_ORIGINS=http://localhost:3000"
             echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
+            # APP_PUBLIC_URL: o serviço `api` a exige (`:?`, Story 8.2) — o arquivo inteiro é interpolado.
+            echo "APP_PUBLIC_URL=http://localhost:3000"
             # COMPOSE_FILE faz TODO `docker compose` deste job carregar o override dev-files (MinIO+ClamAV).
             # É por job (GITHUB_ENV), então não afeta os demais jobs nem o deploy.
             echo "COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.dev-files.yml"
@@ -370,6 +375,8 @@ jobs:
             echo "LOGIN_HMAC_SECRET=$LOGIN_HMAC_SECRET"
             # Exigida (`:?`) pelo serviço `web` do compose (origem pública da Web).
             echo "WEB_PUBLIC_ORIGIN=http://localhost:3000"
+            # Exigida (`:?`) pelo serviço `api` do compose (APP_PUBLIC_URL, link do Convite — Story 8.2).
+            echo "APP_PUBLIC_URL=http://localhost:3000"
           } >> "$GITHUB_ENV"
 
       # O `smoke` é script do repositório; a imagem de RUNTIME deliberadamente NÃO carrega o CLI
