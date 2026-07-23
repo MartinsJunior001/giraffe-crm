@@ -277,6 +277,47 @@ export class NotificationsService {
     return atualizado;
   }
 
+  // ─────────────────────────────────────────────────── MARCAR TODAS COMO LIDAS ──
+
+  /**
+   * Marca como LIDAS, de uma vez, todas as Notificações NÃO-LIDAS do destinatário até um **corte do servidor**
+   * (Story 5.4, §1584–1585). O corte (`corte = now()`) é fixado pelo CHAMADOR (a rota 5.4) e passado aqui: só
+   * são marcados os registros com `createdAt <= corte`, de modo que uma entrega concorrente materializada
+   * **após** o corte NÃO é marcada acidentalmente. Idempotente (2ª chamada marca 0). É write-side de
+   * `NotificationRecipient` (UPDATE column-scoped em `readAt`) — mora na FONTE ÚNICA para preservar o invariante
+   * "único ponto de escrita". Devolve quantas foram marcadas NESTA chamada.
+   *
+   * A revalidação de acesso / preferências NÃO se aplica aqui: marcar a PRÓPRIA Notificação como lida é
+   * inofensivo (só reduz o próprio badge, não vaza nada) — a leitura filtrada é responsabilidade das superfícies.
+   * O `recipientMembershipId` é o do PRINCIPAL autenticado (a rota o injeta), nunca do cliente.
+   */
+  async marcarTodasComoLidas(
+    recipientMembershipId: string,
+    corte: Date,
+  ): Promise<{ marcadas: number }> {
+    const { contexto } = this.db();
+
+    let marcadas: number;
+    try {
+      marcadas = await this.prisma.$transaction(async (tx) => {
+        for (const p of definirContextoOrg(tx, contexto)) await p;
+        // Guarda por corte: só NÃO-LIDO e materializado até o corte. UPDATE column-scoped em `readAt`.
+        const { count } = await tx.notificationRecipient.updateMany({
+          where: { recipientMembershipId, readAt: null, createdAt: { lte: corte } },
+          data: { readAt: new Date() },
+        });
+        return count;
+      });
+    } catch (err) {
+      if (isConflito(err)) throw new ConflictException('marcação concorrente; reconsulte e repita');
+      throw err;
+    }
+
+    // Audita só o que foi de fato marcado (padrão idempotente-no-op — nada marcado não emite `allowed`).
+    if (marcadas > 0) this.auditar(contexto, 'update', 'NotificationRecipient');
+    return { marcadas };
+  }
+
   // ─────────────────────────────────────────────────────────────── HELPERS ──
 
   private mapNotification(n: {

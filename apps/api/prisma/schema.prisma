@@ -356,6 +356,7 @@ model Organization {
   solicitacaoHistories    SolicitacaoHistory[]
   notifications           Notification[]
   notificationRecipients  NotificationRecipient[]
+  notificationPreferences NotificationPreference[]
 
   @@map("Organization")
 }
@@ -2218,4 +2219,35 @@ model NotificationRecipient {
   /// Notificações de um destinatário (base da leitura/contagem da 5.4).
   @@index([orgId, recipientMembershipId])
   @@map("NotificationRecipient")
+}
+
+/// Preferência de Notificação por tipo, do usuário na Organização (Story 5.4, R6). Silenciar/habilitar um tipo
+/// altera as **entregas futuras** e o que as superfícies exibem/contam — **nunca apaga** Notificações
+/// anteriores (o histórico é imutável; a preferência é read-side). org-scoped: RLS ENABLE+FORCE + WITH CHECK
+/// (INSERT/UPDATE), em `MODELOS_AUDITADOS`. GRANT SELECT/INSERT + UPDATE COLUMN-SCOPED (só `enabled`/`updatedAt`)
+/// — **sem DELETE** (mudar preferência é UPDATE/upsert, nunca remover linha). O catálogo canônico de tipos é a
+/// 5.6; aqui o `type` é `String` estrutural (como `Notification.type`), e os metadados por tipo (padrão/
+/// desativável/obrigatório) vivem no núcleo puro `notification-type-registry.ts`.
+model NotificationPreference {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @db.Uuid
+  /// A pessoa NA Org (a Membership). Referência-por-id SEM FK (como `NotificationRecipient.recipientMembershipId`
+  /// /`CardResponsavel`: FK composta a Membership é inviável — orgId compartilhado NOT NULL impede SetNull;
+  /// Cascade quebraria LGPD).
+  membershipId String   @db.Uuid
+  /// Tipo de Notificação a que a preferência se aplica. `String` estrutural (catálogo = 5.6).
+  type         String
+  /// Escolha do usuário: entregar (`true`) ou silenciar (`false`) este tipo. A precedência efetiva
+  /// (obrigatório › override › padrão) é derivada no núcleo puro — um tipo obrigatório nunca é silenciado.
+  enabled      Boolean
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// 1 preferência por (Org, pessoa, tipo) — base do UPSERT (mudar preferência = UPDATE, nunca duplica).
+  @@unique([orgId, membershipId, type])
+  /// Carregar todas as preferências de um usuário (resolução efetiva na leitura das superfícies).
+  @@index([orgId, membershipId])
+  @@map("NotificationPreference")
 }
