@@ -95,6 +95,19 @@ services:
       # proxy com o G2 colapsado num balde único por esquecimento. Aqui a exposição direta é real e
       # declarada. A topologia com o proxy do Coolify é validada no gate de staging (débito D-01).
       ALLOW_DIRECT_EXPOSURE: ${ALLOW_DIRECT_EXPOSURE:-true}
+
+      # Story 8.2 — Convite por e-mail transacional (Resend). Estas três foram acrescentadas ao código
+      # (env.ts/invites) mas faltavam AQUI: sem serem DECLARADAS no Compose, o Coolify não as trata como
+      # passthrough do valor da UI e chega a sobrescrever `APP_PUBLIC_URL` por uma Magic Var mágica
+      # (`SERVICE_PASSWORDWITHSYMBOLS_*`). Declará-las é a correção.
+      # `APP_PUBLIC_URL` = origem pública da Web (onde vive `/convite/<token>`); o link do Convite vem
+      # SÓ dela. `:?` fail-fast — um default silencioso apontaria o Convite para lugar nenhum; parar é
+      # melhor. NUNCA usar Magic Var de senha como origem, NUNCA hardcode da URL no código.
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?defina APP_PUBLIC_URL (ver .env.example)}
+      # Envio: opcionais no boot (`:-`) — sem eles a API sobe e o envio degrada honestamente (dev/CI não
+      # mandam e-mail real). Em staging/produção vêm do cofre do Coolify. Segredo de SERVIDOR, jamais log.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
     # Sem `ports` no base (ver nota no serviço `db`): a API é interna, alcançada pela rede que o
     # Coolify gerencia para o stack, pelo nome de serviço `api`. A publicação em loopback para
     # dev/CI vive em `docker-compose.override.yml`. Sem `networks:` custom (ver nota no fim do
