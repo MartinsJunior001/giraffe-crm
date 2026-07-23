@@ -26,6 +26,10 @@ import {
   exigirCondicoesNoCatalogo,
 } from './conditions/condition-catalog';
 import { AcaoForaDoCatalogoError, exigirAcoesNoCatalogo } from './actions/action-catalog';
+import {
+  AcaoDeExtensaoIndisponivelError,
+  rejeitarAcoesDeExtensao,
+} from './actions/action-extension-contract';
 import { type AcaoCiclo, planejarTransicao } from './automation-lifecycle.transitions';
 import { calcularRevisaoAutomacao, montarSnapshotAutomacao } from './automation-snapshot';
 import {
@@ -468,11 +472,20 @@ export class AutomationLifecycleService {
       const validada = validarConfiguracao(config);
       exigirEventoNoCatalogo(validada.quando.tipo);
       exigirCondicoesNoCatalogo(validada.condicoes);
+      // Story 4.9: pontos de extensão E5/E6 são CONTRATO, não executáveis na Fase 1 — recusados com motivo
+      // DISTINTO antes do enforcement estrutural (que trata o verdadeiramente desconhecido).
+      rejeitarAcoesDeExtensao(validada.entao);
       exigirAcoesNoCatalogo(validada.entao);
       return validada;
     } catch (erro) {
       if (erro instanceof ConfiguracaoInvalidaError) {
         throw new BadRequestException({ motivo: 'CONFIGURACAO_INVALIDA', detalhe: erro.motivo });
+      }
+      if (erro instanceof AcaoDeExtensaoIndisponivelError) {
+        throw new BadRequestException({
+          motivo: 'ACAO_DE_EXTENSAO_INDISPONIVEL',
+          detalhe: erro.message,
+        });
       }
       if (erro instanceof EventoForaDoCatalogoError) {
         throw new BadRequestException({ motivo: 'EVENTO_FORA_DO_CATALOGO', detalhe: erro.motivo });

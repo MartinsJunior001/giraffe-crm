@@ -287,6 +287,28 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { motivo?: string }).motivo).toBe('ACAO_FORA_DO_CATALOGO');
   });
+
+  // Story 4.9 (§1459/§1463): pontos de extensão E5/E6 são CONTRATO, não executáveis na Fase 1. Uma Ação de
+  // extensão na config → 400 com motivo DISTINTO (`ACAO_DE_EXTENSAO_INDISPONIVEL`), honesto — não o genérico
+  // "desconhecido". O verdadeiramente desconhecido segue `ACAO_FORA_DO_CATALOGO` (regressão da 4.5 preservada).
+  it.each([
+    ['E5 — Criar Tarefa', 'TASK_CREATE'],
+    ['E5 — Enviar Notificação', 'NOTIFICATION_SEND'],
+    ['E6 — Enviar E-mail', 'EMAIL_SEND'],
+    ['E6 — IA como Ação', 'AI_ACTION'],
+  ])('400 ACAO_DE_EXTENSAO_INDISPONIVEL: %s', async (_nome, tipo) => {
+    const pipeId = await criarPipe(ORG_A);
+    const res = await req('POST', `/pipes/${pipeId}/automations`, ANA, {
+      name: 'x',
+      quando: { tipo: 'CARD_CREATED' },
+      condicoes: [],
+      entao: [{ tipo, parametros: {} }],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { motivo?: string }).motivo).toBe(
+      'ACAO_DE_EXTENSAO_INDISPONIVEL',
+    );
+  });
 });
 
 describe('AC-4/AC-5 — alcance: cross-tenant e inexistente são 404 não-enumerante', () => {
