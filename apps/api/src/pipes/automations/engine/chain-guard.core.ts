@@ -43,13 +43,20 @@ export const MAX_CHAIN_DEPTH = 10;
 export const MAX_CHAIN_DURATION_MS = 5 * 60_000;
 
 /**
- * Timeout por EXECUÇÃO (ms) — orçamento de parede de UMA Execução processando suas Ações. Alinhado ao `LEASE_MS`
- * da 4.6 (60 s): o lease já é o mecanismo físico de retomada (um `RUNNING` além do lease é reivindicado); este
- * limite é o guarda LÓGICO consultado entre Ações para não estourar o lease.
+ * Timeout por EXECUÇÃO (ms) — orçamento de parede de UMA Execução, alinhado ao `LEASE_MS` da 4.6 (60 s).
+ * FRONTEIRA VIGENTE: quem impõe o teto por-Execução em runtime é o `LEASE_MS` FÍSICO da 4.6 (um `RUNNING`
+ * além do lease é reivindicado — recuperação de crash) + `MAX_ATTEMPTS`. Este limite é o guarda LÓGICO —
+ * `excedeuDuracaoExecucao` existe e é coberto no núcleo, mas o fio dele no laço de Ações do motor está
+ * DEFERIDO (ver `DEB-4-7-ACTION-EXEC-TIMEOUT-HARD` no decision doc). NÃO afeta a terminação da cadeia
+ * (NFR-7), garantida por profundidade + assinatura + duração-de-cadeia.
  */
 export const MAX_EXECUTION_DURATION_MS = 60_000;
 
-/** Timeout por AÇÃO (ms) — orçamento de parede de UMA Ação. Uma mutação de domínio (tx) deve ser rápida. */
+/**
+ * Timeout por AÇÃO (ms) — orçamento de parede de UMA Ação (mutação de domínio em tx, deve ser rápida).
+ * Guarda LÓGICO (`excedeuDuracaoAcao`) definido e coberto no núcleo; o fio no laço de Ações está DEFERIDO
+ * junto de `MAX_EXECUTION_DURATION_MS` (`DEB-4-7-ACTION-EXEC-TIMEOUT-HARD`).
+ */
 export const MAX_ACTION_DURATION_MS = 30_000;
 
 export { MAX_ATTEMPTS };

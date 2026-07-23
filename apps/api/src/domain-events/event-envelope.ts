@@ -189,7 +189,11 @@ export function montarEnvelope(dados: DadosEvento): EnvelopeEvento {
     correlationId: dados.correlationId,
     causationId: dados.causationId ?? null,
     executionChainId: dados.executionChainId ?? null,
-    // Fail-closed: profundidade não-numérica/negativa vira 0 (a barreira do motor reavalia com o limite real).
+    // Default defensivo: profundidade malformada/≤0 vira 0. INALCANÇÁVEL no fluxo real — os dois executores
+    // sempre passam `exec.chainDepth + 1` (Int do banco ≥1) e nenhuma rota escreve no outbox. A garantia do
+    // eixo profundidade é o Int NOT NULL + o +1 do executor + a barreira do motor (`excedeuProfundidade`),
+    // não este clamp; um 0 aqui ainda seria pego pela detecção por assinatura. Endurecer (malformado COM
+    // `executionChainId` ⇒ tratar como excedido) é `DEB-4-7-ENVELOPE-DEPTH-FAIL-CLOSED` (LOW, não alcançável).
     chainDepth:
       typeof dados.chainDepth === 'number' &&
       Number.isFinite(dados.chainDepth) &&
