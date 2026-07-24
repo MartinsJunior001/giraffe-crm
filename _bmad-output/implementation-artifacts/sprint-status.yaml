@@ -41,7 +41,7 @@
 # - No story enters development before its Definition of Ready (incl. applicable gate closed).
 
 generated: 2026-07-12
-last_updated: 2026-07-21
+last_updated: 2026-07-23
 project: giraffe crm — Fase 1
 project_key: NOKEY
 tracking_system: file-system
@@ -129,14 +129,14 @@ development_status:
   epic-4-retrospective: optional
 
   # ===== Wave 6 — Épico 5: Tarefas, Solicitações e Notificações =====
-  epic-5: in-progress
+  epic-5: done
   5-1-tarefas-ciclo-de-vida-e-acompanhamento: done
   5-2-solicitacoes-ciclo-de-vida-e-responsavel: done
   5-3-fonte-unica-de-notificacoes-write-side: done
   5-4-superficies-leitura-e-preferencias: done
   5-5-tempo-real-como-invalidacao-socket-io: done
   5-6-catalogo-e-distribuicao-de-notificacoes-in-app: done
-  5-7-integracao-com-automacao-eventos-acoes-de-e5: backlog
+  5-7-integracao-com-automacao-eventos-acoes-de-e5: done
   epic-5-retrospective: optional
 
   # ===== Wave 7 — Épico 6: E-mails, Templates e IA assistiva =====
