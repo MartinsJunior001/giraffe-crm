@@ -41,7 +41,7 @@
 # - No story enters development before its Definition of Ready (incl. applicable gate closed).
 
 generated: 2026-07-12
-last_updated: 2026-07-23
+last_updated: 2026-07-24
 project: giraffe crm — Fase 1
 project_key: NOKEY
 tracking_system: file-system
@@ -140,8 +140,8 @@ development_status:
   epic-5-retrospective: optional
 
   # ===== Wave 7 — Épico 6: E-mails, Templates e IA assistiva =====
-  epic-6: backlog
-  6-1-modelo-canonico-de-e-mail-e-composer: backlog
+  epic-6: in-progress
+  6-1-modelo-canonico-de-e-mail-e-composer: ready-for-dev
   6-2-administracao-e-versionamento-de-templates: backlog
   6-3-aplicacao-manual-de-template: backlog
   6-4-envio-assincrono-identidade-e-estados-honestos: backlog

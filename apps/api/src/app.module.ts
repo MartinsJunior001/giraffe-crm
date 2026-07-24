@@ -21,6 +21,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { RealtimeModule } from './notifications/realtime/realtime.module';
+import { EmailsModule } from './emails/emails.module';
 
 /**
  * Identifica os probes de liveness/readiness, cujo log automático é puro ruído.
@@ -110,6 +111,8 @@ function devPrettyTransport(nodeEnv: string): { target: string; options: object 
     // a fonte única (5.3), o ciclo de Membership (8.5/8.6) e a troca de Org (1.9) injetam a mesma port por
     // token. Handshake reusa a sessão (PRINCIPAL_PROVIDER) + Membership ativa; sala por (userId, orgId).
     RealtimeModule,
+    // Épico 6 — E-mail (Story 6.1). Modelo canônico outbound + Composer; SEM envio real (6.4, AD-28).
+    EmailsModule,
     // Liga a autorização REAL de arquivos por recurso (Story 3.8 F1): o dispatcher roteia por `resourceType`
     // para as guardas puras de Card/Registro. `files/` segue agnóstico (recebe o provider, não importa domínio).
     FilesModule.register(
