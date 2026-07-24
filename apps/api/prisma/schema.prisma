@@ -358,6 +358,8 @@ model Organization {
   notificationRecipients  NotificationRecipient[]
   notificationPreferences NotificationPreference[]
   emailMessages           EmailMessage[]
+  emailTemplates          EmailTemplate[]
+  emailTemplateVersions   EmailTemplateVersion[]
 
   @@map("Organization")
 }
@@ -2312,4 +2314,66 @@ model EmailMessage {
   /// Rascunhos/enviados do autor (leitura do autor; histórico geral é 6.4).
   @@index([orgId, createdByMembershipId])
   @@map("EmailMessage")
+}
+
+/// Estado do Template de e-mail (Story 6.2): ACTIVE (administrável) / ARCHIVED (somente-leitura — nova
+/// versão → 409; restaurar devolve a edição). Sem exclusão definitiva (GRANT sem DELETE).
+enum EmailTemplateState {
+  ACTIVE
+  ARCHIVED
+}
+
+/// EmailTemplate — a IDENTIDADE estável do Template de e-mail da Organização (Story 6.2, FR-25/RN-111).
+/// Twin do `Form` no rigor: o conteúdo versionado vive em `EmailTemplateVersion` (imutável); aqui ficam o
+/// nome, o estado e o PONTEIRO `activeVersion` (última versão publicada — editar = publicar nova versão,
+/// D-62.2). Admin da Org administra; ADMIN/MEMBER consultam (GUEST 403); Admin do Pipe NÃO administra.
+model EmailTemplate {
+  id                    String             @id @default(uuid()) @db.Uuid
+  orgId                 String             @db.Uuid
+  name                  String
+  state                 EmailTemplateState @default(ACTIVE)
+  /// Última versão publicada (avança a cada edição; guarda otimista no serviço).
+  activeVersion         Int                @default(0)
+  /// Autoria (referência-por-id a Membership, como `Task.creatorMembershipId`). Imutável pós-criação.
+  createdByMembershipId String             @db.Uuid
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  organization Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  versions     EmailTemplateVersion[]
+
+  /// Alvo da FK COMPOSTA tenant-safe de `EmailTemplateVersion`.
+  @@unique([orgId, id])
+  /// Catálogo administrável: Templates da Org por estado.
+  @@index([orgId, state])
+  @@map("EmailTemplate")
+}
+
+/// EmailTemplateVersion — a VERSÃO imutável do Template (twin de `FormVersion`, 2.6): assunto, corpo,
+/// definição TIPADA de variáveis (catálogo canônico de plataforma — `template-definition.core.ts`),
+/// autor e data, numerada por `@@unique([orgId, templateId, version])`. **Imutabilidade é do banco**:
+/// GRANT só SELECT/INSERT (sem UPDATE/DELETE) — e-mails enviados e Execuções iniciadas nunca mudam por
+/// edições futuras. É o alvo endereçável da futura referência Ação↔Template (OQ-26/6.6 — a 6.2 não
+/// decide a semântica, só garante a versão imutável).
+model EmailTemplateVersion {
+  id                 String   @id @default(uuid()) @db.Uuid
+  orgId              String   @db.Uuid
+  templateId         String   @db.Uuid
+  version            Int
+  subject            String
+  body               String
+  /// Definição validada: lista `{ nome (do catálogo), obrigatoria }`. Nunca aceita do cliente sem o
+  /// núcleo puro; nada é executado/resolvido na 6.2 (resolver é 6.3).
+  variables          Json     @default("[]")
+  authorMembershipId String   @db.Uuid
+  createdAt          DateTime @default(now())
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// FK COMPOSTA tenant-safe (lição 4.1): o par prova a co-tenância no banco.
+  template     EmailTemplate @relation(fields: [orgId, templateId], references: [orgId, id], onDelete: Cascade)
+
+  /// Numeração por Template: concorrência de edição colide aqui (P2002 → 409, padrão 2.6).
+  @@unique([orgId, templateId, version])
+  @@index([orgId, templateId])
+  @@map("EmailTemplateVersion")
 }
