@@ -30,7 +30,14 @@ describe('normalizarDestinatarios', () => {
   it('rejeita não-lista, item não-string e sintaxe inválida (fail-closed, sem eco do valor)', () => {
     expect(() => normalizarDestinatarios('a@b.co', false)).toThrow('lista');
     expect(() => normalizarDestinatarios([42], false)).toThrow(ComposicaoInvalidaError);
-    for (const ruim of ['sem-arroba', 'a@semponto', 'a b@x.co', 'a@x.co ; DROP', '@x.co', 'a@.co']) {
+    for (const ruim of [
+      'sem-arroba',
+      'a@semponto',
+      'a b@x.co',
+      'a@x.co ; DROP',
+      '@x.co',
+      'a@.co',
+    ]) {
       expect(() => normalizarDestinatarios([ruim], false), ruim).toThrow('endereço inválido');
     }
     try {
