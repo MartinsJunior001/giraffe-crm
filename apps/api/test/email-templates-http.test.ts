@@ -168,6 +168,90 @@ describe('AC1 — ciclo do Admin com versionamento', () => {
     ).json()) as VersaoView[];
     expect(versoes.map((v) => v.version)).toEqual([1, 2, 3]);
     expect(versoes[0]!.subject).toBe('Oi {{user.name}}');
+    // AC-3: a definição persiste TIPADA e normalizada na versão (a 6.3 consome exatamente este dado).
+    expect(versoes[0]!.variables).toEqual([
+      { nome: 'user.name', obrigatoria: true },
+      { nome: 'org.name', obrigatoria: false },
+    ]);
+    // AC-2 (QA-F2): o PONTEIRO avançou e `versaoAtiva` reflete a última versão.
+    const detalhe = (await (await req('GET', `/email-templates/${t.id}`, ANA)).json()) as {
+      activeVersion: number;
+      versaoAtiva: { version: number; subject: string } | null;
+      state: string;
+    };
+    expect(detalhe.activeVersion).toBe(3);
+    expect(detalhe.versaoAtiva?.version).toBe(3);
+    expect(detalhe.versaoAtiva?.subject).toBe('s3');
+  });
+
+  it('renome junto da edição (QA-F3): name novo grava; ausente preserva; não-string → 400', async () => {
+    const t = await criarTemplate({ name: 'Original', subject: 's', body: 'b' });
+    expect(
+      (
+        await req('POST', `/email-templates/${t.id}/versions`, ANA, {
+          name: 'Renomeado',
+          subject: 's2',
+          body: 'b2',
+        })
+      ).status,
+    ).toBe(201);
+    let detalhe = (await (await req('GET', `/email-templates/${t.id}`, ANA)).json()) as {
+      name: string;
+    };
+    expect(detalhe.name).toBe('Renomeado');
+    expect(
+      (await req('POST', `/email-templates/${t.id}/versions`, ANA, { subject: 's3', body: 'b3' }))
+        .status,
+    ).toBe(201);
+    detalhe = (await (await req('GET', `/email-templates/${t.id}`, ANA)).json()) as {
+      name: string;
+    };
+    expect(detalhe.name).toBe('Renomeado'); // ausente preserva
+    expect(
+      (
+        await req('POST', `/email-templates/${t.id}/versions`, ANA, {
+          name: 123,
+          subject: 's',
+          body: 'b',
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it('AC-2 (QA-F1): edição concorrente determinística — o serviço perde a corrida e responde 409, nunca 500', async () => {
+    const t = await criarTemplate({ name: 'corrida', subject: 's', body: 'b' });
+    // Simula um publish CONCORRENTE que o cliente não viu: o migrator insere a v2 SEM avançar o
+    // ponteiro — o serviço (que leu activeVersion=1 e computará proxima=2) colide no UNIQUE dentro da
+    // tx → rollback integral → 409 EDICAO_CONCORRENTE (nunca 500), sem versão órfã nem ponteiro torto.
+    const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+    await db.emailTemplateVersion.create({
+      data: {
+        orgId: ORG_A,
+        templateId: t.id,
+        version: 2,
+        subject: 'concorrente',
+        body: 'x',
+        authorMembershipId: randomUUID(),
+      },
+    });
+    const res = await req('POST', `/email-templates/${t.id}/versions`, ANA, {
+      subject: 'perdedor',
+      body: 'y',
+    });
+    expect(res.status).toBe(409);
+    // Rollback provado: nenhuma versão além de [1, 2]; ponteiro inalterado (o vencedor "real" o teria
+    // avançado — aqui o simulado não avançou, e o perdedor NÃO pode tê-lo tocado).
+    const versoes = await db.emailTemplateVersion.findMany({
+      where: { templateId: t.id },
+      orderBy: { version: 'asc' },
+      select: { version: true, subject: true },
+    });
+    expect(versoes.map((v) => v.version)).toEqual([1, 2]);
+    expect(versoes.find((v) => v.version === 2)?.subject).toBe('concorrente');
+    const detalhe = (await (await req('GET', `/email-templates/${t.id}`, ANA)).json()) as {
+      activeVersion: number;
+    };
+    expect(detalhe.activeVersion).toBe(1);
   });
 });
 
@@ -205,6 +289,25 @@ describe('RF-1/RF-4 — autorização fina', () => {
     expect((await req('POST', `/email-templates/${t.id}/archive`, BRUNO)).status).toBe(403);
     expect((await req('GET', '/email-templates', GUEST_CONTA)).status).toBe(403);
     expect((await req('GET', `/email-templates/${t.id}`, GUEST_CONTA)).status).toBe(403);
+    // GUEST 403 no ciclo TODO (QA-F5), inclusive versões e mutações.
+    expect((await req('GET', `/email-templates/${t.id}/versions`, GUEST_CONTA)).status).toBe(403);
+    expect(
+      (await req('POST', '/email-templates', GUEST_CONTA, { name: 'n', subject: 's', body: 'b' }))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await req('POST', `/email-templates/${t.id}/versions`, GUEST_CONTA, {
+          subject: 's',
+          body: 'b',
+        })
+      ).status,
+    ).toBe(403);
+    expect((await req('POST', `/email-templates/${t.id}/archive`, GUEST_CONTA)).status).toBe(403);
+    // AC-4 (QA-F8): consultar segue 200 sob arquivamento.
+    expect((await req('POST', `/email-templates/${t.id}/archive`, ANA)).status).toBe(200);
+    expect((await req('GET', `/email-templates/${t.id}`, BRUNO)).status).toBe(200);
+    expect((await req('POST', `/email-templates/${t.id}/restore`, ANA)).status).toBe(200);
   });
 
   it('cross-tenant: Carla (Org B) não vê o Template da Org A (404 não-enumerante)', async () => {
@@ -214,6 +317,8 @@ describe('RF-1/RF-4 — autorização fina', () => {
       (await req('POST', `/email-templates/${t.id}/versions`, CARLA, { subject: 's', body: 'b' }))
         .status,
     ).toBe(404);
+    expect((await req('POST', `/email-templates/${t.id}/archive`, CARLA)).status).toBe(404);
+    expect((await req('GET', `/email-templates/${t.id}/versions`, CARLA)).status).toBe(404);
   });
 
   it('não existe rota de exclusão (DELETE → 404/405)', async () => {

@@ -188,8 +188,7 @@ export class EmailTemplatesService {
     }
     this.auditar(contexto, 'create', 'EmailTemplate');
     this.auditar(contexto, 'create', 'EmailTemplateVersion');
-    const { db: db2 } = this.db();
-    return this.carregar(db2, templateId);
+    return this.carregar(db, templateId);
   }
 
   // ──────────────────────────────────────────────────────────── NOVA VERSÃO ──
@@ -239,6 +238,7 @@ export class EmailTemplatesService {
       throw err;
     }
     this.auditar(contexto, 'create', 'EmailTemplateVersion');
+    this.auditar(contexto, 'update', 'EmailTemplate'); // review 6.2 Arch-M1: a tx raiz também mutou o ponteiro/renome
     const versao = await db.emailTemplateVersion.findUnique({
       where: { id: versaoId },
       select: SELECT_VERSAO,
