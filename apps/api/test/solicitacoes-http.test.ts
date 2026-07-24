@@ -131,7 +131,8 @@ async function eventosDominio(solicitacaoId: string): Promise<string[]> {
   const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
   const evs = await db.domainEvent.findMany({
     where: { resourceType: 'REQUEST', resourceId: solicitacaoId },
-    orderBy: { occurredAt: 'asc' },
+    // Desempate por `createdAt, id`: duas mutações HTTP rápidas podem empatar no ms de `occurredAt`.
+    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     select: { eventType: true },
   });
   return evs.map((e) => e.eventType);

@@ -62,7 +62,10 @@ async function idsAlcancaveis(
 
   switch (tipo) {
     case 'PIPE':
-      // Só o Pipe proprietário: uma Automação alcança "apenas Cards do Pipe proprietário".
+      // Só o Pipe proprietário. Desde a 5.7 a ref `PIPE` é também o ALVO de `TASK_CREATE`/`REQUEST_CREATE`:
+      // este filtro é a FONTE REAL do invariante de não-ampliação por Pipe — a allowlist do principal
+      // (`escopoAlcancaRecurso`) é semeada por estas mesmas refs já validadas, então quem barra uma config
+      // com Pipe alheio é ESTA linha (400 `REFERENCIA_INALCANCAVEL`), provado em `automation-e5-e2e`.
       return new Set(ids.filter((id) => id === pipeId));
     case 'PHASE':
       // A Fase precisa ser do Pipe proprietário: uma Automação não alcança Fases de outro Pipe.

@@ -207,23 +207,61 @@ afterAll(async () => {
   if (migrator) {
     const m = migrator;
     // Faxina pelo migrator (o runtime não tem DELETE em várias tabelas). Ordem: dependentes → base.
-    await m.automationActionResult.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.automationChainVisit.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.automationExecution.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.automationVersion.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
+    // ESCOPADA aos recursos criados por ESTE arquivo (nunca `where: { orgId: ORG_C }` em massa) — a Org C é
+    // compartilhada por toda a suíte, e uma varredura por Org apaga o setup dos vizinhos (lição TEST-ISO-01).
+    const execs = await m.automationExecution
+      .findMany({ where: { automationId: { in: criados.automationIds } }, select: { id: true } })
+      .catch(() => [] as Array<{ id: string }>);
+    const execIds = execs.map((e) => e.id);
+    await m.automationActionResult
+      .deleteMany({ where: { executionId: { in: execIds } } })
+      .catch(() => {});
+    await m.automationChainVisit
+      .deleteMany({ where: { executionId: { in: execIds } } })
+      .catch(() => {});
+    await m.automationExecution.deleteMany({ where: { id: { in: execIds } } }).catch(() => {});
+    await m.automationVersion
+      .deleteMany({ where: { automationId: { in: criados.automationIds } } })
+      .catch(() => {});
     await m.automation.deleteMany({ where: { id: { in: criados.automationIds } } }).catch(() => {});
-    await m.notificationRecipient.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.notification.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.taskHistory.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.task.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.solicitacaoHistory.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.solicitacao.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.cardResponsavel.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.cardGrant.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.domainEvent.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
+    const tasks = await m.task
+      .findMany({ where: { pipeId: { in: criados.pipeIds } }, select: { id: true } })
+      .catch(() => [] as Array<{ id: string }>);
+    const taskIds = tasks.map((t) => t.id);
+    const sols = await m.solicitacao
+      .findMany({ where: { pipeId: { in: criados.pipeIds } }, select: { id: true } })
+      .catch(() => [] as Array<{ id: string }>);
+    const solIds = sols.map((s) => s.id);
+    const notifs = await m.notification
+      .findMany({
+        where: { resourceId: { in: [...criados.cardIds, ...taskIds, ...solIds] } },
+        select: { id: true },
+      })
+      .catch(() => [] as Array<{ id: string }>);
+    const notifIds = notifs.map((n) => n.id);
+    await m.notificationRecipient
+      .deleteMany({ where: { notificationId: { in: notifIds } } })
+      .catch(() => {});
+    await m.notification.deleteMany({ where: { id: { in: notifIds } } }).catch(() => {});
+    await m.taskHistory.deleteMany({ where: { taskId: { in: taskIds } } }).catch(() => {});
+    await m.task.deleteMany({ where: { id: { in: taskIds } } }).catch(() => {});
+    await m.solicitacaoHistory
+      .deleteMany({ where: { solicitacaoId: { in: solIds } } })
+      .catch(() => {});
+    await m.solicitacao.deleteMany({ where: { id: { in: solIds } } }).catch(() => {});
+    await m.cardResponsavel
+      .deleteMany({ where: { cardId: { in: criados.cardIds } } })
+      .catch(() => {});
+    await m.cardGrant.deleteMany({ where: { cardId: { in: criados.cardIds } } }).catch(() => {});
+    await m.pipeGrant.deleteMany({ where: { pipeId: { in: criados.pipeIds } } }).catch(() => {});
+    await m.domainEvent.deleteMany({ where: { pipeId: { in: criados.pipeIds } } }).catch(() => {});
     await m.card.deleteMany({ where: { id: { in: criados.cardIds } } }).catch(() => {});
-    await m.formVersion.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
-    await m.form.deleteMany({ where: { orgId: ORG_C } }).catch(() => {});
+    const forms = await m.form
+      .findMany({ where: { pipeId: { in: criados.pipeIds } }, select: { id: true } })
+      .catch(() => [] as Array<{ id: string }>);
+    const formIds = forms.map((f) => f.id);
+    await m.formVersion.deleteMany({ where: { formId: { in: formIds } } }).catch(() => {});
+    await m.form.deleteMany({ where: { id: { in: formIds } } }).catch(() => {});
     await m.phase.deleteMany({ where: { id: { in: criados.phaseIds } } }).catch(() => {});
     await m.pipe.deleteMany({ where: { id: { in: criados.pipeIds } } }).catch(() => {});
     await m.membership.deleteMany({ where: { id: { in: criados.membershipIds } } }).catch(() => {});
@@ -439,5 +477,127 @@ describe('AC3 — Ação Enviar Notificação in-app (NOTIFICATION_SEND)', () =>
       where: { executionId: exec!.id, actionType: 'NOTIFICATION_SEND' },
     });
     expect(resultado?.state).toBe('DENIED');
+  });
+});
+
+// ── AC1/AC4 — Gatilho TASK_*: uma Automação REAGE a Evento de Tarefa (review 5.7) ───────────────────────
+
+describe('AC1/AC4 — Automação reagindo a Evento TASK_* (snapshot-builder + RESPONSAVEL_TAREFA_ATUAL)', () => {
+  /** Cria uma Tarefa direto no banco (como 5.1 faria), com Responsável opcional. */
+  async function criarTarefaDireta(pipeId: string, responsavelMembershipId: string | null) {
+    const t = await db().task.create({
+      data: {
+        orgId: ORG_C,
+        pipeId,
+        title: `t-${randomUUID().slice(0, 8)}`,
+        dueVersion: 0,
+        responsavelMembershipId,
+        lifecycleState: 'ABERTA',
+        archiveState: 'ATIVA',
+      },
+      select: { id: true },
+    });
+    criados.taskIds.push(t.id);
+    return t.id;
+  }
+
+  it('when TASK_CREATED → NOTIFICATION_SEND notifica o Responsável ATUAL da Tarefa (estratégia RESPONSAVEL_TAREFA_ATUAL)', async () => {
+    const pipeId = await criarPipe();
+    const membershipId = await criarContaEMembership();
+    // A distribuição 5.6 revalida ACESSO ATUAL ao Pipe dono da Tarefa (fail-closed): sem PipeGrant, o
+    // Responsável seria EXCLUÍDO (não-ampliação). O teste dá o acesso que o cenário feliz exige.
+    await db().pipeGrant.create({
+      data: { orgId: ORG_C, pipeId, membershipId, role: 'MEMBER', state: 'ACTIVE' },
+    });
+    const taskId = await criarTarefaDireta(pipeId, membershipId);
+    // `TASK_OVERDUE` é o tipo de catálogo com estratégia RESPONSAVEL_TAREFA_ATUAL e resourceType TASK.
+    await criarAutomacaoAtiva(pipeId, { tipo: 'TASK_CREATED', refs: [] }, [
+      { tipo: 'NOTIFICATION_SEND', parametros: { notificationType: 'TASK_OVERDUE' }, refs: [] },
+    ]);
+
+    const eventId = await emitirEvento('TASK_CREATED', 'TASK', taskId, pipeId);
+    await engine.processarEventoAgora(ORG_C, eventId);
+
+    // A Automação EXECUTOU a partir de um Evento TASK_* (metade "reajam" do AC1) …
+    const exec = await db().automationExecution.findFirst({ where: { eventId } });
+    expect(exec?.state).toBe('SUCCEEDED');
+    const resultado = await db().automationActionResult.findFirst({
+      where: { executionId: exec!.id, actionType: 'NOTIFICATION_SEND' },
+    });
+    expect(resultado?.state).toBe('SUCCEEDED');
+
+    // … e o destinatário é o RESPONSÁVEL ATUAL da Tarefa (5.6, sem destinatário arbitrário).
+    const notif = await db().notification.findFirst({
+      where: { type: 'TASK_OVERDUE', resourceId: taskId },
+      select: { id: true },
+    });
+    expect(notif).not.toBeNull();
+    criados.notificationIds.push(notif!.id);
+    const destinatarios = await db().notificationRecipient.findMany({
+      where: { notificationId: notif!.id },
+    });
+    expect(destinatarios.map((d) => d.recipientMembershipId)).toContain(membershipId);
+  });
+
+  it('contenção M-1: Tarefa de OUTRO Pipe no Evento ⇒ contexto vazio ⇒ Ação DENIED (fail-closed)', async () => {
+    const pipeDaAutomacao = await criarPipe();
+    const outroPipe = await criarPipe();
+    const membershipId = await criarContaEMembership();
+    const taskDeOutroPipe = await criarTarefaDireta(outroPipe, membershipId);
+    await criarAutomacaoAtiva(pipeDaAutomacao, { tipo: 'TASK_CREATED', refs: [] }, [
+      { tipo: 'NOTIFICATION_SEND', parametros: { notificationType: 'TASK_OVERDUE' }, refs: [] },
+    ]);
+
+    // Evento apontando o Pipe da Automação, mas com recurso de OUTRO Pipe (envelope adulterado/estado torto).
+    const eventId = await emitirEvento('TASK_CREATED', 'TASK', taskDeOutroPipe, pipeDaAutomacao);
+    await engine.processarEventoAgora(ORG_C, eventId);
+
+    const exec = await db().automationExecution.findFirst({ where: { eventId } });
+    const resultado = await db().automationActionResult.findFirst({
+      where: { executionId: exec!.id, actionType: 'NOTIFICATION_SEND' },
+    });
+    expect(resultado?.state).toBe('DENIED');
+    const notif = await db().notification.findFirst({
+      where: { type: 'TASK_OVERDUE', resourceId: taskDeOutroPipe },
+    });
+    expect(notif).toBeNull();
+  });
+});
+
+// ── Config-time — a fonte REAL do invariante de não-ampliação por Pipe (review 5.7) ─────────────────────
+
+describe('config-time — ref PIPE diferente do proprietário é rejeitada (revalidarReferencias)', () => {
+  it('config com alvo PIPE ≠ Pipe proprietário ⇒ 400 REFERENCIA_INALCANCAVEL (fase vermelha do gate)', async () => {
+    const { revalidarReferencias } = await import('../src/pipes/automations/automation-references');
+    const { validarConfiguracao } = await import('../src/pipes/automations/automation-config');
+    const pipeProprietario = await criarPipe();
+    const pipeAlheio = await criarPipe(); // existe na MESMA Org — o filtro é por proprietário, não por RLS
+    const validada = validarConfiguracao({
+      quando: { tipo: 'CARD_CREATED', refs: [] },
+      condicoes: [],
+      entao: [
+        {
+          tipo: 'TASK_CREATE',
+          parametros: { title: 'x' },
+          refs: [{ tipo: 'PIPE', id: pipeAlheio }],
+        },
+      ],
+    });
+    await expect(revalidarReferencias(db(), pipeProprietario, validada)).rejects.toMatchObject({
+      response: { motivo: 'REFERENCIA_INALCANCAVEL', tipo: 'PIPE' },
+    });
+    // Fase verde do MESMO gate: a ref do próprio proprietário passa.
+    const propria = validarConfiguracao({
+      quando: { tipo: 'CARD_CREATED', refs: [] },
+      condicoes: [],
+      entao: [
+        {
+          tipo: 'TASK_CREATE',
+          parametros: { title: 'x' },
+          refs: [{ tipo: 'PIPE', id: pipeProprietario }],
+        },
+      ],
+    });
+    await expect(revalidarReferencias(db(), pipeProprietario, propria)).resolves.toBeUndefined();
   });
 });

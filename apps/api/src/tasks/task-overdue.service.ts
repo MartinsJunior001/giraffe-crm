@@ -15,6 +15,13 @@ import { NotificationDistributionService } from '../notifications/distribution/n
 const NS_NOTIF_TASK_OVERDUE = 'e6b9c0a2-7f3d-5e41-9a8c-1b2d3e4f5a6b';
 
 /**
+ * Teto de ocorrências por passada do scan (review 5.7): mantém a tx interativa (INSERT + N Eventos same-tx)
+ * dentro do timeout do driver. O restante de um backlog maior sai nas passadas seguintes — o INSERT é
+ * idempotente, então o teto nunca perde ocorrência, só a difere.
+ */
+const TETO_OCORRENCIAS_POR_PASSADA = 200;
+
+/**
  * Mecanismo temporal do Evento "Tarefa atrasada" (Story 5.1, gate §1535). Serviço SINGLETON (não
  * `RequestContext`-scoped) — recebe o `orgId` do agendador/dispatcher, nunca do cliente. Reusa o PADRÃO
  * Postgres-based do motor 4.6 (zero-dependência, AD-32): sem Redis, sem cron de SO. Ver a decision doc
@@ -58,6 +65,11 @@ export class TaskOverdueService {
       for (const p of definirContextoOrg(tx, { orgId })) await p;
       // `RETURNING` (Story 5.6) devolve exatamente as ocorrências NOVAS desta passagem (o `ON CONFLICT DO
       // NOTHING` não retorna as já existentes) — são elas que geram Evento/Notificação, uma única vez.
+      // TETO POR PASSADA (review 5.7): sem LIMIT, um backlog grande (1º scan após downtime) faria o loop de
+      // emissão estourar o timeout da tx interativa → rollback integral → o próximo scan reencontra o MESMO
+      // lote → starvation permanente. Com o teto, cada passada materializa até N ocorrências (com seus
+      // Eventos, same-tx) e o restante fica para a próxima invocação — o INSERT é idempotente por construção
+      // (`NOT EXISTS` + ON CONFLICT), então "de novo" nunca duplica.
       const emitidas = await tx.$queryRaw<Array<{ taskId: string; dueVersion: number }>>(Prisma.sql`
         INSERT INTO "TaskOverdueOccurrence" ("id", "orgId", "taskId", "dueVersion", "dueAt", "detectedAt", "createdAt")
         SELECT gen_random_uuid(), t."orgId", t."id", t."dueVersion", t."dueAt", now(), now()
@@ -67,6 +79,11 @@ export class TaskOverdueService {
           AND t."archiveState" = 'ATIVA'
           AND t."dueAt" IS NOT NULL
           AND t."dueAt" <= now()
+          AND NOT EXISTS (
+            SELECT 1 FROM "TaskOverdueOccurrence" o
+            WHERE o."orgId" = t."orgId" AND o."taskId" = t."id" AND o."dueVersion" = t."dueVersion"
+          )
+        LIMIT ${TETO_OCORRENCIAS_POR_PASSADA}
         ON CONFLICT ("orgId", "taskId", "dueVersion") DO NOTHING
         RETURNING "taskId", "dueVersion"
       `);

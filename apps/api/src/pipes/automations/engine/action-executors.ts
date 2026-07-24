@@ -498,6 +498,19 @@ function textoOpcional(v: unknown): string | null {
 }
 
 /**
+ * Defesa em profundidade dos LIMITES na execução (espelha o config-time de `action-catalog.ts`): um snapshot
+ * de `AutomationVersion` gravado antes desta validação (ou malformado) NÃO pode virar throw/retry do motor —
+ * a Ação nega determinístico (`DENIED`), nunca produz `Date` inválida nem texto sem teto.
+ */
+const LIMITE_TITULO = 200;
+const LIMITE_DESCRICAO = 2000;
+const LIMITE_DUE_MIN = 525_600; // 1 ano em minutos — mesmo teto do config-time
+
+function textoDentroDoLimite(v: string | null, limite: number): boolean {
+  return v === null || v.trim().length <= limite;
+}
+
+/**
  * Resolve o Card a VINCULAR na criação por Automação (Story 5.7): se `vincularCardDoEvento` e há Card no
  * contexto, ele deve ser do MESMO Pipe alvo (senão a criação é recusada — `validarCardDoPipe` de 5.1/5.2).
  * Devolve `{ ok, cardId }`: `ok=false` ⇒ recusar (`FORA_DO_ESCOPO`). Sem intenção de vínculo ⇒ `cardId=null`.
@@ -547,10 +560,25 @@ async function criarTarefa(
   const responsavel = textoOpcional(acao.parametros.responsavelMembershipId);
   const vincular = acao.parametros.vincularCardDoEvento === true;
   const dueMin = acao.parametros.dueInMinutes;
-  const dueAt =
-    typeof dueMin === 'number' && Number.isFinite(dueMin) && dueMin > 0
-      ? new Date(Date.now() + dueMin * 60_000)
-      : null;
+  // `dueInMinutes` fora do contrato (não-inteiro/negativo/acima do teto) ⇒ DENIED determinístico, nunca uma
+  // `Date` fora do range (que viraria throw do Prisma e retry infrutífero do motor).
+  if (
+    dueMin !== undefined &&
+    dueMin !== null &&
+    (typeof dueMin !== 'number' ||
+      !Number.isInteger(dueMin) ||
+      dueMin <= 0 ||
+      dueMin > LIMITE_DUE_MIN)
+  ) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
+  const dueAt = typeof dueMin === 'number' ? new Date(Date.now() + dueMin * 60_000) : null;
+  if (
+    !textoDentroDoLimite(title, LIMITE_TITULO) ||
+    !textoDentroDoLimite(description, LIMITE_DESCRICAO)
+  ) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
 
   if (responsavel !== null && !(await responsavelValido(ctx.db, responsavel))) {
     return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
@@ -646,6 +674,12 @@ async function criarSolicitacao(
   const description = textoOpcional(acao.parametros.description);
   const responsavel = textoOpcional(acao.parametros.responsavelMembershipId);
   const vincular = acao.parametros.vincularCardDoEvento === true;
+  if (
+    !textoDentroDoLimite(title, LIMITE_TITULO) ||
+    !textoDentroDoLimite(description, LIMITE_DESCRICAO)
+  ) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
 
   if (responsavel !== null && !(await responsavelValido(ctx.db, responsavel))) {
     return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };

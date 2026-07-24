@@ -18,7 +18,11 @@ condicional"). `resourceType` ganha `'TASK'`/`'REQUEST'`. `EMAIL_SENT`/`EMAIL_RE
   scheduler novo. Idempotente por `eventId` determinístico (`correlationId = uuidv5(overdue:org:task:dueVersion)`);
   re-scan não re-insere ocorrência ⇒ não re-emite.
 - `correlationId` das transições = `randomUUID()` (a mutação do usuário não é retry-idempotente no serviço; cada
-  transição é um fato distinto — evita colisão de `eventId` em complete→reopen→complete). Criação usa o próprio id.
+  transição é um fato distinto — evita colisão de `eventId` em complete→reopen→complete). No caminho HUMANO a
+  criação também usa `randomUUID()` (mesmo helper `emitirDominio`; o Evento nasce na MESMA tx do fato, então um
+  rollback reverte ambos — não há janela de duplicação); no caminho da AUTOMAÇÃO a criação usa o próprio id da
+  entidade (`correlationId = nova.id`, determinístico com a `idempotencyKey` da Ação). `TASK_OVERDUE` usa
+  `uuidv5(NS_NOTIF_TASK_OVERDUE, "event:{orgId}:{taskId}:{dueVersion}")` — determinístico por ocorrência.
 
 Emissão **incondicional** (como `CARD_CREATED`): o outbox é escrito sempre; o motor decide quem reage. Quem drena
 é o motor existente (`enfileirarParaEvento`/`drenarOrg`; driver contínuo deferido — `DEB-4-6-DRIVER-CONTINUO`).
@@ -34,8 +38,10 @@ Emissão **incondicional** (como `CARD_CREATED`): o outbox é escrito sempre; o 
 ## D3 — Domínios de alvo novos: `PIPE` e `NOTIFICATION`
 
 `AcaoDominio` ganha `'PIPE'` (Criar Tarefa/Solicitação) e `'NOTIFICATION'` (Enviar Notificação):
-- **PIPE** — alvo = 1 ref `PIPE` (determinístico). `dentroDoEscopo`: o Pipe alvo deve estar na allowlist
-  `recursosAutorizados` do principal (a ref configurada JÁ entra na allowlist via `montarPrincipal`). Estado:
+- **PIPE** — alvo = 1 ref `PIPE` (determinístico). **A fonte real da não-ampliação é o config-time**:
+  `revalidarReferencias` só aceita ref `PIPE` igual ao Pipe proprietário (400 `REFERENCIA_INALCANCAVEL` senão) —
+  a allowlist `recursosAutorizados` do principal é semeada por essas mesmas refs já validadas, então o
+  `dentroDoEscopo` em execução é defesa em profundidade, não o gate primário. Estado:
   `PIPE_ATIVO` (`{ACTIVE}`) — não cria em Pipe arquivado. Snapshot lê `Pipe(orgId, state)` sob RLS.
 - **NOTIFICATION** — alvo = o **recurso primário** do Evento (card XOR task XOR request; exatamente um não-nulo
   no `ContextoEvento`, senão fail-closed). `dentroDoEscopo`: o `pipeId` do recurso == `principal.pipeId`

@@ -526,7 +526,13 @@ export class SolicitacoesService {
     contexto: ContextoOrganizacional,
     pipeId: string,
     solicitacaoId: string,
-    eventType: string,
+    eventType:
+      | 'REQUEST_CREATED'
+      | 'REQUEST_RESOLVED'
+      | 'REQUEST_REOPENED'
+      | 'REQUEST_ARCHIVED'
+      | 'REQUEST_RESTORED'
+      | 'REQUEST_RESPONSIBLE_CHANGED',
   ): Promise<unknown> {
     return emitirEventoDeDominio(tx, contexto, {
       eventType,

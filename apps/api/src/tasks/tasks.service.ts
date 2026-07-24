@@ -522,7 +522,13 @@ export class TasksService {
     contexto: ContextoOrganizacional,
     pipeId: string,
     taskId: string,
-    eventType: string,
+    eventType:
+      | 'TASK_CREATED'
+      | 'TASK_COMPLETED'
+      | 'TASK_REOPENED'
+      | 'TASK_ARCHIVED'
+      | 'TASK_RESTORED'
+      | 'TASK_RESPONSIBLE_CHANGED',
   ): Promise<unknown> {
     return emitirEventoDeDominio(tx, contexto, {
       eventType,

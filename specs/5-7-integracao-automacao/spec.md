@@ -88,3 +88,21 @@ column-scoped). RLS/FORCE já existentes preservados; a coluna nova não muda po
 Núcleo do motor (E4); Ações de E-mail/IA (E6 — os slots `EMAIL_SEND`/`AI_ACTION` seguem declarados,
 recusados); driver contínuo de drain (`DEB-4-6-DRIVER-CONTINUO`) e de overdue (`DEB-5-1-OVERDUE-DRIVER`),
 ambos operação de plataforma.
+
+## Review Findings (code review adversarial, 2026-07-23)
+
+- [ ] [Review][Patch] E2E do gatilho `TASK_*`/`REQUEST_*` + estratégia `RESPONSAVEL_TAREFA_ATUAL` ausentes [apps/api/test/automation-e5-e2e.test.ts]
+- [ ] [Review][Patch] Scan de overdue sem teto por passada — tx interativa pode estourar timeout e sofrer starvation [apps/api/src/tasks/task-overdue.service.ts:61]
+- [ ] [Review][Patch] Invariante "ref PIPE = só o proprietário" sem teste de fase vermelha; comentário/doc apontam a allowlist (vácua) como gate [apps/api/src/pipes/automations/automation-references.ts:64]
+- [ ] [Review][Patch] Executor não revalida limites de `dueInMinutes`/textos — snapshot malformado vira throw/retry em vez de DENIED [apps/api/src/pipes/automations/engine/action-executors.ts:779]
+- [ ] [Review][Patch] Faxina do E2E varre a Org C inteira (`deleteMany` por `orgId`) — colisão com testes vizinhos (lição TEST-ISO-01) [apps/api/test/automation-e5-e2e.test.ts]
+- [ ] [Review][Patch] `eventType: string` sem union literal em `emitirDominio` [apps/api/src/tasks/tasks.service.ts:525]
+- [ ] [Review][Patch] Ordenação dos asserts de outbox por `occurredAt` pode empatar em ms — flake latente [apps/api/test/tasks-http.test.ts]
+- [ ] [Review][Patch] Doc de decisão diverge do código no `correlationId` de criação/overdue — corrigir o doc [_bmad-output/implementation-artifacts/decisions/automation-e5-integration-5-7.md]
+- [x] [Review][Defer] Ciclo temporal `TASK_OVERDUE → TASK_CREATE` sem propagação de cadeia — sem runaway autônomo hoje (driver deferido); registrar `DEB-5-7-OVERDUE-CHAIN`
+- [x] [Review][Defer] TOCTOU Pipe/Membership/Card entre revalidação e create — janela mínima; fechar em lote com o padrão da casa
+- [x] [Review][Defer] `vincularCardDoEvento` sem Card no contexto degrada em silêncio — decisão "Card opcional" registrada
+- [x] [Review][Defer] Allowlist de `notificationType` só em runtime — deliberado e comentado; melhoria de UX de config
+- [x] [Review][Defer] `errorCode` genérico `ESTADO_INVALIDO` para defeitos de config — melhoria de diagnóstico da trilha
+- [x] [Review][Defer] `emittedEventId: null` no retry idempotente — auditoria perde o vínculo Ação→Evento
+- [x] [Review][Defer] `editar`/`vincularCard` sem Evento de domínio — catálogo fixo de 13 tipos (§1660), intencional
