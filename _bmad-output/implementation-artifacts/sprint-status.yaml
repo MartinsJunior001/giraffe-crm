@@ -135,7 +135,7 @@ development_status:
   5-3-fonte-unica-de-notificacoes-write-side: done
   5-4-superficies-leitura-e-preferencias: done
   5-5-tempo-real-como-invalidacao-socket-io: done
-  5-6-catalogo-e-distribuicao-de-notificacoes-in-app: backlog
+  5-6-catalogo-e-distribuicao-de-notificacoes-in-app: done
   5-7-integracao-com-automacao-eventos-acoes-de-e5: backlog
   epic-5-retrospective: optional
 
