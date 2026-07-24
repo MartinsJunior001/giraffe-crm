@@ -53,7 +53,11 @@ let baseUrl: string;
 let migrator: PrismaClient;
 const pipesCriados: string[] = [];
 const emailsCriados: string[] = [];
-// Convidada descartável (GUEST ACTIVE na Org A) — conta dedicada, nunca as fixtures de leitura (TEST-ISO-01).
+// Convidada descartável (GUEST ACTIVE na Org A) — conta DEDICADA (`randomUUID`), nunca as fixtures de
+// leitura (TEST-ISO-01). Justificativa de escrever na Org A (review 6.1 — QA-F4): o fluxo HTTP completo
+// (Pipe→Fase→Form→Card via API) exige um ADMIN autenticável, e o único disponível é ANA (Org A) — o MESMO
+// padrão já usado por `tasks-http`/`solicitacoes-http`. A regra de ouro proíbe reusar contas de SEED em
+// `membership.create`; esta Membership é de conta descartável e a faxina é escopada aos ids criados.
 const GUEST_CONTA = randomUUID();
 let guestMembershipId = '';
 const migratorUrl = process.env.MIGRATION_DATABASE_URL;
@@ -85,6 +89,7 @@ async function pipeComCard(nome: string): Promise<{ pipeId: string; cardId: stri
     label: 'Nome',
     type: 'TEXT_SHORT',
   });
+  expect(campoRes.status).toBe(201);
   const campo = (await campoRes.json()) as Ident;
   expect((await req('POST', `/pipes/${pipeId}/forms/initial/publish`, ANA)).status).toBe(201);
   const sub = await req('POST', `/pipes/${pipeId}/forms/initial/submit`, ANA, {
@@ -158,7 +163,11 @@ describe('AC1 — modelo canônico e associação a Card', () => {
     // Vários e-mails podem apontar o MESMO Card.
     await criarEmail(ANA, { cardId, subject: 's2', body: 'b2' });
     // Card inexistente (equivale a cross-tenant sob RLS) → 404, sem confirmar existência.
-    const res = await req('POST', '/emails', ANA, { cardId: randomUUID(), subject: 's', body: 'b' });
+    const res = await req('POST', '/emails', ANA, {
+      cardId: randomUUID(),
+      subject: 's',
+      body: 'b',
+    });
     expect(res.status).toBe(404);
   });
 
@@ -192,6 +201,44 @@ describe('AC2 — destinatários validados no servidor', () => {
   });
 });
 
+describe('AC3/RF-2 — edição do rascunho (PATCH)', () => {
+  it('edita DRAFT (200): merge parcial revalida, normaliza e deduplica no servidor', async () => {
+    const email = await criarEmail(ANA, {
+      subject: 'original',
+      body: 'corpo',
+      recipients: ['a@exemplo.com'],
+    });
+    const res = await req('PATCH', `/emails/${email.id}`, ANA, {
+      recipients: ['  B@Exemplo.com ', 'b@exemplo.com', 'a@exemplo.com'],
+      subject: 'editado',
+    });
+    expect(res.status).toBe(200);
+    const editado = (await res.json()) as EmailView;
+    expect(editado.subject).toBe('editado');
+    expect(editado.body).toBe('corpo'); // campo não enviado é preservado
+    expect(editado.recipients).toEqual(['b@exemplo.com', 'a@exemplo.com']);
+    // Conteúdo inválido no PATCH → 400 (validação server-side também na edição).
+    expect((await req('PATCH', `/emails/${email.id}`, ANA, { recipients: ['lixo'] })).status).toBe(
+      400,
+    );
+  });
+
+  it('trocar a associação exige operar o Card de ORIGEM e o de DESTINO', async () => {
+    const { cardId } = await pipeComCard('e61-patch-vinculo');
+    const email = await criarEmail(ANA, { cardId, subject: 's', body: 'b' });
+    // Bruno não opera o Card de origem: nem desassociar nem trocar (404 não-enumerante).
+    expect((await req('PATCH', `/emails/${email.id}`, BRUNO, { cardId: null })).status).toBe(404);
+    // Ana (opera origem; destino inexistente/cross-tenant) → 404 no destino.
+    expect((await req('PATCH', `/emails/${email.id}`, ANA, { cardId: randomUUID() })).status).toBe(
+      404,
+    );
+    // Ana desassocia (opera a origem; sem Card → capacidade de papel) → 200.
+    const res = await req('PATCH', `/emails/${email.id}`, ANA, { cardId: null });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as EmailView).cardId).toBeNull();
+  });
+});
+
 describe('AC3 — sanitização e imutabilidade pós-envio', () => {
   it('conteúdo com caractere de controle → 400; submit congela; edição pós-SUBMITTED → 409', async () => {
     expect(
@@ -217,6 +264,10 @@ describe('AC3 — sanitização e imutabilidade pós-envio', () => {
     expect((await req('PATCH', `/emails/${email.id}`, ANA, { subject: 'novo' })).status).toBe(409);
     expect((await req('POST', `/emails/${email.id}/submit`, ANA)).status).toBe(200);
     expect((await req('POST', `/emails/${email.id}/discard`, ANA)).status).toBe(409);
+    // AC-5/D-61.6: submeter NÃO emite Evento de domínio (o outbox nasce só com o envio real, 6.4).
+    const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+    const eventos = await db.domainEvent.findMany({ where: { resourceId: email.id } });
+    expect(eventos).toHaveLength(0);
   });
 
   it('descartar é idempotente e preserva a linha (sem DELETE)', async () => {

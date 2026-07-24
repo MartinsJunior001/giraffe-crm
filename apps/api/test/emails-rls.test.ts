@@ -7,7 +7,10 @@ import { withTenantContext, type TenantLogger } from '../src/kernel/db/tenant-co
  * Isolamento e integridade de `EmailMessage` (Story 6.1) contra um PostgreSQL REAL, pelo papel de runtime
  * `giraffe_app` (sem BYPASSRLS, não é dono). Prova: (1) isolamento por Org (cross-tenant invisível);
  * (2) `WITH CHECK` no INSERT — `orgId` alheio negado (via `createMany`, sem RETURNING — fase vermelha
- * conhecida da base); (3) UPDATE não move a linha de Org; (4) GRANT: **sem DELETE** e UPDATE
+ * conhecida da base); (3) mover a linha de Org é IMPOSSÍVEL pelo runtime — provado pela fronteira do
+ * **GRANT** (`orgId` sem UPDATE → permission denied); o `WITH CHECK` da policy de UPDATE existe como
+ * defesa em profundidade, mas NÃO é alcançável por teste de runtime (o GRANT barra antes) — lacuna
+ * documentada, não claim (review 6.1 — Sec-M2); (4) GRANT: **sem DELETE** e UPDATE
  * **column-scoped** — `orgId`/`createdByMembershipId` → `permission denied`; (5) FK COMPOSTA tenant-safe —
  * `cardId` de OUTRA Org viola a FK (nunca associação silenciosa cross-tenant).
  *
@@ -43,7 +46,9 @@ beforeAll(async () => {
 
   // Card mínimo na Org A (Pipe→Phase→Form→FormVersion→Card), pelo migrator.
   const dbA = withTenantContext(migrator, { orgId: ORG_A }, semLog);
-  const pipe = await dbA.pipe.create({ data: { orgId: ORG_A, name: `p-${randomUUID().slice(0, 8)}` } });
+  const pipe = await dbA.pipe.create({
+    data: { orgId: ORG_A, name: `p-${randomUUID().slice(0, 8)}` },
+  });
   recursosA.pipe = pipe.id;
   const phase = await dbA.phase.create({
     data: { orgId: ORG_A, pipeId: pipe.id, name: 'F', position: 1000, state: 'ACTIVE' },
@@ -120,7 +125,7 @@ describe('isolamento por Organização (RLS FORCE)', () => {
     ).rejects.toThrow();
   });
 
-  it('UPDATE não MOVE a linha para outra Org (WITH CHECK no UPDATE)', async () => {
+  it('mover a linha de Org é negado pelo GRANT (orgId sem UPDATE — permission denied)', async () => {
     const id = await criarEmailC();
     // `orgId` nem tem GRANT de UPDATE — a tentativa bate na fronteira do banco (permission denied).
     await expect(

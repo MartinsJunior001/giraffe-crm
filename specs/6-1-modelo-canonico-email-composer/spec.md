@@ -22,7 +22,8 @@ Templates (6.2/6.3) e sem anexos (6.5).
   validação sintática e **deduplicação no servidor**; teto **20 destinatários** (D-61.2); sem CC/BCC
   (sem âncora no PRD/UX); sem disparo em massa.
 - **RF-4 (conteúdo):** assunto/corpo **texto plano** sanitizados fail-closed (sem HTML/script/conteúdo
-  ativo; sem caracteres de controle além de `\n`/`\t`); tetos: assunto ≤ 200, corpo ≤ 20_000. Conteúdo
+  ativo; sem caracteres de controle além de `\n`/`\r`/`\t` no corpo — nenhum no assunto); tetos:
+  assunto ≤ 200, corpo ≤ 20_000. Conteúdo
   **imutável após SUBMITTED** (409 em qualquer edição).
 - **RF-5 (autorização):** capacidades **deny-by-default** revalidadas no servidor (D-61.3):
   - **compor/editar/descartar/submeter** e-mail **associado a Card** → exige **operar o Card**
@@ -76,3 +77,27 @@ nenhuma env de provedor (AD-28 intacto — nada de e-mail real).
 Envio real/fila/provedor/estados de entrega e histórico geral+por Card (6.4); Templates (6.2/6.3);
 anexos (6.5); Ação/Evento de Automação de e-mail (6.6, slots 4.9 seguem recusados); IA (6.7+);
 recebimento/inbox/sincronização/campanhas (fora da Fase 1); CC/BCC; rich text.
+
+## Decisões complementares (revisão independente @ 24b09b0)
+
+- **D-61.7 — GUEST com `CardGrant` operacional PODE compor e-mail associado àquele Card** (QA-F5): a
+  capacidade "compor com Card" é exatamente "operar o Card" (2.10) — coerente com o desenho de concessão
+  direta; sem Card o GUEST segue 403. Teste dedicado registrado como débito `DEB-6-1-GUEST-CARDGRANT-TEST`
+  (depende de setup de CardGrant via migrator; comportamento garantido por `exigirOperarCard`, já testado
+  na 2.10).
+- **D-61.8 — Admin da Org pode editar/submeter/descartar rascunho de outro membro** (QA-F6/Sec-LOW-1):
+  extensão natural de D-61.3 (Admin lê; mutação segue a mesma régua). A autoria persistida segue sendo o
+  criador; a atribuição de QUEM submeteu fica no log de auditoria — persistir `submittedByMembershipId` é
+  débito para a 6.4 (`DEB-6-1-SUBMITTED-BY`), quando "quem enviou" vira fato de negócio.
+- **Débitos registrados:** `DEB-6-1-OPTIMISTIC-BRANCH-TEST` (regressão determinística do branch count=0 —
+  QA-F2); `DEB-6-1-WITHCHECK-UPDATE-PROOF` (prova da policy de UPDATE além do GRANT — Sec-M2);
+  `DEB-6-1-SUBMITTED-IMMUTABILITY-DB` (trigger/fronteira de banco para imutabilidade pós-SUBMITTED — 6.4).
+
+## Checklist / Tasks / Analyze (Spec Kit consolidado — evidência)
+
+- **Checklist:** invariantes conferidos item a item na seção "Invariantes que não podem regredir" +
+  gates do plan (todos verdes: migration drill, RLS/GRANT com provas, suíte cheia 1830/193).
+- **Tasks:** a ordem executada é a do plan §"Ordem de execução"; o registro de execução vive no story file
+  (`_bmad-output/implementation-artifacts/6-1-...md`) e nos commits atômicos do PR #187.
+- **Analyze:** consistência spec↔plan↔código auditada por 3 revisões independentes (Arch/QA/Security) no
+  SHA `24b09b0` — 0 BLOCKER; divergências encontradas (Arch-F1/F3, Sec-M1) corrigidas no mesmo PR.

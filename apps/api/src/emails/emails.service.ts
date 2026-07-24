@@ -173,9 +173,13 @@ export class EmailsService {
       throw new ConflictException({ motivo: 'EMAIL_NAO_EDITAVEL' }); // imutável pós-fluxo-de-envio
     }
 
-    // Autoriza no alvo NOVO da associação (e no atual, se mantido): mudar o `cardId` exige operar o
-    // Card de destino; desassociar (null) exige a capacidade sem-Card.
+    // Autoriza nos DOIS lados da associação (review 6.1 — Arch-F1): mudar/remover o vínculo exige operar
+    // o Card de ORIGEM (a edição de um e-mail associado é edição no contexto daquele Card — RF-5) e, se
+    // houver destino novo, operar também o Card de DESTINO. Sem mudança de vínculo, autoriza no atual.
     const cardAlvo = dto.cardId === undefined ? atual.cardId : dto.cardId;
+    if (dto.cardId !== undefined && atual.cardId !== null && dto.cardId !== atual.cardId) {
+      await this.exigirCompor(db, contexto, atual.cardId);
+    }
     await this.exigirCompor(db, contexto, cardAlvo);
 
     const data: Record<string, unknown> = {};
@@ -230,36 +234,34 @@ export class EmailsService {
       });
     }
 
+    // Guarda otimista de ESTADO **e de CONTEÚDO** (review 6.1 — Sec-M1): sem o conteúdo no `where`, um
+    // PATCH concorrente do próprio autor poderia trocar destinatários/corpo ENTRE a revalidação acima e
+    // este UPDATE, congelando SUBMITTED com conteúdo diferente do validado (até 0 destinatários). Com o
+    // conteúdo lido na condição, a corrida perde → count 0 → reconsulta → 409, nunca congela inválido.
     const { count } = await db.emailMessage.updateMany({
-      where: { id: emailId, state: 'DRAFT' },
+      where: {
+        id: emailId,
+        state: 'DRAFT',
+        recipients: { equals: atual.recipients },
+        subject: atual.subject,
+        body: atual.body,
+      },
       data:
         plano.alvo === 'SUBMITTED'
           ? { state: 'SUBMITTED', submittedAt: new Date() }
           : { state: 'DISCARDED' },
     });
     if (count === 0) {
-      // Perdeu a corrida: reconsulta — chegou ao MESMO alvo → idempotente; senão → 409.
+      // Perdeu a corrida (de estado OU de conteúdo): reconsulta — chegou ao MESMO alvo → idempotente;
+      // senão → 409 (o chamador reconsulta e repete sobre o conteúdo atual).
       const depois = await this.carregarAutorizado(db, contexto, membershipId, emailId);
       if (depois.state === plano.alvo) return depois;
       throw new ConflictException({ motivo: 'TRANSICAO_INVALIDA' });
     }
-    this.auditar(contexto, acao, 'EmailMessage');
+    // Sem auditoria manual aqui (review 6.1 — Arch-F4): o `updateMany` acima roda pelo client estendido
+    // (`withTenantContext`) e `EmailMessage` está em MODELOS_AUDITADOS — a trilha FR-214 já é emitida pela
+    // extensão; duplicar produziria evento dobrado. A manual é reservada a tx no client raiz (não usadas
+    // na 6.1 — D-61.6).
     return this.carregarAutorizado(db, contexto, membershipId, emailId);
-  }
-
-  /** Auditoria manual (FR-214) das transições. Só metadados; nunca destinatários/assunto/corpo (PII). */
-  private auditar(contexto: ContextoOrganizacional, action: string, resource: string): void {
-    this.logger.info(
-      {
-        event: 'audit',
-        actor: contexto.accountId,
-        orgId: contexto.orgId,
-        action,
-        resource,
-        result: 'allowed',
-        at: new Date().toISOString(),
-      },
-      'auditoria',
-    );
   }
 }
