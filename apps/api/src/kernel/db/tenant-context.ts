@@ -97,6 +97,12 @@ const MODELOS_AUDITADOS = new Set([
   // na trilha (FR-214), inclusive a tentativa negada por RLS — compor/editar/descartar/submeter são mutações
   // org-scoped de dado do titular (destinatários/corpo).
   'EmailMessage',
+  // Story 6.2. Template de e-mail e sua versão imutável. `EmailTemplate` (ledger com UPDATE
+  // column-scoped; sem DELETE) e `EmailTemplateVersion` (append-only, como FormVersion) entram na trilha
+  // (FR-214), inclusive a tentativa negada por RLS. As tx interativas (criar/nova versão) auditam
+  // manualmente; escritas fora delas e inserções cruzadas ficam cobertas.
+  'EmailTemplate',
+  'EmailTemplateVersion',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */
