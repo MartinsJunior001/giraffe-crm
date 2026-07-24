@@ -82,6 +82,14 @@ async function ocorrencias(taskId: string): Promise<{ dueVersion: number }[]> {
   });
 }
 
+/** Story 5.7 — Eventos canônicos `TASK_OVERDUE` (outbox do motor) da Tarefa, emitidos same-tx com a ocorrência. */
+async function eventosOverdue(taskId: string): Promise<number> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  return db.domainEvent.count({
+    where: { eventType: 'TASK_OVERDUE', resourceType: 'TASK', resourceId: taskId },
+  });
+}
+
 beforeAll(async () => {
   process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
@@ -117,10 +125,14 @@ describe('emissão idempotente (AC3)', () => {
     const dep1 = await ocorrencias(taskId);
     expect(dep1).toEqual([{ dueVersion: 0 }]);
 
-    // Reprocessa (retry/atraso do scheduler) → nenhuma NOVA ocorrência para esta Tarefa.
+    // Story 5.7: o Evento canônico TASK_OVERDUE nasceu same-tx com a ocorrência (AD-13) — exatamente 1.
+    expect(await eventosOverdue(taskId)).toBe(1);
+
+    // Reprocessa (retry/atraso do scheduler) → nenhuma NOVA ocorrência NEM novo Evento para esta Tarefa.
     await overdue.escanearOrg(ORG_A);
     await overdue.escanearOrg(ORG_A);
     expect(await ocorrencias(taskId)).toEqual([{ dueVersion: 0 }]);
+    expect(await eventosOverdue(taskId)).toBe(1); // idempotente: re-scan não re-emite
   });
 
   it('alterar o prazo BUMPA a versão → nova ocorrência possível na versão nova', async () => {

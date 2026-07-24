@@ -227,7 +227,8 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
   // Story 4.3 (CA1): o catálogo de Eventos é fixo. Um `quando.tipo` fora do núcleo selecionável → 400.
   it.each([
     ['tipo desconhecido', 'EVENTO_INVENTADO'],
-    ['ponto de extensão E5 ainda indisponível', 'TASK_CREATED'],
+    // Story 5.7: TASK_* deixou de ser extensão (agora selecionável); sobra o E6 indisponível.
+    ['ponto de extensão E6 ainda indisponível', 'EMAIL_SENT'],
     ['E-mail recebido — indisponível na Fase 1', 'EMAIL_RECEIVED'],
   ])('400 EVENTO_FORA_DO_CATALOGO: %s', async (_nome, tipo) => {
     const pipeId = await criarPipe(ORG_A);
@@ -288,12 +289,12 @@ describe('AC-2/AC-3 — configuração fail-closed', () => {
     expect(((await res.json()) as { motivo?: string }).motivo).toBe('ACAO_FORA_DO_CATALOGO');
   });
 
-  // Story 4.9 (§1459/§1463): pontos de extensão E5/E6 são CONTRATO, não executáveis na Fase 1. Uma Ação de
+  // Story 4.9 (§1459/§1463): pontos de extensão E6 são CONTRATO, não executáveis na Fase 1. Uma Ação de
   // extensão na config → 400 com motivo DISTINTO (`ACAO_DE_EXTENSAO_INDISPONIVEL`), honesto — não o genérico
   // "desconhecido". O verdadeiramente desconhecido segue `ACAO_FORA_DO_CATALOGO` (regressão da 4.5 preservada).
+  // Story 5.7: as Ações de E5 (Criar Tarefa/Solicitação, Enviar Notificação) saíram desta lista — foram
+  // PROMOVIDAS a CORE (aceitas com config válida); sobra só E6 (E-mail/IA).
   it.each([
-    ['E5 — Criar Tarefa', 'TASK_CREATE'],
-    ['E5 — Enviar Notificação', 'NOTIFICATION_SEND'],
     ['E6 — Enviar E-mail', 'EMAIL_SEND'],
     ['E6 — IA como Ação', 'AI_ACTION'],
   ])('400 ACAO_DE_EXTENSAO_INDISPONIVEL: %s', async (_nome, tipo) => {

@@ -30,11 +30,15 @@ import type { Acao } from '../automation-config';
  * revalida; a execução real (que reusa esses serviços de domínio) é da 4.6.
  */
 
-/** Os dois domínios de alvo das Ações internas da Fase 1 (Story §1380). */
-export type AcaoDominio = 'CARD' | 'RECORD';
+/**
+ * Os domínios de alvo das Ações internas. `CARD`/`RECORD` são as Ações núcleo de E4 (Story §1380). `PIPE` e
+ * `NOTIFICATION` chegam com E5 (Story 5.7): `PIPE` = criar Tarefa/Solicitação num Pipe alvo (ref); `NOTIFICATION`
+ * = enviar Notificação sobre o recurso primário do Evento (a distribuição 5.6 resolve destinatários/acesso).
+ */
+export type AcaoDominio = 'CARD' | 'RECORD' | 'PIPE' | 'NOTIFICATION';
 
 /** Tipos de referência que uma Ação pode exigir — subconjunto de `TipoDeReferencia` da 4.1. */
-type TipoRefAcao = 'PHASE' | 'FIELD' | 'DATABASE' | 'RECORD';
+type TipoRefAcao = 'PIPE' | 'PHASE' | 'FIELD' | 'DATABASE' | 'RECORD';
 
 /** Modos de resolução do alvo determinístico de `RECORD_EDIT` (Story §1381). */
 export const MODOS_ALVO_REGISTRO = ['EVENTO', 'VINCULO', 'EXPLICITO'] as const;
@@ -157,6 +161,74 @@ function validarAlvoRegistro(a: Acao, onde: string): void {
   }
 }
 
+// ── Helpers de validação das Ações de E5 (Story 5.7) ──────────────────────────────────────────────────
+
+/** Limite de tamanho do título/conteúdo das Ações de criação (E5) — barra payload abusivo (NFR-4). */
+const LIMITE_TITULO_ACAO = 200;
+const LIMITE_DESCRICAO_ACAO = 2000;
+
+/** Exige um parâmetro de texto PRESENTE e não vazio (título/conteúdo permitido). */
+function exigirParametroTexto(a: Acao, chave: string, onde: string, limite: number): void {
+  const v = a.parametros[chave];
+  if (typeof v !== 'string' || v.trim().length === 0) {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.${chave}: texto obrigatório não vazio`);
+  }
+  if (v.trim().length > limite) {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.${chave}: excede o limite`);
+  }
+}
+
+/** Se presente, o parâmetro deve ser texto (`null` permitido para "sem valor") dentro do limite. */
+function validarTextoOpcional(a: Acao, chave: string, onde: string, limite: number): void {
+  if (!(chave in a.parametros)) return;
+  const v = a.parametros[chave];
+  if (v === null) return;
+  if (typeof v !== 'string' || v.length > limite) {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.${chave}: texto (ou null) até o limite`);
+  }
+}
+
+/** Se presente, o parâmetro deve ser UUID (`null` permitido) — referência estável a Membership. */
+function validarUuidOpcional(a: Acao, chave: string, onde: string): void {
+  if (!(chave in a.parametros)) return;
+  const v = a.parametros[chave];
+  if (v === null) return;
+  if (typeof v !== 'string' || !RE_UUID.test(v)) {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.${chave}: deve ser um ID estável (UUID)`);
+  }
+}
+
+/** Se presente, o parâmetro deve ser booleano. */
+function validarBooleanoOpcional(a: Acao, chave: string, onde: string): void {
+  if (!(chave in a.parametros)) return;
+  if (typeof a.parametros[chave] !== 'boolean') {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.${chave}: esperado booleano`);
+  }
+}
+
+/** Se presente, prazo relativo em MINUTOS: inteiro positivo finito (`null` = sem prazo). Determinístico. */
+function validarDuracaoMinutosOpcional(a: Acao, chave: string, onde: string): void {
+  if (!(chave in a.parametros)) return;
+  const v = a.parametros[chave];
+  if (v === null) return;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0 || v > 525_600 /* 1 ano */) {
+    throw new AcaoForaDoCatalogoError(
+      `${onde}.parametros.${chave}: minutos inteiros positivos (ou null)`,
+    );
+  }
+}
+
+/** Formato estrutural de um tipo de Notificação (allowlist fina é revalidada na execução — 5.6). */
+const RE_NOTIF_TIPO = /^[A-Z][A-Z0-9_]*$/;
+
+/** Exige o `notificationType` presente com formato estrutural válido (a disponibilidade fina é da execução). */
+function exigirNotificationType(a: Acao, onde: string): void {
+  const v = a.parametros.notificationType;
+  if (typeof v !== 'string' || !RE_NOTIF_TIPO.test(v)) {
+    throw new AcaoForaDoCatalogoError(`${onde}.parametros.notificationType: tipo inválido`);
+  }
+}
+
 // ── Estados admissíveis do alvo (invariante "ARQUIVADO = somente-leitura") ────────────────────────────
 
 /** Card não-arquivado (ATIVO ou FINALIZADO). Arquivar é a única mutação de Card válida sobre um arquivado. */
@@ -165,6 +237,8 @@ const CARD_NAO_ARQUIVADO: ReadonlySet<string> = new Set(['ATIVO', 'FINALIZADO'])
 const REGISTRO_ATIVO: ReadonlySet<string> = new Set(['ATIVO']);
 /** Database ACTIVE — criar Registro sob Database arquivado é bloqueado (D1, 3.1). */
 const DATABASE_ATIVO: ReadonlySet<string> = new Set(['ACTIVE']);
+/** Pipe ACTIVE — criar Tarefa/Solicitação (E5) sob Pipe arquivado é bloqueado (2.1). */
+const PIPE_ATIVO: ReadonlySet<string> = new Set(['ACTIVE']);
 
 // ── O catálogo FIXO ───────────────────────────────────────────────────────────────────────────────────
 
@@ -278,6 +352,73 @@ export const ACOES_CATALOGO = [
       exigirParametroPresente(a, 'alvo', onde);
       validarAlvoRegistro(a, onde);
       validarValoresOpcional(a, onde);
+    },
+  },
+  // ── E5 — Tarefa / Solicitação / Notificação (Story 5.7) ─────────────────────────────────────────────
+  {
+    // Criar Tarefa (5.1). Alvo = Pipe alvo (ref `PIPE` única; na allowlist do principal). Card OPCIONAL: se
+    // `vincularCardDoEvento`, vincula o Card de contexto do Evento (revalidado ao MESMO Pipe na execução).
+    // Responsável opcional (Membership ATIVA, regra canônica 5.1). Prazo opcional (`dueInMinutes`, relativo à
+    // execução — determinístico). **Sem anexos de conteúdo arbitrário** (nenhum parâmetro de arquivo). Criação
+    // idempotente (chave determinística na execução — 4.6). Alvo/Membership DETERMINÍSTICOS (da config).
+    tipo: 'TASK_CREATE',
+    dominio: 'PIPE',
+    exigeConfirmacaoHumana: false,
+    estadosAlvoValidos: PIPE_ATIVO,
+    validar: (a: Acao, onde: string) => {
+      exigirRefUnica(a, 'PIPE', onde);
+      exigirSomenteParametros(
+        a,
+        new Set([
+          'title',
+          'description',
+          'dueInMinutes',
+          'responsavelMembershipId',
+          'vincularCardDoEvento',
+        ]),
+        onde,
+      );
+      exigirParametroTexto(a, 'title', onde, LIMITE_TITULO_ACAO);
+      validarTextoOpcional(a, 'description', onde, LIMITE_DESCRICAO_ACAO);
+      validarDuracaoMinutosOpcional(a, 'dueInMinutes', onde);
+      validarUuidOpcional(a, 'responsavelMembershipId', onde);
+      validarBooleanoOpcional(a, 'vincularCardDoEvento', onde);
+    },
+  },
+  {
+    // Criar Solicitação (5.2). Twin de `TASK_CREATE` SEM prazo (a Solicitação não tem `dueAt`). Alvo = Pipe
+    // alvo (ref `PIPE`). Card opcional; Responsável opcional; idempotente; nenhuma referência fora da Org.
+    tipo: 'REQUEST_CREATE',
+    dominio: 'PIPE',
+    exigeConfirmacaoHumana: false,
+    estadosAlvoValidos: PIPE_ATIVO,
+    validar: (a: Acao, onde: string) => {
+      exigirRefUnica(a, 'PIPE', onde);
+      exigirSomenteParametros(
+        a,
+        new Set(['title', 'description', 'responsavelMembershipId', 'vincularCardDoEvento']),
+        onde,
+      );
+      exigirParametroTexto(a, 'title', onde, LIMITE_TITULO_ACAO);
+      validarTextoOpcional(a, 'description', onde, LIMITE_DESCRICAO_ACAO);
+      validarUuidOpcional(a, 'responsavelMembershipId', onde);
+      validarBooleanoOpcional(a, 'vincularCardDoEvento', onde);
+    },
+  },
+  {
+    // Enviar Notificação in-app (5.6). Alvo = recurso PRIMÁRIO do Evento (Card/Tarefa/Solicitação — resolvido
+    // no contexto). SEM refs (o destinatário vem da ESTRATÉGIA DO TIPO, não da config — determinístico). O
+    // `notificationType` é de um allowlist do catálogo 5.6 (estratégia determinística; nunca `ALVO_DIRETO`),
+    // revalidado fino na execução. Conteúdo vem da fonte 5.3 (parametrizado/sanitizado) — NÃO da config.
+    // Sem gate de estado (a distribuição 5.6 decide acesso/preferência). NÃO amplia acesso (5.6 fail-closed).
+    tipo: 'NOTIFICATION_SEND',
+    dominio: 'NOTIFICATION',
+    exigeConfirmacaoHumana: false,
+    estadosAlvoValidos: null,
+    validar: (a: Acao, onde: string) => {
+      exigirSemRefs(a, onde);
+      exigirSomenteParametros(a, new Set(['notificationType']), onde);
+      exigirNotificationType(a, onde);
     },
   },
 ] as const satisfies readonly AcaoCatalogo[];

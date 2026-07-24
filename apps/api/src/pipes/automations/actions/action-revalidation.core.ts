@@ -31,10 +31,14 @@ import {
  * esconde), e o alvo correspondente resolve para nulo (fail-closed).
  */
 export interface ContextoEvento {
-  /** Card de contexto do Evento (Eventos de Card/vínculo), ou `null` (Evento puro de Registro). */
+  /** Card de contexto do Evento (Eventos de Card/vínculo), ou `null` (Evento puro de Registro/Tarefa/Solicitação). */
   readonly cardId: string | null;
   /** Registro que ORIGINOU o Evento (Eventos de Registro), ou `null`. */
   readonly recordId: string | null;
+  /** Tarefa que ORIGINOU o Evento (Eventos `TASK_*` de E5 — Story 5.7), ou `null`. */
+  readonly taskId: string | null;
+  /** Solicitação que ORIGINOU o Evento (Eventos `REQUEST_*` de E5 — Story 5.7), ou `null`. */
+  readonly requestId: string | null;
   /** IDs dos Registros com vínculo ATIVO ao Card de contexto no instante do Evento (3.9). Vazio = sem vínculo. */
   readonly linkedRecordIds: readonly string[];
 }
@@ -127,9 +131,30 @@ export function resolverAlvoDeterministico(
     case 'RECORD_EDIT':
       return resolverAlvoRegistroEdit(acao, contexto);
 
+    // E5 (Story 5.7): criar Tarefa/Solicitação num Pipe alvo — referência `PIPE` única (determinística).
+    case 'TASK_CREATE':
+    case 'REQUEST_CREATE':
+      return alvoDeReferencia(acao, 'PIPE');
+
+    // E5 (Story 5.7): Enviar Notificação sobre o recurso PRIMÁRIO do Evento (Card XOR Tarefa XOR Solicitação —
+    // EXATAMENTE um não-nulo no contexto, senão fail-closed). Determinístico: nunca "escolhe" entre candidatos.
+    case 'NOTIFICATION_SEND':
+      return recursoPrimarioDoEvento(contexto);
+
     default:
       return null;
   }
+}
+
+/**
+ * O recurso PRIMÁRIO do Evento para `NOTIFICATION_SEND` (Story 5.7): o ÚNICO não-nulo entre Card/Tarefa/
+ * Solicitação. Zero ou mais de um ⇒ ambíguo ⇒ `null` (fail-closed). Registro puro não é notificável na Fase 1.
+ */
+function recursoPrimarioDoEvento(contexto: ContextoEvento): AlvoResolvido | null {
+  const candidatos = [contexto.cardId, contexto.taskId, contexto.requestId].filter(
+    (id): id is string => id !== null,
+  );
+  return candidatos.length === 1 ? { recursoId: candidatos[0]! } : null;
 }
 
 /** O id da referência ÚNICA de um tipo (garantida pelo catálogo). `null` se ausente — defesa em profundidade. */
@@ -236,6 +261,17 @@ function dentroDoEscopo(
   principal: PrincipalAutomacao,
 ): boolean {
   if (dominio === 'CARD') {
+    return alvo.pipeId === principal.pipeId;
+  }
+  // E5 (Story 5.7):
+  //  · PIPE (criar Tarefa/Solicitação) — o Pipe alvo (ref configurada) deve estar na allowlist do principal
+  //    (deny-by-default; as refs configuradas entram em `recursosAutorizados`). Não-ampliação por construção.
+  //  · NOTIFICATION (enviar Notificação) — o recurso primário do Evento deve ser do Pipe PROPRIETÁRIO da
+  //    Automação (`alvo.pipeId === principal.pipeId`, RN-100). A entrega em si (acesso/preferência) é 5.6.
+  if (dominio === 'PIPE') {
+    return escopoAlcancaRecurso(principal, alvoResolvido.recursoId);
+  }
+  if (dominio === 'NOTIFICATION') {
     return alvo.pipeId === principal.pipeId;
   }
   // Domínio Registro: alvo CONFIGURADO exige allowlist; alvo DERIVADO do Evento é escopado por Org + entrega.

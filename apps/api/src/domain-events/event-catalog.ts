@@ -21,8 +21,11 @@
 export interface EventoCatalogo {
   /** Identificador estável do tipo (vocabulário canônico, EN — alinhado a `CARD_MOVED` da 2.16). */
   readonly tipo: string;
-  /** O tipo de recurso principal que o Evento descreve (para `resourceType` do envelope). */
-  readonly resourceType: 'CARD' | 'RECORD' | 'CARD_RECORD_LINK';
+  /**
+   * O tipo de recurso principal que o Evento descreve (para `resourceType` do envelope). `TASK`/`REQUEST` são
+   * de E5 (Story 5.7 — Tarefa/Solicitação, o próprio recurso primário, análogos a `RECORD` puro).
+   */
+  readonly resourceType: 'CARD' | 'RECORD' | 'CARD_RECORD_LINK' | 'TASK' | 'REQUEST';
   /** O Evento sempre carrega `pipeId`? (Card/vínculo sim; Registro puro não — Story §1339). */
   readonly temPipe: boolean;
   /**
@@ -66,18 +69,32 @@ export const EVENTOS_NUCLEO = [
   { tipo: 'RECORD_RESTORED', resourceType: 'RECORD', temPipe: false, origem: 'CORE' },
   { tipo: 'RECORD_FIELD_VALUE_CHANGED', resourceType: 'RECORD', temPipe: false, origem: 'CORE' },
   { tipo: 'PHASE_FORM_SUBMITTED', resourceType: 'CARD', temPipe: true, origem: 'CORE' },
+  // ── E5 Tarefa (Story 5.7) — SELECIONÁVEIS (nenhum condicional, §1660). Emitidos same-tx nos pontos de
+  // mutação de 5.1 (`TasksService`); `TASK_OVERDUE` reusa o mecanismo temporal de 5.1 (`TaskOverdueService`).
+  // `resourceType='TASK'` carrega `pipeId` (a Tarefa é de um Pipe — RN-100).
+  { tipo: 'TASK_CREATED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_COMPLETED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_REOPENED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_ARCHIVED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_RESTORED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_RESPONSIBLE_CHANGED', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  { tipo: 'TASK_OVERDUE', resourceType: 'TASK', temPipe: true, origem: 'CORE' },
+  // ── E5 Solicitação (Story 5.7) — SELECIONÁVEIS. Emitidos same-tx em 5.2 (`SolicitacoesService`).
+  { tipo: 'REQUEST_CREATED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
+  { tipo: 'REQUEST_RESOLVED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
+  { tipo: 'REQUEST_REOPENED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
+  { tipo: 'REQUEST_ARCHIVED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
+  { tipo: 'REQUEST_RESTORED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
+  { tipo: 'REQUEST_RESPONSIBLE_CHANGED', resourceType: 'REQUEST', temPipe: true, origem: 'CORE' },
 ] as const satisfies readonly EventoCatalogo[];
 
 /**
- * Pontos de EXTENSÃO E5/E6 — declarados como CONTRATO (Story §1338), NÃO selecionáveis na Fase 1. E5 registra
- * Tarefa criada/concluída/atrasada; E6 registra E-mail enviado. `EMAIL_RECEIVED` permanece INDISPONÍVEL
- * (recebimento/sincronização fora da Fase 1). Ficam aqui para que o catálogo seja explícito sobre o que EXISTE
- * como contrato e o que é proibido — não para habilitá-los.
+ * Pontos de EXTENSÃO E6 — declarados como CONTRATO (Story §1338), NÃO selecionáveis na Fase 1. Os Eventos de E5
+ * (Tarefa/Solicitação) foram PROMOVIDOS a `EVENTOS_NUCLEO` pela Story 5.7 (selecionáveis, com produtor real).
+ * Sobram os de E6: `EMAIL_SENT` (E-mail enviado, contrato futuro) e `EMAIL_RECEIVED` (recebimento/sincronização
+ * fora da Fase 1, INDISPONÍVEL permanente). Ficam aqui para o catálogo ser explícito sobre o que é proibido.
  */
 export const EVENTOS_EXTENSAO = [
-  { tipo: 'TASK_CREATED', resourceType: 'CARD', temPipe: true, origem: 'EXTENSION' },
-  { tipo: 'TASK_COMPLETED', resourceType: 'CARD', temPipe: true, origem: 'EXTENSION' },
-  { tipo: 'TASK_OVERDUE', resourceType: 'CARD', temPipe: true, origem: 'EXTENSION' },
   { tipo: 'EMAIL_SENT', resourceType: 'CARD', temPipe: true, origem: 'EXTENSION' },
   {
     tipo: 'EMAIL_RECEIVED',

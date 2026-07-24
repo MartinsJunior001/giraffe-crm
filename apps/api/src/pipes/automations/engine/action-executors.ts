@@ -6,6 +6,8 @@ import { emitirEventoDeDominio } from '../../../domain-events/domain-event-emiss
 import { NS_DOMAIN_EVENT, uuidV5 } from '../../../domain-events/event-envelope';
 import { resolverAcessoDaMembership } from '../../pipe-authz';
 import { SubmissaoInvalidaError, validarSubmissao } from '../../cards/submission';
+import type { NotificationDistributionService } from '../../../notifications/distribution/notification-distribution.service';
+import { obterTipoNotificacao } from '../../../notifications/notification-catalog';
 import type { Acao } from '../automation-config';
 import {
   type AlvoAcaoSnapshot,
@@ -17,6 +19,8 @@ import type { PrincipalAutomacao } from '../actions/automation-principal';
 import {
   EVENTO_GERADO_ASSIGN_RESPONSIBLE,
   EVENTO_GERADO_RECORD_CREATE,
+  EVENTO_GERADO_REQUEST_CREATE,
+  EVENTO_GERADO_TASK_CREATE,
 } from '../actions/action-extension-contract';
 import type { ActionResultState, ErrorCode } from './engine-types';
 
@@ -65,6 +69,12 @@ export interface ExecContext {
   readonly actionIndex: number;
   /** Encadeamento (4.7) — para propagar cadeia/causação/profundidade ao Evento que a Ação gerar. */
   readonly cadeia: ContextoCadeia;
+  /**
+   * Distribuição de Notificações (5.6) — consumida por `NOTIFICATION_SEND` (E5, Story 5.7). É a MESMA fonte
+   * dos produtores de sistema (context-explícito); resolve destinatários pela estratégia do tipo, revalida
+   * acesso atual, aplica preferências e dedup — não-ampliação por construção.
+   */
+  readonly distribuicao: NotificationDistributionService;
 }
 
 /** Desfecho de UMA Ação — o que o motor grava em `AutomationActionResult`. */
@@ -105,6 +115,7 @@ async function montarAlvoSnapshot(
   db: Db,
   acao: Acao,
   recursoId: string,
+  contexto: ContextoEvento,
 ): Promise<AlvoAcaoSnapshot> {
   const vazio: AlvoAcaoSnapshot = {
     encontrado: false,
@@ -127,6 +138,71 @@ async function montarAlvoSnapshot(
       databaseId: null,
       lifecycleState: card.lifecycleState,
     };
+  }
+
+  // E5 (Story 5.7) — TASK_CREATE/REQUEST_CREATE: alvo = o Pipe alvo (state ACTIVE/ARCHIVED gateia).
+  if (acao.tipo === 'TASK_CREATE' || acao.tipo === 'REQUEST_CREATE') {
+    const pipe = await db.pipe.findUnique({
+      where: { id: recursoId },
+      select: { orgId: true, state: true },
+    });
+    if (!pipe) return vazio;
+    return {
+      encontrado: true,
+      orgId: pipe.orgId,
+      pipeId: recursoId,
+      databaseId: null,
+      lifecycleState: pipe.state,
+    };
+  }
+
+  // E5 (Story 5.7) — NOTIFICATION_SEND: alvo = o recurso PRIMÁRIO do Evento (Card/Tarefa/Solicitação). O tipo
+  // do recurso vem do contexto (exatamente um não-nulo, garantido pela resolução determinística). Lê o `pipeId`
+  // do recurso (o escopo NOTIFICATION exige `pipeId === principal.pipeId`). Estado não gateia (5.6 decide).
+  if (acao.tipo === 'NOTIFICATION_SEND') {
+    if (recursoId === contexto.cardId) {
+      const card = await db.card.findUnique({
+        where: { id: recursoId },
+        select: { orgId: true, pipeId: true },
+      });
+      if (!card) return vazio;
+      return {
+        encontrado: true,
+        orgId: card.orgId,
+        pipeId: card.pipeId,
+        databaseId: null,
+        lifecycleState: null,
+      };
+    }
+    if (recursoId === contexto.taskId) {
+      const t = await db.task.findUnique({
+        where: { id: recursoId },
+        select: { orgId: true, pipeId: true },
+      });
+      if (!t) return vazio;
+      return {
+        encontrado: true,
+        orgId: t.orgId,
+        pipeId: t.pipeId,
+        databaseId: null,
+        lifecycleState: null,
+      };
+    }
+    if (recursoId === contexto.requestId) {
+      const s = await db.solicitacao.findUnique({
+        where: { id: recursoId },
+        select: { orgId: true, pipeId: true },
+      });
+      if (!s) return vazio;
+      return {
+        encontrado: true,
+        orgId: s.orgId,
+        pipeId: s.pipeId,
+        databaseId: null,
+        lifecycleState: null,
+      };
+    }
+    return vazio;
   }
 
   if (acao.tipo === 'RECORD_CREATE' || acao.tipo === 'RECORD_CREATE_RELATED') {
@@ -173,7 +249,7 @@ export async function executarAcao(
   const alvoSnapshot =
     alvoResolvido === null
       ? { encontrado: false, orgId: null, pipeId: null, databaseId: null, lifecycleState: null }
-      : await montarAlvoSnapshot(ctx.db, acao, alvoResolvido.recursoId);
+      : await montarAlvoSnapshot(ctx.db, acao, alvoResolvido.recursoId, contextoEvento);
 
   const veredito = revalidarAcao(acao, alvoResolvido, alvoSnapshot, ctx.principal);
   if (!veredito.permitido) {
@@ -193,7 +269,7 @@ export async function executarAcao(
     };
   }
 
-  // Só chegam aqui as Ações SEM confirmação: CARD_ASSIGN_RESPONSIBLE, RECORD_CREATE, RECORD_CREATE_RELATED.
+  // Só chegam aqui as Ações SEM confirmação.
   switch (acao.tipo) {
     case 'CARD_ASSIGN_RESPONSIBLE':
       return atribuirResponsavel(ctx, acao, alvoResolvido!.recursoId, alvoSnapshot.pipeId);
@@ -201,6 +277,14 @@ export async function executarAcao(
       return criarRegistro(ctx, acao, alvoResolvido!.recursoId, null);
     case 'RECORD_CREATE_RELATED':
       return criarRegistro(ctx, acao, alvoResolvido!.recursoId, contextoEvento.cardId);
+    // E5 (Story 5.7): alvo = Pipe alvo (`alvoResolvido.recursoId`); Card do Evento p/ vínculo opcional.
+    case 'TASK_CREATE':
+      return criarTarefa(ctx, acao, alvoResolvido!.recursoId, contextoEvento);
+    case 'REQUEST_CREATE':
+      return criarSolicitacao(ctx, acao, alvoResolvido!.recursoId, contextoEvento);
+    // E5 (Story 5.7): alvo = recurso primário do Evento (`alvoResolvido.recursoId`).
+    case 'NOTIFICATION_SEND':
+      return enviarNotificacao(ctx, acao, alvoResolvido!.recursoId, contextoEvento);
     default:
       // Defesa em profundidade: qualquer outro tipo sem confirmação não deveria existir no catálogo Fase 1.
       return { state: 'DENIED', errorCode: 'ACAO_DESCONHECIDA', targetResourceId: null };
@@ -404,4 +488,298 @@ async function criarRegistro(
     throw err;
   }
   return { state: 'SUCCEEDED', errorCode: null, targetResourceId: recordId, emittedEventId };
+}
+
+// ── E5 (Story 5.7) — Criar Tarefa / Criar Solicitação / Enviar Notificação ─────────────────────────────
+
+/** Lê um parâmetro de texto opcional (`string`) da config; `undefined`/`null`/não-string ⇒ `null`. */
+function textoOpcional(v: unknown): string | null {
+  return typeof v === 'string' ? v : null;
+}
+
+/**
+ * Resolve o Card a VINCULAR na criação por Automação (Story 5.7): se `vincularCardDoEvento` e há Card no
+ * contexto, ele deve ser do MESMO Pipe alvo (senão a criação é recusada — `validarCardDoPipe` de 5.1/5.2).
+ * Devolve `{ ok, cardId }`: `ok=false` ⇒ recusar (`FORA_DO_ESCOPO`). Sem intenção de vínculo ⇒ `cardId=null`.
+ */
+async function resolverCardParaVinculo(
+  db: Db,
+  vincular: boolean,
+  cardDoEvento: string | null,
+  pipeAlvo: string,
+): Promise<{ ok: boolean; cardId: string | null }> {
+  if (!vincular || cardDoEvento === null) return { ok: true, cardId: null };
+  const card = await db.card.findUnique({
+    where: { id: cardDoEvento },
+    select: { pipeId: true },
+  });
+  // Card do Evento de outro Pipe (ou invisível sob RLS) NÃO pode ser vinculado a uma Tarefa do Pipe alvo.
+  if (!card || card.pipeId !== pipeAlvo) return { ok: false, cardId: null };
+  return { ok: true, cardId: cardDoEvento };
+}
+
+/** A Membership do Responsável (se configurada) existe e está ATIVA sob RLS? (regra canônica 5.1/5.2.) */
+async function responsavelValido(db: Db, membershipId: string): Promise<boolean> {
+  const m = await db.membership.findFirst({
+    where: { id: membershipId, state: 'ACTIVE' },
+    select: { id: true },
+  });
+  return m !== null;
+}
+
+/**
+ * TASK_CREATE — cria ≤1 Tarefa no Pipe alvo (reusa o PADRÃO de `TasksService.criar`, 5.1; NUNCA o serviço
+ * `RequestContext`-scoped nem sua guarda de usuário). Alvo/Membership DETERMINÍSTICOS (da config). Idempotência
+ * da Ação: `idempotencyKey` DETERMINÍSTICA `auto:${executionId}:${actionIndex}` (P2002 → devolve a existente,
+ * "no máximo 1 Tarefa" — §"Criação idempotente"). Evento `TASK_CREATED` na MESMA tx (AD-13; encadeável — 4.7).
+ */
+async function criarTarefa(
+  ctx: ExecContext,
+  acao: Acao,
+  pipeId: string,
+  contexto: ContextoEvento,
+): Promise<ResultadoExecucao> {
+  const title = textoOpcional(acao.parametros.title);
+  if (title === null) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
+  const description = textoOpcional(acao.parametros.description);
+  const responsavel = textoOpcional(acao.parametros.responsavelMembershipId);
+  const vincular = acao.parametros.vincularCardDoEvento === true;
+  const dueMin = acao.parametros.dueInMinutes;
+  const dueAt =
+    typeof dueMin === 'number' && Number.isFinite(dueMin) && dueMin > 0
+      ? new Date(Date.now() + dueMin * 60_000)
+      : null;
+
+  if (responsavel !== null && !(await responsavelValido(ctx.db, responsavel))) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
+  const vinculo = await resolverCardParaVinculo(ctx.db, vincular, contexto.cardId, pipeId);
+  if (!vinculo.ok) {
+    return { state: 'DENIED', errorCode: 'FORA_DO_ESCOPO', targetResourceId: pipeId };
+  }
+
+  const idempotencyKey = `auto:${ctx.executionId}:${ctx.actionIndex}`;
+  let taskId: string;
+  let emittedEventId: string | null = null;
+  try {
+    taskId = await ctx.prisma.$transaction(async (tx) => {
+      for (const p of definirContextoOrg(tx, ctx.contexto)) await p;
+      const nova = await tx.task.create({
+        data: {
+          orgId: ctx.contexto.orgId,
+          pipeId,
+          cardId: vinculo.cardId,
+          title,
+          description,
+          dueAt,
+          dueVersion: 0,
+          responsavelMembershipId: responsavel,
+          creatorMembershipId: null, // a Automação não é uma Membership (autoria = principal Automação)
+          lifecycleState: 'ABERTA',
+          archiveState: 'ATIVA',
+          idempotencyKey,
+        },
+        select: { id: true },
+      });
+      await tx.taskHistory.create({
+        data: {
+          orgId: ctx.contexto.orgId,
+          taskId: nova.id,
+          type: 'CREATED',
+          summary: 'Tarefa criada pela Automação',
+          actorId: null,
+        },
+      });
+      const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
+        eventType: EVENTO_GERADO_TASK_CREATE,
+        pipeId,
+        resourceType: 'TASK',
+        resourceId: nova.id,
+        actorId: null,
+        origin: 'AUTOMATION',
+        occurredAt: new Date(),
+        correlationId: nova.id,
+        causationId: ctx.cadeia.causationEventId,
+        executionChainId: ctx.cadeia.executionChainId,
+        chainDepth: ctx.cadeia.chainDepth + 1,
+      });
+      emittedEventId = eventId;
+      return nova.id;
+    });
+  } catch (err) {
+    if (conflito(err)) {
+      // Retry idempotente: a Tarefa desta Ação já existe (mesma idempotencyKey) — devolve-a, sem 2ª Tarefa.
+      const existente = await ctx.db.task.findFirst({
+        where: { pipeId, idempotencyKey },
+        select: { id: true },
+      });
+      if (existente)
+        return {
+          state: 'SUCCEEDED',
+          errorCode: null,
+          targetResourceId: existente.id,
+          emittedEventId: null,
+        };
+      return { state: 'FAILED', errorCode: 'TRANSIENT_CONFLICT', targetResourceId: pipeId };
+    }
+    throw err;
+  }
+  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: taskId, emittedEventId };
+}
+
+/**
+ * REQUEST_CREATE — cria ≤1 Solicitação no Pipe alvo (reusa o PADRÃO de `SolicitacoesService.criar`, 5.2). Twin
+ * de `criarTarefa` SEM prazo. Idempotência DETERMINÍSTICA; Evento `REQUEST_CREATED` na MESMA tx (encadeável).
+ */
+async function criarSolicitacao(
+  ctx: ExecContext,
+  acao: Acao,
+  pipeId: string,
+  contexto: ContextoEvento,
+): Promise<ResultadoExecucao> {
+  const title = textoOpcional(acao.parametros.title);
+  if (title === null) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
+  const description = textoOpcional(acao.parametros.description);
+  const responsavel = textoOpcional(acao.parametros.responsavelMembershipId);
+  const vincular = acao.parametros.vincularCardDoEvento === true;
+
+  if (responsavel !== null && !(await responsavelValido(ctx.db, responsavel))) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: pipeId };
+  }
+  const vinculo = await resolverCardParaVinculo(ctx.db, vincular, contexto.cardId, pipeId);
+  if (!vinculo.ok) {
+    return { state: 'DENIED', errorCode: 'FORA_DO_ESCOPO', targetResourceId: pipeId };
+  }
+
+  const idempotencyKey = `auto:${ctx.executionId}:${ctx.actionIndex}`;
+  let solicitacaoId: string;
+  let emittedEventId: string | null = null;
+  try {
+    solicitacaoId = await ctx.prisma.$transaction(async (tx) => {
+      for (const p of definirContextoOrg(tx, ctx.contexto)) await p;
+      const nova = await tx.solicitacao.create({
+        data: {
+          orgId: ctx.contexto.orgId,
+          pipeId,
+          cardId: vinculo.cardId,
+          title,
+          description,
+          responsavelMembershipId: responsavel,
+          creatorMembershipId: null,
+          lifecycleState: 'ABERTA',
+          archiveState: 'ATIVA',
+          idempotencyKey,
+        },
+        select: { id: true },
+      });
+      await tx.solicitacaoHistory.create({
+        data: {
+          orgId: ctx.contexto.orgId,
+          solicitacaoId: nova.id,
+          type: 'CREATED',
+          summary: 'Solicitação criada pela Automação',
+          actorId: null,
+        },
+      });
+      const { eventId } = await emitirEventoDeDominio(tx, ctx.contexto, {
+        eventType: EVENTO_GERADO_REQUEST_CREATE,
+        pipeId,
+        resourceType: 'REQUEST',
+        resourceId: nova.id,
+        actorId: null,
+        origin: 'AUTOMATION',
+        occurredAt: new Date(),
+        correlationId: nova.id,
+        causationId: ctx.cadeia.causationEventId,
+        executionChainId: ctx.cadeia.executionChainId,
+        chainDepth: ctx.cadeia.chainDepth + 1,
+      });
+      emittedEventId = eventId;
+      return nova.id;
+    });
+  } catch (err) {
+    if (conflito(err)) {
+      const existente = await ctx.db.solicitacao.findFirst({
+        where: { pipeId, idempotencyKey },
+        select: { id: true },
+      });
+      if (existente)
+        return {
+          state: 'SUCCEEDED',
+          errorCode: null,
+          targetResourceId: existente.id,
+          emittedEventId: null,
+        };
+      return { state: 'FAILED', errorCode: 'TRANSIENT_CONFLICT', targetResourceId: pipeId };
+    }
+    throw err;
+  }
+  return { state: 'SUCCEEDED', errorCode: null, targetResourceId: solicitacaoId, emittedEventId };
+}
+
+/**
+ * NOTIFICATION_SEND — Enviar Notificação in-app (Story 5.7) reusando **integralmente** a distribuição 5.6
+ * (`NotificationDistributionService.distribuir`), sem mecanismo paralelo. O seletor de destinatários vem da
+ * ESTRATÉGIA DO TIPO (não da Automação); o conteúdo vem da fonte 5.3 (parametrizado/sanitizado). Garantias de
+ * 5.6 (não-ampliação): só Memberships ATIVAS com **acesso atual** recebem; **preferências** respeitadas (sem
+ * bypass); **dedup**; ninguém fora da Org (RLS). Sem HTML/script/segredo/payload bruto (o conteúdo não vem da
+ * config). Ator = `null` (sistema/automação). Idempotente por `sourceEventId` determinístico (5.6 dedupe).
+ *
+ * Fail-closed: só tipos do allowlist automático (implementado + estratégia determinística — NUNCA `ALVO_DIRETO`,
+ * que exigiria destinatário arbitrário) e cujo `resourceType` casa o recurso PRIMÁRIO do Evento. NÃO gera Evento
+ * de domínio (a Notificação não é gatilho). Fecha `DEB-5.6-CARD-MOVED-AUTOMATION-WIRING`.
+ */
+async function enviarNotificacao(
+  ctx: ExecContext,
+  acao: Acao,
+  resourceId: string,
+  contexto: ContextoEvento,
+): Promise<ResultadoExecucao> {
+  const notificationType = textoOpcional(acao.parametros.notificationType);
+  if (notificationType === null) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: resourceId };
+  }
+  const meta = obterTipoNotificacao(notificationType);
+  // Allowlist AUTOMÁTICO: tipo implementado, com estratégia DETERMINÍSTICA a partir do recurso (nunca
+  // `ALVO_DIRETO`), e resourceType que casa o recurso primário do Evento. Config-time já validou o formato;
+  // aqui é defesa em profundidade fail-closed.
+  const estrategiaOk =
+    meta !== undefined &&
+    meta.implementado &&
+    (meta.estrategia === 'PARTES_DO_CARD' || meta.estrategia === 'RESPONSAVEL_TAREFA_ATUAL');
+  if (!estrategiaOk) {
+    return { state: 'DENIED', errorCode: 'ESTADO_INVALIDO', targetResourceId: resourceId };
+  }
+  // O recurso primário do Evento deve casar o `resourceType` do tipo (CARD↔cardId, TASK↔taskId, SOLICITACAO↔requestId).
+  const casaRecurso =
+    (meta.resourceType === 'CARD' && resourceId === contexto.cardId) ||
+    (meta.resourceType === 'TASK' && resourceId === contexto.taskId) ||
+    (meta.resourceType === 'SOLICITACAO' && resourceId === contexto.requestId);
+  if (!casaRecurso) {
+    return { state: 'DENIED', errorCode: 'ALVO_INDETERMINADO', targetResourceId: resourceId };
+  }
+
+  // `sourceEventId` DETERMINÍSTICO por (Execução, Ação): retry da MESMA Ação não re-notifica (5.6 dedupe).
+  const sourceEventId = uuidV5(NS_DOMAIN_EVENT, `notif:${ctx.executionId}:${ctx.actionIndex}`);
+  try {
+    await ctx.distribuicao.distribuir(
+      { orgId: ctx.contexto.orgId, actorId: null },
+      { type: notificationType, resourceId, sourceEventId },
+    );
+  } catch (err) {
+    if (conflito(err))
+      return { state: 'FAILED', errorCode: 'TRANSIENT_CONFLICT', targetResourceId: resourceId };
+    throw err; // erro inesperado ⇒ retry do motor
+  }
+  // `sem_destinatario` NÃO é falha: é desfecho honesto (ninguém com acesso/preferência). A Ação SUCEDEU.
+  return {
+    state: 'SUCCEEDED',
+    errorCode: null,
+    targetResourceId: resourceId,
+    emittedEventId: null,
+  };
 }

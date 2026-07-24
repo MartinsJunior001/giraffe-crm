@@ -47,7 +47,14 @@ function principal(parcial: Partial<PrincipalAutomacao> = {}): PrincipalAutomaca
 }
 
 function contexto(parcial: Partial<ContextoEvento> = {}): ContextoEvento {
-  return { cardId: CARD, recordId: RECORD, linkedRecordIds: [], ...parcial };
+  return {
+    cardId: CARD,
+    recordId: RECORD,
+    taskId: null,
+    requestId: null,
+    linkedRecordIds: [],
+    ...parcial,
+  };
 }
 
 function cardSnapshot(parcial: Partial<AlvoAcaoSnapshot> = {}): AlvoAcaoSnapshot {

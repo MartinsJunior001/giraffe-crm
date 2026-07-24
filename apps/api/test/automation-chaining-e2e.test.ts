@@ -201,7 +201,17 @@ beforeAll(async () => {
   prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   migrator = new PrismaClient({ datasourceUrl: migratorUrl });
   await Promise.all([prisma.$connect(), migrator.$connect()]);
-  engine = new AutomationEngineService(prisma as unknown as PrismaService, engineLogger);
+  // A distribuição (5.6) só é consumida por `NOTIFICATION_SEND`, que este E2E não exercita — stub inerte.
+  const distribuicaoStub = {
+    distribuir: async () => {
+      throw new Error('distribuição não usada neste E2E');
+    },
+  } as never;
+  engine = new AutomationEngineService(
+    prisma as unknown as PrismaService,
+    engineLogger,
+    distribuicaoStub,
+  );
 });
 
 // Desativa as Automações criadas ao FIM de cada teste — um Evento pipeless (RECORD_CREATED) enfileira para TODA

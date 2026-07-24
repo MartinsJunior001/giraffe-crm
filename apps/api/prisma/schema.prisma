@@ -1960,6 +1960,12 @@ model Task {
   responsavelMembershipId String?            @db.Uuid
   /// Autoria preservada (referência-por-id, como `actorId`). Nunca reescrita (fora do GRANT de UPDATE).
   creatorMembershipId     String?            @db.Uuid
+  /// Idempotência OPCIONAL de criação (Story 5.7 — D4, espelho de `Automation.idempotencyKey`). Com
+  /// `@@unique([orgId, pipeId, idempotencyKey])`: NULLs são distintos no Postgres, então criações humanas
+  /// (sem chave) nunca colidem (a `criar` de 5.1 segue idêntica); a criação por Automação usa chave
+  /// determinística (`auto:<execId>:<actionIdx>`) e um retry devolve a Tarefa existente (P2002 → idempotente).
+  /// Imutável após criação — fora do GRANT de UPDATE column-scoped.
+  idempotencyKey          String?
   lifecycleState          TaskLifecycleState @default(ABERTA)
   archiveState            TaskArchiveState   @default(ATIVA)
   createdAt               DateTime           @default(now())
@@ -1976,6 +1982,8 @@ model Task {
 
   /// Alvo da FK COMPOSTA tenant-safe de `TaskHistory`/`TaskOverdueOccurrence`.
   @@unique([orgId, id])
+  /// Idempotência de criação por Automação (Story 5.7 — D4). NULLs distintos ⇒ sem chave não há colisão.
+  @@unique([orgId, pipeId, idempotencyKey])
   /// Listagem operacional: Tarefas de um Pipe, por estado.
   @@index([orgId, pipeId, lifecycleState])
   // Nota: a varredura do mecanismo de atraso usa um índice PARCIAL `Task_orgId_dueAt_idx`
@@ -2087,6 +2095,10 @@ model Solicitacao {
   responsavelMembershipId String?                   @db.Uuid
   /// Autoria preservada (referência-por-id, como `actorId`). Nunca reescrita (fora do GRANT de UPDATE).
   creatorMembershipId     String?                   @db.Uuid
+  /// Idempotência OPCIONAL de criação (Story 5.7 — D4, espelho de `Task.idempotencyKey`). NULLs distintos ⇒
+  /// criações humanas (sem chave) nunca colidem; a criação por Automação usa `auto:<execId>:<actionIdx>`
+  /// (P2002 → idempotente). Imutável após criação — fora do GRANT de UPDATE column-scoped.
+  idempotencyKey          String?
   lifecycleState          SolicitacaoLifecycleState @default(ABERTA)
   archiveState            SolicitacaoArchiveState   @default(ATIVA)
   createdAt               DateTime                  @default(now())
@@ -2101,6 +2113,8 @@ model Solicitacao {
 
   /// Alvo da FK COMPOSTA tenant-safe de `SolicitacaoHistory`.
   @@unique([orgId, id])
+  /// Idempotência de criação por Automação (Story 5.7 — D4). NULLs distintos ⇒ sem chave não há colisão.
+  @@unique([orgId, pipeId, idempotencyKey])
   /// Listagem operacional: Solicitações de um Pipe, por estado.
   @@index([orgId, pipeId, lifecycleState])
   /// Consulta por Responsável (reatribuição E8; painéis futuros).
