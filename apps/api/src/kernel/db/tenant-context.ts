@@ -93,6 +93,10 @@ const MODELOS_AUDITADOS = new Set([
   // Story 5.4. Preferência de Notificação por tipo (setar/upsert é mutação org-scoped) — na trilha (FR-214),
   // inclusive a tentativa negada por RLS.
   'NotificationPreference',
+  // Story 6.1. E-mail canônico outbound. `EmailMessage` (ledger com UPDATE column-scoped; sem DELETE) entra
+  // na trilha (FR-214), inclusive a tentativa negada por RLS — compor/editar/descartar/submeter são mutações
+  // org-scoped de dado do titular (destinatários/corpo).
+  'EmailMessage',
 ]);
 
 /** Só mutações são auditadas — auditar leitura afogaria a trilha no ruído. */

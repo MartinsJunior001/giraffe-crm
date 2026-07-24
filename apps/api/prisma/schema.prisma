@@ -357,6 +357,7 @@ model Organization {
   notifications           Notification[]
   notificationRecipients  NotificationRecipient[]
   notificationPreferences NotificationPreference[]
+  emailMessages           EmailMessage[]
 
   @@map("Organization")
 }
@@ -872,6 +873,7 @@ model Card {
   recordLinks      CardRecordLink[]
   tasks            Task[]
   solicitacoes     Solicitacao[]
+  emails           EmailMessage[]
 
   // Um retry da mesma submissão lógica não cria um 2º Card.
   @@unique([orgId, formId, idempotencyKey])
@@ -2264,4 +2266,50 @@ model NotificationPreference {
   /// Carregar todas as preferências de um usuário (resolução efetiva na leitura das superfícies).
   @@index([orgId, membershipId])
   @@map("NotificationPreference")
+}
+
+/// Estado do e-mail na Fase 1 da Story 6.1: `DRAFT` (rascunho técnico editável) → `SUBMITTED` (entrou no
+/// fluxo de envio: conteúdo CONGELADO — o pipeline real de envio/estados honestos de entrega é a 6.4) |
+/// `DISCARDED` (descartado; a linha é preservada — sem DELETE, LGPD). `reenviar`/estados de entrega NÃO
+/// existem aqui (6.4, gate AD-28/OQ-28 — nenhuma porta de provedor nesta Story).
+enum EmailState {
+  DRAFT
+  SUBMITTED
+  DISCARDED
+}
+
+/// EmailMessage — o MODELO CANÔNICO de e-mail outbound (Story 6.1, FR-24/D6.5/D3.6). Pertence a exatamente
+/// 1 Organização (RLS ENABLE+FORCE), identidade estável, associável a 0..1 Card da MESMA Org (RN-110) — a
+/// associação NÃO concede acesso em nenhum sentido (ler o e-mail = autor ou Admin da Org; operar exige o
+/// poder do Card quando associado). Destinatários/assunto/corpo validados/sanitizados no núcleo puro
+/// (`email-compose.core.ts`) — nunca aceitos só por validação client-side. Sem inbox, sem CC/BCC, sem
+/// campanhas (fora da Fase 1). GRANT: SELECT/INSERT/UPDATE **sem DELETE** (descartar é `state`).
+model EmailMessage {
+  id                    String     @id @default(uuid()) @db.Uuid
+  orgId                 String     @db.Uuid
+  /// Card associado (0..1), da MESMA Org — FK COMPOSTA tenant-safe (a checagem de FK roda com bypass de
+  /// row security; o par `(orgId, cardId)` prova a co-tenância NO BANCO — lição da 4.1).
+  cardId                String?    @db.Uuid
+  state                 EmailState @default(DRAFT)
+  /// Lista de destinatários principais normalizados (trim/lowercase, dedup, 1..20 no submit) — validada
+  /// SEMPRE pelo núcleo puro antes de persistir. JSON de strings; nunca objeto arbitrário do cliente.
+  recipients            Json       @default("[]")
+  subject               String     @default("")
+  body                  String     @default("")
+  /// Autoria (referência-por-id a Membership, como `creatorMembershipId` de Task). Imutável pós-criação.
+  createdByMembershipId String     @db.Uuid
+  /// Instante em que entrou no fluxo de envio (SUBMITTED). Instante absoluto.
+  submittedAt           DateTime?  @db.Timestamptz(3)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Cascade como `Task.card`: só dispara no expurgo do dono (o runtime não tem DELETE em Card).
+  card         Card?        @relation(fields: [orgId, cardId], references: [orgId, id], onDelete: Cascade)
+
+  /// E-mails no contexto de um Card (vários por Card — RN-110/RN-114).
+  @@index([orgId, cardId])
+  /// Rascunhos/enviados do autor (leitura do autor; histórico geral é 6.4).
+  @@index([orgId, createdByMembershipId])
+  @@map("EmailMessage")
 }
