@@ -16,7 +16,7 @@ import {
  * (4.4) e `event-catalog.core.test.ts` (4.3).
  */
 
-/** Os 8 tipos EXATOS cobrindo os dois domínios (Story §1380) — congela o catálogo. */
+/** Os tipos EXATOS — 8 de E4 (Story §1380) + 3 de E5 (Story 5.7) — congela o catálogo. */
 const CATALOGO_ESPERADO = [
   'CARD_MOVE',
   'CARD_ASSIGN_RESPONSIBLE',
@@ -26,6 +26,10 @@ const CATALOGO_ESPERADO = [
   'RECORD_CREATE',
   'RECORD_CREATE_RELATED',
   'RECORD_EDIT',
+  // E5 (Story 5.7)
+  'TASK_CREATE',
+  'REQUEST_CREATE',
+  'NOTIFICATION_SEND',
 ];
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
@@ -37,14 +41,14 @@ function acao(parcial: Partial<Acao>): Acao {
 }
 
 describe('catálogo de Ações — fixo, completo, 2 domínios', () => {
-  it('contém EXATAMENTE os 8 tipos aprovados', () => {
+  it('contém EXATAMENTE os tipos aprovados (8 de E4 + 3 de E5)', () => {
     expect([...TIPOS_ACAO].sort()).toEqual([...CATALOGO_ESPERADO].sort());
-    expect(ACOES_CATALOGO).toHaveLength(8);
+    expect(ACOES_CATALOGO).toHaveLength(11);
   });
 
-  it('cobre os dois domínios oficiais (Card e Registro)', () => {
+  it('cobre os domínios oficiais (Card/Registro de E4 + Pipe/Notificação de E5)', () => {
     const dominios = new Set(ACOES_CATALOGO.map((a) => a.dominio));
-    expect([...dominios].sort()).toEqual(['CARD', 'RECORD']);
+    expect([...dominios].sort()).toEqual(['CARD', 'NOTIFICATION', 'PIPE', 'RECORD']);
   });
 
   it('(g) marca confirmação humana nas Ações sensíveis (mover/finalizar/arquivar/alterar Campo)', () => {

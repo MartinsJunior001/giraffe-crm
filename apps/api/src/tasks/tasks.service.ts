@@ -9,6 +9,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import { emitirEventoDeDominio } from '../domain-events/domain-event-emission';
 import { NotificationDistributionService } from '../notifications/distribution/notification-distribution.service';
 import { exigirOperarPipe } from '../pipes/pipe-authz';
 import {
@@ -173,6 +174,7 @@ export class TasksService {
           },
         });
         await this.evento(tx, contexto, taskId, 'CREATED', 'Tarefa criada');
+        await this.emitirDominio(tx, contexto, pipeId, taskId, 'TASK_CREATED');
         return tx.task.findUniqueOrThrow({
           where: { id: taskId },
           select: SELECT_TAREFA,
@@ -264,6 +266,7 @@ export class TasksService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, taskId, evento, resumo);
+        await this.emitirDominio(tx, contexto, tarefa.pipeId, taskId, 'TASK_RESPONSIBLE_CHANGED');
         return tx.task.findUniqueOrThrow({
           where: { id: taskId },
           select: SELECT_TAREFA,
@@ -388,6 +391,13 @@ export class TasksService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, taskId, transicao.evento, transicao.resumo);
+        await this.emitirDominio(
+          tx,
+          contexto,
+          tarefa.pipeId,
+          taskId,
+          acao === 'concluir' ? 'TASK_COMPLETED' : 'TASK_REOPENED',
+        );
         return tx.task.findUniqueOrThrow({
           where: { id: taskId },
           select: SELECT_TAREFA,
@@ -430,6 +440,13 @@ export class TasksService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, taskId, transicao.evento, transicao.resumo);
+        await this.emitirDominio(
+          tx,
+          contexto,
+          tarefa.pipeId,
+          taskId,
+          acao === 'arquivar' ? 'TASK_ARCHIVED' : 'TASK_RESTORED',
+        );
         return tx.task.findUniqueOrThrow({
           where: { id: taskId },
           select: SELECT_TAREFA,
@@ -491,6 +508,37 @@ export class TasksService {
   ): Promise<unknown> {
     return tx.taskHistory.create({
       data: { orgId: contexto.orgId, taskId, type, summary, actorId: contexto.accountId },
+    });
+  }
+
+  /**
+   * Emite o Evento canônico de domínio (`TASK_*`, catálogo 4.3) no MESMO `tx` do fato (AD-13, Story 5.7) — o
+   * outbox `DomainEvent` que o motor de Automação (E4) drena. `correlationId` = `randomUUID()` (cada mutação é
+   * um fato distinto; complete→reopen→complete não colide no `eventId`); `actorId` = o iniciador humano; NÃO há
+   * emissão automática além destes pontos. Quem drena é o motor existente (não há draining síncrono aqui).
+   */
+  private emitirDominio(
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    contexto: ContextoOrganizacional,
+    pipeId: string,
+    taskId: string,
+    eventType:
+      | 'TASK_CREATED'
+      | 'TASK_COMPLETED'
+      | 'TASK_REOPENED'
+      | 'TASK_ARCHIVED'
+      | 'TASK_RESTORED'
+      | 'TASK_RESPONSIBLE_CHANGED',
+  ): Promise<unknown> {
+    return emitirEventoDeDominio(tx, contexto, {
+      eventType,
+      pipeId,
+      resourceType: 'TASK',
+      resourceId: taskId,
+      actorId: contexto.accountId,
+      origin: 'USER',
+      occurredAt: new Date(),
+      correlationId: randomUUID(),
     });
   }
 

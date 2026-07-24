@@ -9,6 +9,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import { emitirEventoDeDominio } from '../domain-events/domain-event-emission';
 import { NotificationDistributionService } from '../notifications/distribution/notification-distribution.service';
 import { exigirOperarPipe } from '../pipes/pipe-authz';
 import {
@@ -171,6 +172,7 @@ export class SolicitacoesService {
           },
         });
         await this.evento(tx, contexto, solicitacaoId, 'CREATED', 'Solicitação criada');
+        await this.emitirDominio(tx, contexto, pipeId, solicitacaoId, 'REQUEST_CREATED');
         return tx.solicitacao.findUniqueOrThrow({
           where: { id: solicitacaoId },
           select: SELECT_SOLICITACAO,
@@ -249,6 +251,13 @@ export class SolicitacoesService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, solicitacaoId, evento, resumo);
+        await this.emitirDominio(
+          tx,
+          contexto,
+          solicitacao.pipeId,
+          solicitacaoId,
+          'REQUEST_RESPONSIBLE_CHANGED',
+        );
         return tx.solicitacao.findUniqueOrThrow({
           where: { id: solicitacaoId },
           select: SELECT_SOLICITACAO,
@@ -383,6 +392,13 @@ export class SolicitacoesService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, solicitacaoId, transicao.evento, transicao.resumo);
+        await this.emitirDominio(
+          tx,
+          contexto,
+          solicitacao.pipeId,
+          solicitacaoId,
+          acao === 'resolver' ? 'REQUEST_RESOLVED' : 'REQUEST_REOPENED',
+        );
         return tx.solicitacao.findUniqueOrThrow({
           where: { id: solicitacaoId },
           select: SELECT_SOLICITACAO,
@@ -425,6 +441,13 @@ export class SolicitacoesService {
         });
         if (count === 0) return null;
         await this.evento(tx, contexto, solicitacaoId, transicao.evento, transicao.resumo);
+        await this.emitirDominio(
+          tx,
+          contexto,
+          solicitacao.pipeId,
+          solicitacaoId,
+          acao === 'arquivar' ? 'REQUEST_ARCHIVED' : 'REQUEST_RESTORED',
+        );
         return tx.solicitacao.findUniqueOrThrow({
           where: { id: solicitacaoId },
           select: SELECT_SOLICITACAO,
@@ -491,6 +514,35 @@ export class SolicitacoesService {
   ): Promise<unknown> {
     return tx.solicitacaoHistory.create({
       data: { orgId: contexto.orgId, solicitacaoId, type, summary, actorId: contexto.accountId },
+    });
+  }
+
+  /**
+   * Emite o Evento canônico de domínio (`REQUEST_*`, catálogo 4.3) no MESMO `tx` do fato (AD-13, Story 5.7) — o
+   * outbox `DomainEvent` que o motor de Automação (E4) drena. Twin do `emitirDominio` de `TasksService`.
+   */
+  private emitirDominio(
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    contexto: ContextoOrganizacional,
+    pipeId: string,
+    solicitacaoId: string,
+    eventType:
+      | 'REQUEST_CREATED'
+      | 'REQUEST_RESOLVED'
+      | 'REQUEST_REOPENED'
+      | 'REQUEST_ARCHIVED'
+      | 'REQUEST_RESTORED'
+      | 'REQUEST_RESPONSIBLE_CHANGED',
+  ): Promise<unknown> {
+    return emitirEventoDeDominio(tx, contexto, {
+      eventType,
+      pipeId,
+      resourceType: 'REQUEST',
+      resourceId: solicitacaoId,
+      actorId: contexto.accountId,
+      origin: 'USER',
+      occurredAt: new Date(),
+      correlationId: randomUUID(),
     });
   }
 

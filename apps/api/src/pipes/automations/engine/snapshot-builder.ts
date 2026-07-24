@@ -133,7 +133,7 @@ async function montarParaCard(
       card: null,
       record: null,
     },
-    contexto: { cardId: null, recordId: null, linkedRecordIds: [] },
+    contexto: { cardId: null, recordId: null, taskId: null, requestId: null, linkedRecordIds: [] },
   };
 
   // Card não existe sob RLS (inexistente ou outra Org) ⇒ snapshot vazio; Condições de Card ficam fail-closed.
@@ -186,7 +186,7 @@ async function montarParaCard(
     },
     // M-1: `linkedRecordIds` já são do Card do Pipe proprietário (o Card é do `pipeId` do Evento); um Registro
     // de outro Pipe/Database não tem vínculo ATIVO com este Card e portanto não aparece aqui.
-    contexto: { cardId, recordId: null, linkedRecordIds },
+    contexto: { cardId, recordId: null, taskId: null, requestId: null, linkedRecordIds },
   };
 }
 
@@ -214,7 +214,7 @@ async function montarParaRecord(
       card: null,
       record: null,
     },
-    contexto: { cardId: null, recordId: null, linkedRecordIds: [] },
+    contexto: { cardId: null, recordId: null, taskId: null, requestId: null, linkedRecordIds: [] },
   };
   if (!record) return vazio;
 
@@ -244,7 +244,13 @@ async function montarParaRecord(
       record: recordSnapshot,
     },
     // Fora do Pipe proprietário ⇒ `recordId` NÃO é entregue como alvo (fail-closed): a Ação resolve para nulo.
-    contexto: { cardId: null, recordId: contido ? recordId : null, linkedRecordIds: [] },
+    contexto: {
+      cardId: null,
+      recordId: contido ? recordId : null,
+      taskId: null,
+      requestId: null,
+      linkedRecordIds: [],
+    },
   };
 }
 
@@ -263,6 +269,9 @@ export async function montarSnapshotEContexto(
   if (evento.resourceType === 'RECORD') {
     return montarParaRecord(db, evento, pipeIdDaAutomacao);
   }
+  if (evento.resourceType === 'TASK' || evento.resourceType === 'REQUEST') {
+    return montarParaTarefaOuSolicitacao(db, evento, pipeIdDaAutomacao);
+  }
   // Tipo de recurso desconhecido ⇒ contexto vazio (fail-closed).
   return {
     snapshot: {
@@ -272,6 +281,62 @@ export async function montarSnapshotEContexto(
       card: null,
       record: null,
     },
-    contexto: { cardId: null, recordId: null, linkedRecordIds: [] },
+    contexto: { cardId: null, recordId: null, taskId: null, requestId: null, linkedRecordIds: [] },
+  };
+}
+
+/**
+ * Monta o contexto para um Evento de **Tarefa** (`TASK_*`) ou **Solicitação** (`REQUEST_*`) — Story 5.7. Expõe
+ * SÓ o recurso primário (`taskId`/`requestId`), contido ao Pipe PROPRIETÁRIO da Automação (M-1): a Tarefa/
+ * Solicitação DEVE ser do `pipeIdDaAutomacao` (o Evento carrega o Pipe do recurso e o enfileiramento só inscreve
+ * Automações desse Pipe; a releitura sob RLS é defesa em profundidade). O snapshot de Card/Registro é VAZIO
+ * (Condições de Card/Registro ficam fail-closed nesses Eventos — comportamento explícito da Fase 1); as Ações de
+ * E5 (`NOTIFICATION_SEND`, ou `TASK_CREATE`/`REQUEST_CREATE` por alvo de ref) usam apenas o recurso primário.
+ */
+async function montarParaTarefaOuSolicitacao(
+  db: Db,
+  evento: EventoParaSnapshot,
+  pipeIdDaAutomacao: string,
+): Promise<SnapshotEContexto> {
+  const vazio: SnapshotEContexto = {
+    snapshot: {
+      orgId: evento.orgId,
+      avaliadoEm: evento.occurredAt,
+      camposPorId: {},
+      card: null,
+      record: null,
+    },
+    contexto: { cardId: null, recordId: null, taskId: null, requestId: null, linkedRecordIds: [] },
+  };
+
+  const ehTarefa = evento.resourceType === 'TASK';
+  const pipeId = ehTarefa
+    ? (await db.task.findUnique({ where: { id: evento.resourceId }, select: { pipeId: true } }))
+        ?.pipeId
+    : (
+        await db.solicitacao.findUnique({
+          where: { id: evento.resourceId },
+          select: { pipeId: true },
+        })
+      )?.pipeId;
+
+  // M-1: recurso invisível/inexistente (RLS) OU de outro Pipe ⇒ não vira contexto (fail-closed).
+  if (!pipeId || pipeId !== pipeIdDaAutomacao) return vazio;
+
+  return {
+    snapshot: {
+      orgId: evento.orgId,
+      avaliadoEm: evento.occurredAt,
+      camposPorId: {},
+      card: null,
+      record: null,
+    },
+    contexto: {
+      cardId: null,
+      recordId: null,
+      taskId: ehTarefa ? evento.resourceId : null,
+      requestId: ehTarefa ? null : evento.resourceId,
+      linkedRecordIds: [],
+    },
   };
 }

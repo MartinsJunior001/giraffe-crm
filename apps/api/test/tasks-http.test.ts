@@ -128,6 +128,18 @@ async function tiposHistorico(taskId: string): Promise<string[]> {
   return evs.map((e) => e.type);
 }
 
+/** Story 5.7 — Eventos canônicos (`DomainEvent`, outbox do motor de Automação) emitidos para uma Tarefa. */
+async function eventosDominio(taskId: string): Promise<string[]> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  const evs = await db.domainEvent.findMany({
+    where: { resourceType: 'TASK', resourceId: taskId },
+    // Desempate por `createdAt, id`: duas mutações HTTP rápidas podem empatar no ms de `occurredAt`.
+    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: { eventType: true },
+  });
+  return evs.map((e) => e.eventType);
+}
+
 beforeAll(async () => {
   process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
@@ -178,6 +190,34 @@ describe('criar (AC1)', () => {
       cardId: outro.cardId,
     });
     expect(ruim.status).toBe(400);
+  });
+});
+
+describe('Eventos de domínio no outbox (Story 5.7 — same-tx, gatilhos de Automação)', () => {
+  it('emite TASK_CREATED na criação e o Evento de cada transição de estado/Responsável', async () => {
+    const pipeId = await criarPipe('5.7 eventos');
+    const t = (await (
+      await req('POST', `/pipes/${pipeId}/tasks`, ANA, { title: 'T' })
+    ).json()) as TarefaView;
+    expect(await eventosDominio(t.id)).toEqual(['TASK_CREATED']);
+
+    const resp = await req('PUT', `/tasks/${t.id}/responsavel`, ANA, {
+      responsavelMembershipId: MEMBERSHIP_BRUNO_A,
+    });
+    expect(resp.status).toBe(200);
+    await req('POST', `/tasks/${t.id}/complete`, ANA);
+    await req('POST', `/tasks/${t.id}/reopen`, ANA);
+    await req('POST', `/tasks/${t.id}/archive`, ANA);
+    await req('POST', `/tasks/${t.id}/restore`, ANA);
+
+    expect(await eventosDominio(t.id)).toEqual([
+      'TASK_CREATED',
+      'TASK_RESPONSIBLE_CHANGED',
+      'TASK_COMPLETED',
+      'TASK_REOPENED',
+      'TASK_ARCHIVED',
+      'TASK_RESTORED',
+    ]);
   });
 });
 

@@ -4,6 +4,7 @@ import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { definirContextoOrg } from '../kernel/db/tenant-context';
 import { uuidV5 } from '../domain-events/event-envelope';
+import { emitirEventoDeDominio } from '../domain-events/domain-event-emission';
 import { NotificationDistributionService } from '../notifications/distribution/notification-distribution.service';
 
 /**
@@ -12,6 +13,13 @@ import { NotificationDistributionService } from '../notifications/distribution/n
  * fonte 5.3 dedupe por `sourceEventId`). Distinto dos namespaces de Evento (4.3) e movimentação (2.16).
  */
 const NS_NOTIF_TASK_OVERDUE = 'e6b9c0a2-7f3d-5e41-9a8c-1b2d3e4f5a6b';
+
+/**
+ * Teto de ocorrências por passada do scan (review 5.7): mantém a tx interativa (INSERT + N Eventos same-tx)
+ * dentro do timeout do driver. O restante de um backlog maior sai nas passadas seguintes — o INSERT é
+ * idempotente, então o teto nunca perde ocorrência, só a difere.
+ */
+const TETO_OCORRENCIAS_POR_PASSADA = 200;
 
 /**
  * Mecanismo temporal do Evento "Tarefa atrasada" (Story 5.1, gate §1535). Serviço SINGLETON (não
@@ -48,11 +56,21 @@ export class TaskOverdueService {
    * ocorrências NOVAS foram materializadas nesta passagem (0 se nada mudou desde o último scan).
    */
   async escanearOrg(orgId: string): Promise<number> {
-    const resultado = await this.prisma.$transaction([
-      ...definirContextoOrg(this.prisma, { orgId }),
+    // Story 5.7 — a ocorrência (`TaskOverdueOccurrence`) e o Evento canônico `TASK_OVERDUE` (outbox `DomainEvent`
+    // que o motor de Automação drena) nascem na MESMA transação interativa (AD-13, no client raiz com
+    // `definirContextoOrg`) — reusando o MESMO mecanismo temporal idempotente de 5.1, SEM scheduler novo. O
+    // Evento é idempotente por `eventId` determinístico (`correlationId` por `(orgId, taskId, dueVersion)`); um
+    // re-scan não re-insere a ocorrência (ON CONFLICT) ⇒ não re-emite.
+    const novas = await this.prisma.$transaction(async (tx) => {
+      for (const p of definirContextoOrg(tx, { orgId })) await p;
       // `RETURNING` (Story 5.6) devolve exatamente as ocorrências NOVAS desta passagem (o `ON CONFLICT DO
-      // NOTHING` não retorna as já existentes) — são elas que devem gerar Notificação, uma única vez.
-      this.prisma.$queryRaw<Array<{ taskId: string; dueVersion: number }>>(Prisma.sql`
+      // NOTHING` não retorna as já existentes) — são elas que geram Evento/Notificação, uma única vez.
+      // TETO POR PASSADA (review 5.7): sem LIMIT, um backlog grande (1º scan após downtime) faria o loop de
+      // emissão estourar o timeout da tx interativa → rollback integral → o próximo scan reencontra o MESMO
+      // lote → starvation permanente. Com o teto, cada passada materializa até N ocorrências (com seus
+      // Eventos, same-tx) e o restante fica para a próxima invocação — o INSERT é idempotente por construção
+      // (`NOT EXISTS` + ON CONFLICT), então "de novo" nunca duplica.
+      const emitidas = await tx.$queryRaw<Array<{ taskId: string; dueVersion: number }>>(Prisma.sql`
         INSERT INTO "TaskOverdueOccurrence" ("id", "orgId", "taskId", "dueVersion", "dueAt", "detectedAt", "createdAt")
         SELECT gen_random_uuid(), t."orgId", t."id", t."dueVersion", t."dueAt", now(), now()
         FROM "Task" t
@@ -61,13 +79,46 @@ export class TaskOverdueService {
           AND t."archiveState" = 'ATIVA'
           AND t."dueAt" IS NOT NULL
           AND t."dueAt" <= now()
+          AND NOT EXISTS (
+            SELECT 1 FROM "TaskOverdueOccurrence" o
+            WHERE o."orgId" = t."orgId" AND o."taskId" = t."id" AND o."dueVersion" = t."dueVersion"
+          )
+        LIMIT ${TETO_OCORRENCIAS_POR_PASSADA}
         ON CONFLICT ("orgId", "taskId", "dueVersion") DO NOTHING
         RETURNING "taskId", "dueVersion"
-      `),
-    ]);
-    const novas = Array.isArray(resultado)
-      ? (resultado[resultado.length - 1] as Array<{ taskId: string; dueVersion: number }>)
-      : [];
+      `);
+      if (emitidas.length > 0) {
+        // Pipes das Tarefas atrasadas (mesma tx, sob RLS) — para o `pipeId` do Evento canônico.
+        const pipes = await tx.task.findMany({
+          where: { id: { in: emitidas.map((o) => o.taskId) } },
+          select: { id: true, pipeId: true },
+        });
+        const pipePorTask = new Map(pipes.map((p) => [p.id, p.pipeId]));
+        // Evento canônico `TASK_OVERDUE` por ocorrência NOVA, na MESMA tx (AD-13). SISTEMA (`actorId=null`).
+        for (const occ of emitidas) {
+          const pipeId = pipePorTask.get(occ.taskId);
+          if (!pipeId) continue; // defesa: Tarefa sumiu sob RLS (não deveria — mesma tx)
+          await emitirEventoDeDominio(
+            tx,
+            { orgId },
+            {
+              eventType: 'TASK_OVERDUE',
+              pipeId,
+              resourceType: 'TASK',
+              resourceId: occ.taskId,
+              actorId: null,
+              origin: 'SYSTEM',
+              occurredAt: new Date(),
+              correlationId: uuidV5(
+                NS_NOTIF_TASK_OVERDUE,
+                `event:${orgId}:${occ.taskId}:${Number(occ.dueVersion)}`,
+              ),
+            },
+          );
+        }
+      }
+      return emitidas;
+    });
     const count = novas.length;
     if (count > 0) {
       this.logger.info(

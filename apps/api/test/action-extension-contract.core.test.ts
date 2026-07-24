@@ -33,6 +33,9 @@ import {
 const EXECUTORES_FECHADOS: readonly ExecutorKind[] = [
   'ATRIBUIR_RESPONSAVEL',
   'CRIAR_REGISTRO',
+  'CRIAR_TAREFA',
+  'CRIAR_SOLICITACAO',
+  'ENVIAR_NOTIFICACAO',
   'CONFIRMACAO_HUMANA',
   'EXTENSAO',
 ];
@@ -153,7 +156,10 @@ describe('(§1463) pontos de extensão E5/E6: contrato declarado, NÃO executáv
 describe('enforcement fail-closed: extensão × desconhecido têm motivos DISTINTOS', () => {
   it('exigirAcaoDisponivel: núcleo passa; extensão e desconhecido lançam erros distintos', () => {
     for (const c of ACOES_CATALOGO) expect(() => exigirAcaoDisponivel(c.tipo)).not.toThrow();
-    expect(() => exigirAcaoDisponivel('TASK_CREATE')).toThrow(AcaoDeExtensaoIndisponivelError);
+    // Story 5.7: TASK_CREATE/REQUEST_CREATE/NOTIFICATION_SEND foram PROMOVIDOS a CORE (não mais extensão);
+    // só E6 (EMAIL_SEND/AI_ACTION) segue extensão indisponível.
+    expect(() => exigirAcaoDisponivel('EMAIL_SEND')).toThrow(AcaoDeExtensaoIndisponivelError);
+    expect(() => exigirAcaoDisponivel('TASK_CREATE')).not.toThrow();
     expect(() => exigirAcaoDisponivel('NAO_EXISTE')).toThrow(AcaoDesconhecidaError);
   });
 

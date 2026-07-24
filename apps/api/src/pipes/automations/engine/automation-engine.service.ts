@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { Prisma } from '../../../../generated/prisma';
 import { PrismaService } from '../../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../../kernel/db/tenant-context';
+import { NotificationDistributionService } from '../../../notifications/distribution/notification-distribution.service';
 import type { Acao, Condicao, Referencia } from '../automation-config';
 import { avaliarCondicoes } from '../conditions/condition-eval.core';
 import { PRINCIPAL_AUTOMACAO, type PrincipalAutomacao } from '../actions/automation-principal';
@@ -53,6 +54,8 @@ export class AutomationEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    /** Distribuição de Notificações (5.6) — consumida pelo executor `NOTIFICATION_SEND` (E5, Story 5.7). */
+    private readonly distribuicao: NotificationDistributionService,
   ) {}
 
   private db(orgId: string): Db {
@@ -525,6 +528,7 @@ export class AutomationEngineService {
         executionId: exec.id,
         actionIndex: i,
         cadeia,
+        distribuicao: this.distribuicao,
       };
       const r = await executarAcao(ctx, config.entao[i]!, contexto);
       await this.gravarResultado(

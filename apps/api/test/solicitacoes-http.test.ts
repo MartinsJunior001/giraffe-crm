@@ -126,6 +126,18 @@ async function tiposHistorico(solicitacaoId: string): Promise<string[]> {
   return evs.map((e) => e.type);
 }
 
+/** Story 5.7 — Eventos canônicos (`DomainEvent`, outbox do motor) emitidos para uma Solicitação. */
+async function eventosDominio(solicitacaoId: string): Promise<string[]> {
+  const db = withTenantContext(migrator, { orgId: ORG_A }, semLog);
+  const evs = await db.domainEvent.findMany({
+    where: { resourceType: 'REQUEST', resourceId: solicitacaoId },
+    // Desempate por `createdAt, id`: duas mutações HTTP rápidas podem empatar no ms de `occurredAt`.
+    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: { eventType: true },
+  });
+  return evs.map((e) => e.eventType);
+}
+
 beforeAll(async () => {
   process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
@@ -149,6 +161,37 @@ afterAll(async () => {
   }
   await app?.close();
   await migrator?.$disconnect();
+});
+
+describe('Eventos de domínio no outbox (Story 5.7 — same-tx, gatilhos de Automação)', () => {
+  it('emite REQUEST_CREATED na abertura e o Evento de cada transição/Responsável', async () => {
+    const pipeId = await criarPipe('5.7 eventos req');
+    const s = (await (
+      await req('POST', `/pipes/${pipeId}/solicitacoes`, ANA, { title: 'S' })
+    ).json()) as SolicitacaoView;
+    expect(await eventosDominio(s.id)).toEqual(['REQUEST_CREATED']);
+
+    expect(
+      (
+        await req('PUT', `/solicitacoes/${s.id}/responsavel`, ANA, {
+          responsavelMembershipId: MEMBERSHIP_BRUNO_A,
+        })
+      ).status,
+    ).toBe(200);
+    await req('POST', `/solicitacoes/${s.id}/resolve`, ANA);
+    await req('POST', `/solicitacoes/${s.id}/reopen`, ANA);
+    await req('POST', `/solicitacoes/${s.id}/archive`, ANA);
+    await req('POST', `/solicitacoes/${s.id}/restore`, ANA);
+
+    expect(await eventosDominio(s.id)).toEqual([
+      'REQUEST_CREATED',
+      'REQUEST_RESPONSIBLE_CHANGED',
+      'REQUEST_RESOLVED',
+      'REQUEST_REOPENED',
+      'REQUEST_ARCHIVED',
+      'REQUEST_RESTORED',
+    ]);
+  });
 });
 
 describe('abrir (AC1)', () => {
