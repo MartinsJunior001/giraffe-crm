@@ -142,7 +142,7 @@ development_status:
   # ===== Wave 7 — Épico 6: E-mails, Templates e IA assistiva =====
   epic-6: in-progress
   6-1-modelo-canonico-de-e-mail-e-composer: done
-  6-2-administracao-e-versionamento-de-templates: ready-for-dev
+  6-2-administracao-e-versionamento-de-templates: done
   6-3-aplicacao-manual-de-template: backlog
   6-4-envio-assincrono-identidade-e-estados-honestos: backlog
   6-5-anexos-de-e-mail: backlog
