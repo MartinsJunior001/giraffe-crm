@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { FieldsController } from './forms/fields.controller';
 import { FieldsService } from './forms/fields.service';
 import { FormsController } from './forms/forms.controller';
@@ -87,6 +88,10 @@ import { PipesService } from './pipes.service';
  * no AppModule; este módulo só registra os controllers e serviços.
  */
 @Module({
+  // Story 5.6: a distribuição de Notificações (`NotificationDistributionService`, exportado por
+  // `NotificationsModule`) é injetada no `CardAccessService` para notificar o novo Responsável de Card. Sem
+  // ciclo: `NotificationsModule` não importa `PipesModule` (a autz fina que a distribuição usa é função pura).
+  imports: [NotificationsModule],
   controllers: [
     PipesController,
     PipeGrantsController,

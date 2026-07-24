@@ -9,6 +9,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import { NotificationDistributionService } from '../notifications/distribution/notification-distribution.service';
 import { exigirOperarPipe } from '../pipes/pipe-authz';
 import {
   planejarArquivamento,
@@ -82,6 +83,7 @@ export class TasksService {
     private readonly requestContext: RequestContext,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    private readonly distribuicao: NotificationDistributionService,
   ) {}
 
   private db(): { contexto: ContextoOrganizacional; db: Db } {
@@ -275,7 +277,38 @@ export class TasksService {
     if (!atualizada)
       throw new ConflictException('o Responsável mudou concorrentemente; reconsulte e repita');
     this.auditar(contexto, 'update', 'Task');
+    // Story 5.6 — distribui a Notificação ao NOVO Responsável (best-effort, pós-commit): a atribuição já está
+    // persistida; uma falha na distribuição não a derruba (a fonte é o banco). Remoção (novo=null) não notifica.
+    if (novo !== null) await this.notificarResponsavel(contexto, taskId, novo);
     return atualizada;
+  }
+
+  /**
+   * Distribui a Notificação `TASK_RESPONSIBLE_ASSIGNED` ao novo Responsável (Story 5.6), best-effort e
+   * fault-isolated (como o tempo real da 5.5): erro é logado, nunca propagado. A resolução final de destinatário
+   * (só Membership ativa + acesso atual ao Pipe; preferências; ator excluído) vive na distribuição.
+   */
+  private async notificarResponsavel(
+    contexto: ContextoOrganizacional,
+    taskId: string,
+    novoMembershipId: string,
+  ): Promise<void> {
+    try {
+      await this.distribuicao.distribuir(
+        { orgId: contexto.orgId, actorId: contexto.accountId },
+        {
+          type: 'TASK_RESPONSIBLE_ASSIGNED',
+          resourceId: taskId,
+          sourceEventId: randomUUID(),
+          alvosDiretos: [novoMembershipId],
+        },
+      );
+    } catch {
+      this.logger.warn(
+        { event: 'notification.distribution.failed', type: 'TASK_RESPONSIBLE_ASSIGNED', taskId },
+        'falha ao distribuir Notificação de Responsável (best-effort)',
+      );
+    }
   }
 
   // ──────────────────────────────────────────────────────────── VÍNCULO CARD ──

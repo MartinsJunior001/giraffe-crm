@@ -67,6 +67,38 @@ export async function resolverPoderNoPipe(
   return tetoPoderPorPapelOrg(membership.role as PapelOrg, poder);
 }
 
+/**
+ * Poder de uma **Membership** (por `membershipId`, não pelo principal) sobre um Pipe, ou `null` se não há acesso
+ * nenhum. Espelho **não-lançante** e keyed-by-membership de `resolverPoderNoPipe` — usado pela distribuição de
+ * Notificações (5.6) para revalidar o **acesso ATUAL** de um DESTINATÁRIO a um recurso Pipe-scoped
+ * (Tarefa/Solicitação), reusando a MESMA lógica de autorização (DBT-AUTHZ-01), sem um segundo mecanismo. Admin
+ * da Org (papel de Org `ADMIN`) alcança qualquer Pipe; senão exige `PipeGrant` ACTIVE. Reconfere
+ * `Membership.state = ACTIVE` e aplica o teto do Convidado (fail-closed).
+ */
+export async function resolverPoderDaMembershipNoPipe(
+  db: DbComContexto,
+  membershipId: string,
+  pipeId: string,
+): Promise<Poder | null> {
+  const membership = await db.membership.findFirst({
+    where: { id: membershipId },
+    select: { state: true, role: true },
+  });
+  if (!membership || membership.state !== 'ACTIVE') return null;
+  if (membership.role === 'ADMIN') return 'gerenciar'; // Admin da Org alcança qualquer Pipe
+
+  const pipe = await db.pipe.findUnique({ where: { id: pipeId }, select: { id: true } });
+  if (!pipe) return null;
+  const grant = await db.pipeGrant.findFirst({
+    where: { pipeId, membershipId, state: 'ACTIVE' },
+    select: { role: true },
+  });
+  if (!grant) return null;
+  const poder: Poder =
+    grant.role === 'ADMIN' ? 'gerenciar' : grant.role === 'MEMBER' ? 'operar' : 'ler';
+  return tetoPoderPorPapelOrg(membership.role as PapelOrg, poder);
+}
+
 /** Exige poder de gerenciar; 403 se o principal só pode operar/ler (tem acesso, mas não é Admin do Pipe/Org). */
 export async function exigirGerenciarPipe(
   db: DbComContexto,

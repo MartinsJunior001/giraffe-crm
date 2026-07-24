@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PinoLogger } from 'nestjs-pino';
 import {
   type ContextoOrganizacional,
@@ -11,6 +12,7 @@ import {
 } from '../../../kernel/context/request-context';
 import { PrismaService } from '../../../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../../../kernel/db/tenant-context';
+import { NotificationDistributionService } from '../../../notifications/distribution/notification-distribution.service';
 import {
   exigirGerenciarPipe,
   exigirOperarCard,
@@ -73,6 +75,7 @@ export class CardAccessService {
     private readonly requestContext: RequestContext,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    private readonly distribuicao: NotificationDistributionService,
   ) {}
 
   private db(): { contexto: ContextoOrganizacional; db: Db } {
@@ -141,7 +144,38 @@ export class CardAccessService {
 
     this.auditar(contexto, 'update', 'CardResponsavel');
     this.auditar(contexto, 'create', 'CardHistory');
+    // Story 5.6 — distribui a Notificação ao NOVO Responsável do Card (best-effort, pós-commit). O alvo já tem
+    // acesso operacional ao Card (SC-2101 acima), então passa a revalidação de acesso da distribuição.
+    await this.notificarResponsavel(contexto, cardId, membershipId);
     return this.lerResponsavel(cardId);
+  }
+
+  /**
+   * Distribui a Notificação `CARD_RESPONSIBLE_ASSIGNED` ao novo Responsável (Story 5.6), best-effort e
+   * fault-isolated: erro logado, nunca propagado. A resolução final (só Membership ativa + acesso atual ao Card;
+   * preferências; ator excluído) vive na distribuição.
+   */
+  private async notificarResponsavel(
+    contexto: ContextoOrganizacional,
+    cardId: string,
+    novoMembershipId: string,
+  ): Promise<void> {
+    try {
+      await this.distribuicao.distribuir(
+        { orgId: contexto.orgId, actorId: contexto.accountId ?? null },
+        {
+          type: 'CARD_RESPONSIBLE_ASSIGNED',
+          resourceId: cardId,
+          sourceEventId: randomUUID(),
+          alvosDiretos: [novoMembershipId],
+        },
+      );
+    } catch {
+      this.logger.warn(
+        { event: 'notification.distribution.failed', type: 'CARD_RESPONSIBLE_ASSIGNED', cardId },
+        'falha ao distribuir Notificação de Responsável (best-effort)',
+      );
+    }
   }
 
   /**

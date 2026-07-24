@@ -1,16 +1,23 @@
 /**
  * Núcleo PURO dos METADADOS de preferência por tipo de Notificação (Story 5.4, R6) — SEM banco e SEM Nest.
  *
- * O CATÁLOGO CANÔNICO e completo de tipos é a Story 5.6 (AD-11); o `type` é `String` estrutural desde a 5.3.
- * A 5.4 precisa apenas, por tipo, de três metadados para as preferências: **valor padrão** (entregue por
- * omissão?), **se pode ser desativado** e **se é obrigatório** (aviso que a preferência nunca silencia). Este
- * módulo entrega um **registro MÍNIMO** dos tipos correntes + um **fallback seguro** para tipos ainda não
- * catalogados — a fronteira com a 5.6 fica registrada aqui, não inventada.
+ * O CATÁLOGO CANÔNICO e completo de tipos foi fechado na Story 5.6 (`notification-catalog.ts`); o `type` é
+ * `String` estrutural desde a 5.3. A 5.4 precisa apenas, por tipo, de três metadados para as preferências:
+ * **valor padrão** (entregue por omissão?), **se pode ser desativado** e **se é obrigatório** (aviso que a
+ * preferência nunca silencia). Este módulo **deriva** esses metadados do catálogo — fonte ÚNICA — e mantém um
+ * **fallback seguro** para tipos ainda não catalogados. Fecha **DEB-5.4-TIPO-OBRIGATORIO**: a obrigatoriedade/
+ * padrão deixaram de ser um registro vazio e passaram a ser declaradas por tipo no catálogo canônico.
  *
  * **Nenhum tipo é declarado obrigatório** (§1586: um tipo só é obrigatório por decisão explícita de Produto,
- * que ainda não existe). O conjunto obrigatório nasce VAZIO — o mecanismo é implementado e testável, mas não
- * se inventa obrigatoriedade (Constitution). Espelha o "preflight vacuamente verdadeiro" da 2.10.
+ * que ainda não existe). O conjunto obrigatório nasce VAZIO no catálogo — o mecanismo é implementado e
+ * testável, mas não se inventa obrigatoriedade (Constitution). Espelha o "preflight vacuamente verdadeiro" 2.10.
  */
+
+import {
+  CATALOGO_NOTIFICACOES,
+  formatoTipoValido,
+  obterTipoNotificacao,
+} from '../notification-catalog';
 
 /** Formato estrutural de um TIPO de Notificação (enum estrutural — nunca texto livre). Espelha a 5.3. */
 const TIPO_RE = /^[A-Z][A-Z0-9_]*$/;
@@ -25,24 +32,22 @@ export interface MetadadosTipo {
   obrigatorio: boolean;
 }
 
-/**
- * Registro MÍNIMO dos tipos correntes. Nasce VAZIO por decisão de escopo: não há produtor concreto de
- * Notificação na Fase 1 (5.6/5.7/E8), então não há tipo com metadado NÃO-padrão a declarar. A 5.6 popula
- * este mapa (ou o substitui pelo catálogo canônico) sem mudar a resolução efetiva abaixo. Qualquer tipo fora
- * daqui cai no `FALLBACK` seguro.
- */
-const REGISTRO: Readonly<Record<string, MetadadosTipo>> = Object.freeze({});
-
-/** Fallback seguro para tipo não catalogado (a 5.6 fecha o catálogo): habilitado, desativável, não-obrigatório. */
+/** Fallback seguro para tipo não catalogado: habilitado, desativável, não-obrigatório. */
 const FALLBACK: MetadadosTipo = Object.freeze({
   padraoHabilitado: true,
   podeDesativar: true,
   obrigatorio: false,
 });
 
-/** Metadados de um tipo — do registro mínimo ou do fallback seguro. Fonte única da política por tipo. */
+/** Metadados de um tipo — do catálogo canônico (5.6) ou do fallback seguro. Fonte única da política por tipo. */
 export function metadadosDoTipo(type: string): MetadadosTipo {
-  return REGISTRO[type] ?? FALLBACK;
+  const meta = formatoTipoValido(type) ? obterTipoNotificacao(type) : undefined;
+  if (!meta) return FALLBACK;
+  return {
+    padraoHabilitado: meta.padraoHabilitado,
+    podeDesativar: meta.podeDesativar,
+    obrigatorio: meta.obrigatorio,
+  };
 }
 
 /**
@@ -73,10 +78,10 @@ export function validarSetPreferencia(type: string, enabled: boolean): string | 
 }
 
 /**
- * Conjunto de tipos SILENCIADOS de um usuário, derivado do registro + overrides — consumido como filtro
+ * Conjunto de tipos SILENCIADOS de um usuário, derivado do catálogo + overrides — consumido como filtro
  * `type NOT IN (...)` nas superfícies/contagem. Um tipo entra se sua preferência efetiva é `false`. Tipos
  * **obrigatórios** NUNCA entram (a preferência não os silencia). Só considera os tipos com override explícito
- * e os tipos do registro com `padraoHabilitado=false` — tipos que caem no fallback (habilitado por padrão) e
+ * e os tipos do catálogo com `padraoHabilitado=false` — tipos que caem no fallback (habilitado por padrão) e
  * sem override não são silenciados, então não precisam ser enumerados.
  */
 export function tiposSilenciadosPara(overrides: ReadonlyMap<string, boolean>): string[] {
@@ -85,10 +90,10 @@ export function tiposSilenciadosPara(overrides: ReadonlyMap<string, boolean>): s
   for (const [type, enabled] of overrides) {
     if (!resolverPreferenciaEfetiva(type, enabled)) silenciados.add(type);
   }
-  // Tipos do registro silenciados por padrão (sem override que os reabilite).
-  for (const type of Object.keys(REGISTRO)) {
-    if (overrides.has(type)) continue;
-    if (!resolverPreferenciaEfetiva(type)) silenciados.add(type);
+  // Tipos do catálogo silenciados por padrão (sem override que os reabilite).
+  for (const meta of CATALOGO_NOTIFICACOES) {
+    if (overrides.has(meta.tipo)) continue;
+    if (!resolverPreferenciaEfetiva(meta.tipo)) silenciados.add(meta.tipo);
   }
   return [...silenciados];
 }

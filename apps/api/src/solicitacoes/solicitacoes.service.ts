@@ -9,6 +9,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { type ContextoOrganizacional, RequestContext } from '../kernel/context/request-context';
 import { PrismaService } from '../kernel/db/prisma.service';
 import { definirContextoOrg, withTenantContext } from '../kernel/db/tenant-context';
+import { NotificationDistributionService } from '../notifications/distribution/notification-distribution.service';
 import { exigirOperarPipe } from '../pipes/pipe-authz';
 import {
   planejarArquivamento,
@@ -79,6 +80,7 @@ export class SolicitacoesService {
     private readonly requestContext: RequestContext,
     private readonly prisma: PrismaService,
     private readonly logger: PinoLogger,
+    private readonly distribuicao: NotificationDistributionService,
   ) {}
 
   private db(): { contexto: ContextoOrganizacional; db: Db } {
@@ -260,7 +262,41 @@ export class SolicitacoesService {
     if (!atualizada)
       throw new ConflictException('o Responsável mudou concorrentemente; reconsulte e repita');
     this.auditar(contexto, 'update', 'Solicitacao');
+    // Story 5.6 — distribui a Notificação ao NOVO Responsável (best-effort, pós-commit; remoção não notifica).
+    if (novo !== null) await this.notificarResponsavel(contexto, solicitacaoId, novo);
     return atualizada;
+  }
+
+  /**
+   * Distribui a Notificação `SOLICITACAO_RESPONSIBLE_ASSIGNED` ao novo Responsável (Story 5.6), best-effort e
+   * fault-isolated: erro logado, nunca propagado. A resolução final (só Membership ativa + acesso atual;
+   * preferências; ator excluído) vive na distribuição.
+   */
+  private async notificarResponsavel(
+    contexto: ContextoOrganizacional,
+    solicitacaoId: string,
+    novoMembershipId: string,
+  ): Promise<void> {
+    try {
+      await this.distribuicao.distribuir(
+        { orgId: contexto.orgId, actorId: contexto.accountId },
+        {
+          type: 'SOLICITACAO_RESPONSIBLE_ASSIGNED',
+          resourceId: solicitacaoId,
+          sourceEventId: randomUUID(),
+          alvosDiretos: [novoMembershipId],
+        },
+      );
+    } catch {
+      this.logger.warn(
+        {
+          event: 'notification.distribution.failed',
+          type: 'SOLICITACAO_RESPONSIBLE_ASSIGNED',
+          solicitacaoId,
+        },
+        'falha ao distribuir Notificação de Responsável (best-effort)',
+      );
+    }
   }
 
   // ──────────────────────────────────────────────────────────── VÍNCULO CARD ──
